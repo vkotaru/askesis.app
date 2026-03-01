@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-gray-800 rounded-xl shadow-soft;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-primary-500 text-white rounded-lg font-medium
+           hover:bg-primary-600 active:bg-primary-700
+           transition-all duration-150 ease-in-out
+           hover:shadow-glow;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg font-medium
+           hover:bg-gray-50 dark:hover:bg-gray-700
+           transition-all duration-150 ease-in-out;
+  }
+
+  .btn-accent {
+    @apply px-4 py-2 bg-accent-500 text-white rounded-lg font-medium
+           hover:bg-accent-600 active:bg-accent-700
+           transition-all duration-150 ease-in-out;
+  }
+
+  .input {
+    @apply w-full px-4 py-2 border border-gray-300 dark:border-gray-600
+           rounded-lg bg-white dark:bg-gray-700
+           focus:border-primary-500 dark:focus:border-primary-400
+           focus:outline-none focus:ring-2 focus:ring-primary-500/20;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}
