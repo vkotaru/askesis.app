@@ -108,6 +108,36 @@ class Exercise(Base):
     activity: Mapped["Activity"] = relationship(back_populates="exercises")
 
 
+class BodyMeasurement(Base):
+    __tablename__ = "body_measurements"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    # Upper body
+    neck: Mapped[float | None] = mapped_column(Float)
+    shoulders: Mapped[float | None] = mapped_column(Float)
+    chest: Mapped[float | None] = mapped_column(Float)
+    bicep_left: Mapped[float | None] = mapped_column(Float)
+    bicep_right: Mapped[float | None] = mapped_column(Float)
+    forearm_left: Mapped[float | None] = mapped_column(Float)
+    forearm_right: Mapped[float | None] = mapped_column(Float)
+    # Core
+    waist: Mapped[float | None] = mapped_column(Float)
+    abdomen: Mapped[float | None] = mapped_column(Float)
+    hips: Mapped[float | None] = mapped_column(Float)
+    # Lower body
+    thigh_left: Mapped[float | None] = mapped_column(Float)
+    thigh_right: Mapped[float | None] = mapped_column(Float)
+    calf_left: Mapped[float | None] = mapped_column(Float)
+    calf_right: Mapped[float | None] = mapped_column(Float)
+    # Notes
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User")
+
+
 class MealTemplate(Base):
     __tablename__ = "meal_templates"
 

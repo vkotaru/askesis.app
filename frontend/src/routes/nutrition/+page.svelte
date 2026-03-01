@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { format } from 'date-fns';
-  import { Plus, Trash2, Copy } from 'lucide-svelte';
+  import { format, addDays, subDays, parseISO } from 'date-fns';
+  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { api, type Meal, type MealInput } from '$lib/api/client';
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
@@ -67,6 +67,16 @@
     selectedDate = (e.target as HTMLInputElement).value;
     loadMeals();
   }
+
+  function prevDay() {
+    selectedDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
+    loadMeals();
+  }
+
+  function nextDay() {
+    selectedDate = format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
+    loadMeals();
+  }
 </script>
 
 <svelte:head>
@@ -75,14 +85,24 @@
 
 <div>
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold">Nutrition</h1>
-    <div class="flex items-center gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Nutrition</h1>
+      <p class="text-gray-500 text-sm mt-1">Track your meals and calories</p>
+    </div>
+    <div class="flex items-center gap-2">
       <button
         on:click={copyYesterday}
-        class="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+        class="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+        title="Copy yesterday's meals"
       >
         <Copy size={16} />
-        Copy yesterday
+      </button>
+      <button
+        type="button"
+        on:click={prevDay}
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+      >
+        <ChevronLeft size={20} />
       </button>
       <input
         type="date"
@@ -90,6 +110,13 @@
         on:change={handleDateChange}
         class="input max-w-[180px]"
       />
+      <button
+        type="button"
+        on:click={nextDay}
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+      >
+        <ChevronRight size={20} />
+      </button>
     </div>
   </div>
 

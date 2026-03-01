@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base
-from app.routers import auth, daily_log, nutrition, activities, settings
+from app.routers import auth, daily_log, nutrition, activities, settings, measurements
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -24,6 +24,7 @@ app.include_router(daily_log.router, prefix="/api/daily-log", tags=["daily-log"]
 app.include_router(nutrition.router, prefix="/api/nutrition", tags=["nutrition"])
 app.include_router(activities.router, prefix="/api/activities", tags=["activities"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(measurements.router, prefix="/api/measurements", tags=["measurements"])
 
 
 @app.get("/health")

@@ -70,6 +70,28 @@ export interface UserSettings {
   content_width: 'narrow' | 'medium' | 'wide' | 'full';
 }
 
+export interface BodyMeasurement {
+  id: number;
+  date: string;
+  neck?: number;
+  shoulders?: number;
+  chest?: number;
+  bicep_left?: number;
+  bicep_right?: number;
+  forearm_left?: number;
+  forearm_right?: number;
+  waist?: number;
+  abdomen?: number;
+  hips?: number;
+  thigh_left?: number;
+  thigh_right?: number;
+  calf_left?: number;
+  calf_right?: number;
+  notes?: string;
+}
+
+export type BodyMeasurementInput = Omit<BodyMeasurement, 'id'>;
+
 // API Client
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -157,4 +179,21 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  // Body Measurements
+  getMeasurements: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    return fetchJSON<BodyMeasurement[]>(`/api/measurements/?${params}`);
+  },
+  getLatestMeasurement: () => fetchJSON<BodyMeasurement | null>('/api/measurements/latest'),
+  getMeasurement: (date: string) => fetchJSON<BodyMeasurement>(`/api/measurements/${date}`),
+  saveMeasurement: (data: BodyMeasurementInput) =>
+    fetchJSON<BodyMeasurement>('/api/measurements/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteMeasurement: (id: number) =>
+    fetchJSON(`/api/measurements/${id}`, { method: 'DELETE' }),
 };
