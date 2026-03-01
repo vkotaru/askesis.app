@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { format } from 'date-fns';
-  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp } from 'lucide-svelte';
+  import { format, addDays, subDays, parseISO } from 'date-fns';
+  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput } from '$lib/api/client';
 
@@ -21,11 +21,12 @@
   let selectedTags: string[] = [];
   let loading = true;
   let expandedActivity: number | null = null;
+  let selectedDate = format(new Date(), 'yyyy-MM-dd');
 
   async function loadActivities() {
     loading = true;
     try {
-      activities = await api.getActivities();
+      activities = await api.getActivities(selectedDate, selectedDate);
     } catch (err) {
       console.error('Failed to load activities:', err);
     } finally {
@@ -34,6 +35,21 @@
   }
 
   onMount(loadActivities);
+
+  function handleDateChange(e: Event) {
+    selectedDate = (e.target as HTMLInputElement).value;
+    loadActivities();
+  }
+
+  function prevDay() {
+    selectedDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
+    loadActivities();
+  }
+
+  function nextDay() {
+    selectedDate = format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
+    loadActivities();
+  }
 
   function toggleTag(tag: string) {
     if (selectedTags.includes(tag)) {
@@ -91,10 +107,34 @@
       <h1 class="text-2xl font-bold">Activities</h1>
       <p class="text-gray-500 text-sm mt-1">Track your workouts and exercises</p>
     </div>
-    <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
-      <Plus size={20} />
-      Add Activity
-    </button>
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          on:click={prevDay}
+          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <input
+          type="date"
+          value={selectedDate}
+          on:change={handleDateChange}
+          class="input max-w-[180px]"
+        />
+        <button
+          type="button"
+          on:click={nextDay}
+          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+        >
+          <ChevronRight size={20} />
+        </button>
+      </div>
+      <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
+        <Plus size={20} />
+        Add Activity
+      </button>
+    </div>
   </div>
 
   <!-- Add activity form -->
@@ -103,7 +143,7 @@
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label for="activity-date" class="label">Date</label>
-          <input id="activity-date" type="date" name="date" value={format(new Date(), 'yyyy-MM-dd')} class="input" />
+          <input id="activity-date" type="date" name="date" value={selectedDate} class="input" />
         </div>
         <div>
           <label for="activity-name" class="label">Name</label>

@@ -1,0 +1,129 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from datetime import date
+
+from app.database import get_db
+from app.models import User, BodyMeasurement
+from app.routers.auth import get_current_user
+
+router = APIRouter()
+
+
+class MeasurementCreate(BaseModel):
+    date: date
+    neck: float | None = None
+    shoulders: float | None = None
+    chest: float | None = None
+    bicep_left: float | None = None
+    bicep_right: float | None = None
+    forearm_left: float | None = None
+    forearm_right: float | None = None
+    waist: float | None = None
+    abdomen: float | None = None
+    hips: float | None = None
+    thigh_left: float | None = None
+    thigh_right: float | None = None
+    calf_left: float | None = None
+    calf_right: float | None = None
+    notes: str | None = None
+
+
+class MeasurementResponse(MeasurementCreate):
+    id: int
+    user_id: int
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/", response_model=list[MeasurementResponse])
+def get_measurements(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == current_user.id)
+
+    if start_date:
+        query = query.filter(BodyMeasurement.date >= start_date)
+    if end_date:
+        query = query.filter(BodyMeasurement.date <= end_date)
+
+    return query.order_by(BodyMeasurement.date.desc()).all()
+
+
+@router.get("/latest", response_model=MeasurementResponse | None)
+def get_latest_measurement(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return db.query(BodyMeasurement).filter(
+        BodyMeasurement.user_id == current_user.id
+    ).order_by(BodyMeasurement.date.desc()).first()
+
+
+@router.get("/{measurement_date}", response_model=MeasurementResponse)
+def get_measurement_by_date(
+    measurement_date: date,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    measurement = db.query(BodyMeasurement).filter(
+        BodyMeasurement.user_id == current_user.id,
+        BodyMeasurement.date == measurement_date
+    ).first()
+
+    if not measurement:
+        raise HTTPException(status_code=404, detail="Measurement not found")
+
+    return measurement
+
+
+@router.post("/", response_model=MeasurementResponse)
+def create_or_update_measurement(
+    data: MeasurementCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Check if measurement exists for this date
+    existing = db.query(BodyMeasurement).filter(
+        BodyMeasurement.user_id == current_user.id,
+        BodyMeasurement.date == data.date
+    ).first()
+
+    if existing:
+        # Update existing
+        for key, value in data.model_dump(exclude_unset=True).items():
+            if key != "date":
+                setattr(existing, key, value)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    # Create new
+    measurement = BodyMeasurement(user_id=current_user.id, **data.model_dump())
+    db.add(measurement)
+    db.commit()
+    db.refresh(measurement)
+    return measurement
+
+
+@router.delete("/{measurement_id}")
+def delete_measurement(
+    measurement_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    measurement = db.query(BodyMeasurement).filter(
+        BodyMeasurement.id == measurement_id,
+        BodyMeasurement.user_id == current_user.id
+    ).first()
+
+    if not measurement:
+        raise HTTPException(status_code=404, detail="Measurement not found")
+
+    db.delete(measurement)
+    db.commit()
+    return {"ok": True}
