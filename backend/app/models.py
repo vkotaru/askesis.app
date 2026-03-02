@@ -11,6 +11,12 @@ class ActivityType(enum.Enum):
     STRENGTH = "strength"
 
 
+class PhotoView(enum.Enum):
+    FRONT = "front"
+    SIDE = "side"
+    BACK = "back"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -70,6 +76,8 @@ class Meal(Base):
     time: Mapped[str | None] = mapped_column(String(10))  # HH:MM format
     calories: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
+    photo_path: Mapped[str | None] = mapped_column(String(500))  # Path to meal photo
+    ai_analysis: Mapped[str | None] = mapped_column(Text)  # Gemini analysis result
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="meals")
@@ -159,3 +167,17 @@ class WorkoutTemplate(Base):
     default_duration_mins: Mapped[int | None] = mapped_column(Integer)
     default_tags: Mapped[str | None] = mapped_column(String(255))
     exercises_json: Mapped[str | None] = mapped_column(Text)  # JSON for strength templates
+
+
+class ProgressPhoto(Base):
+    __tablename__ = "progress_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    view: Mapped[PhotoView] = mapped_column(Enum(PhotoView))  # front, side, back
+    file_path: Mapped[str] = mapped_column(String(500))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User")

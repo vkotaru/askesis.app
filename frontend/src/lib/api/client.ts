@@ -28,9 +28,23 @@ export interface Meal {
   time?: string;
   calories?: number;
   description?: string;
+  photo_path?: string;
+  ai_analysis?: string;
+  photo_url?: string;
 }
 
-export type MealInput = Omit<Meal, 'id'>;
+export type MealInput = Omit<Meal, 'id' | 'photo_path' | 'ai_analysis' | 'photo_url'>;
+
+export interface FoodAnalysis {
+  calories?: number;
+  description?: string;
+  foods: string[];
+  macros?: {
+    protein_g?: number;
+    carbs_g?: number;
+    fat_g?: number;
+  };
+}
 
 export interface Exercise {
   id?: number;
@@ -92,6 +106,17 @@ export interface BodyMeasurement {
 
 export type BodyMeasurementInput = Omit<BodyMeasurement, 'id'>;
 
+export type PhotoView = 'front' | 'side' | 'back';
+
+export interface ProgressPhoto {
+  id: number;
+  date: string;
+  view: PhotoView;
+  file_path: string;
+  notes?: string;
+  url: string;
+}
+
 // API Client
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -100,6 +125,23 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('Unauthorized');
+    }
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
+async function fetchFormData<T>(url: string, formData: FormData): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    body: formData,
     credentials: 'include',
   });
 
@@ -152,6 +194,18 @@ export const api = {
     fetchJSON(`/api/nutrition/meals/copy-yesterday?target_date=${targetDate}`, {
       method: 'POST',
     }),
+  uploadMealPhoto: (mealId: number, file: File, analyze = true) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('analyze', analyze.toString());
+    return fetchFormData<Meal & { analysis?: FoodAnalysis }>(`/api/nutrition/meals/${mealId}/photo`, formData);
+  },
+  analyzeFoodPhoto: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchFormData<FoodAnalysis>('/api/nutrition/analyze-photo', formData);
+  },
+  getMealPhotoUrl: (mealId: number) => `/api/nutrition/meals/${mealId}/photo`,
 
   // Activities
   getActivities: (startDate?: string, endDate?: string) => {
@@ -196,4 +250,26 @@ export const api = {
     }),
   deleteMeasurement: (id: number) =>
     fetchJSON(`/api/measurements/${id}`, { method: 'DELETE' }),
+
+  // Progress Photos
+  getPhotos: (startDate?: string, endDate?: string, view?: PhotoView) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    if (view) params.set('view', view);
+    return fetchJSON<ProgressPhoto[]>(`/api/photos/?${params}`);
+  },
+  getPhotosByDate: (date: string) =>
+    fetchJSON<ProgressPhoto[]>(`/api/photos/date/${date}`),
+  uploadPhoto: (file: File, date: string, view: PhotoView, notes?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('photo_date', date);
+    formData.append('view', view);
+    if (notes) formData.append('notes', notes);
+    return fetchFormData<ProgressPhoto>('/api/photos/upload', formData);
+  },
+  deletePhoto: (id: number) =>
+    fetchJSON(`/api/photos/${id}`, { method: 'DELETE' }),
+  getPhotoUrl: (id: number) => `/api/photos/file/${id}`,
 };
