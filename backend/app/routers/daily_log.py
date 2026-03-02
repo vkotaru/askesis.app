@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import date
 
 from app.database import get_db
@@ -9,17 +9,21 @@ from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
+# Pagination defaults
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
 
 class DailyLogCreate(BaseModel):
     date: date
-    weight: float | None = None
-    sleep_hours: float | None = None
-    steps: int | None = None
-    water_ml: int | None = None
-    feelings: list[str] | None = None  # Multiple feelings like happy, tired, etc.
-    caffeine_mg: int | None = None
+    weight: float | None = Field(None, ge=20, le=500, description="Weight in kg")
+    sleep_hours: float | None = Field(None, ge=0, le=24)
+    steps: int | None = Field(None, ge=0, le=100000)
+    water_ml: int | None = Field(None, ge=0, le=10000)
+    feelings: list[str] | None = None
+    caffeine_mg: int | None = Field(None, ge=0, le=2000)
     ate_outside: bool | None = None
-    notes: str | None = None
+    notes: str | None = Field(None, max_length=2000)
 
 
 class DailyLogResponse(BaseModel):
@@ -61,6 +65,8 @@ def get_logs(
     start_date: date | None = None,
     end_date: date | None = None,
     user_id: int | None = None,
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -72,7 +78,7 @@ def get_logs(
     if end_date:
         query = query.filter(DailyLog.date <= end_date)
 
-    logs = query.order_by(DailyLog.date.desc()).all()
+    logs = query.order_by(DailyLog.date.desc()).offset(offset).limit(limit).all()
     return [DailyLogResponse.from_orm_with_feelings(log) for log in logs]
 
 

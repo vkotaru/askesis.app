@@ -3,10 +3,10 @@ import uuid
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from PIL import Image, ImageOps
 
 try:
@@ -24,6 +24,18 @@ router = APIRouter()
 # Upload directory
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "photos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
+
+def validate_file_path(file_path: Path) -> Path:
+    """Validate that file path is within upload directory (prevent path traversal)."""
+    resolved = file_path.resolve()
+    upload_resolved = UPLOAD_DIR.resolve()
+    if not str(resolved).startswith(str(upload_resolved)):
+        raise HTTPException(status_code=403, detail="Invalid file path")
+    return resolved
 
 
 class PhotoResponse(BaseModel):
@@ -70,6 +82,8 @@ def get_photos(
     end_date: date | None = None,
     view: PhotoView | None = None,
     user_id: int | None = None,
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -83,7 +97,7 @@ def get_photos(
     if view:
         query = query.filter(ProgressPhoto.view == view)
 
-    photos = query.order_by(ProgressPhoto.date.desc()).all()
+    photos = query.order_by(ProgressPhoto.date.desc()).offset(offset).limit(limit).all()
 
     return [
         PhotoResponse(
@@ -212,7 +226,8 @@ def get_photo_file(
     if photo.user_id != current_user.id:
         check_view_permission(photo.user_id, "photos", db, current_user)
 
-    file_path = Path(photo.file_path)
+    # Validate path is within upload directory (prevent path traversal)
+    file_path = validate_file_path(Path(photo.file_path))
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Photo file not found")
 

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import date
 
 from app.database import get_db
@@ -9,13 +9,16 @@ from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
 
 class ExerciseCreate(BaseModel):
-    name: str
-    sets: int | None = None
-    reps: str | None = None
-    weight_kg: float | None = None
-    notes: str | None = None
+    name: str = Field(..., min_length=1, max_length=100)
+    sets: int | None = Field(None, ge=1, le=100)
+    reps: str | None = Field(None, max_length=50)
+    weight_kg: float | None = Field(None, ge=0, le=1000)
+    notes: str | None = Field(None, max_length=500)
 
 
 class ExerciseResponse(ExerciseCreate):
@@ -27,14 +30,14 @@ class ExerciseResponse(ExerciseCreate):
 
 class ActivityCreate(BaseModel):
     date: date
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
     activity_type: ActivityType
-    duration_mins: int | None = None
-    calories: int | None = None
-    distance_km: float | None = None
-    notes: str | None = None
-    tags: str | None = None
-    exercises: list[ExerciseCreate] = []
+    duration_mins: int | None = Field(None, ge=1, le=1440)  # Max 24 hours
+    calories: int | None = Field(None, ge=0, le=10000)
+    distance_km: float | None = Field(None, ge=0, le=500)
+    notes: str | None = Field(None, max_length=2000)
+    tags: str | None = Field(None, max_length=255)
+    exercises: list[ExerciseCreate] = Field(default_factory=list, max_length=50)
 
 
 class ActivityResponse(BaseModel):
@@ -60,6 +63,8 @@ def get_activities(
     end_date: date | None = None,
     activity_type: ActivityType | None = None,
     user_id: int | None = None,
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -73,7 +78,7 @@ def get_activities(
     if activity_type:
         query = query.filter(Activity.activity_type == activity_type)
 
-    return query.order_by(Activity.date.desc()).all()
+    return query.order_by(Activity.date.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/{activity_id}", response_model=ActivityResponse)

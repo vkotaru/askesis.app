@@ -3,10 +3,10 @@ import uuid
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import date
 from PIL import Image, ImageOps
 
@@ -32,13 +32,25 @@ router = APIRouter()
 MEAL_UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "meals"
 MEAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
+
+def validate_file_path(file_path: Path) -> Path:
+    """Validate that file path is within upload directory (prevent path traversal)."""
+    resolved = file_path.resolve()
+    upload_resolved = MEAL_UPLOAD_DIR.resolve()
+    if not str(resolved).startswith(str(upload_resolved)):
+        raise HTTPException(status_code=403, detail="Invalid file path")
+    return resolved
+
 
 class MealCreate(BaseModel):
     date: date
-    label: str
-    time: str | None = None
-    calories: int | None = None
-    description: str | None = None
+    label: str = Field(..., min_length=1, max_length=50)
+    time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")  # HH:MM format
+    calories: int | None = Field(None, ge=0, le=10000)
+    description: str | None = Field(None, max_length=2000)
 
 
 class MealResponse(MealCreate):
@@ -163,6 +175,8 @@ class MealTemplateResponse(MealTemplateCreate):
 def get_meals(
     meal_date: date | None = None,
     user_id: int | None = None,
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -172,7 +186,7 @@ def get_meals(
     if meal_date:
         query = query.filter(Meal.date == meal_date)
 
-    meals = query.order_by(Meal.date.desc(), Meal.time).all()
+    meals = query.order_by(Meal.date.desc(), Meal.time).offset(offset).limit(limit).all()
     return [meal_to_response(m) for m in meals]
 
 
@@ -297,7 +311,8 @@ def get_meal_photo(
     if meal.user_id != current_user.id:
         check_view_permission(meal.user_id, "nutrition", db, current_user)
 
-    file_path = Path(meal.photo_path)
+    # Validate path is within upload directory (prevent path traversal)
+    file_path = validate_file_path(Path(meal.photo_path))
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Photo file not found")
 
