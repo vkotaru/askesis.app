@@ -4,6 +4,7 @@
   import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput } from '$lib/api/client';
+  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const ACTIVITY_TAGS = ['Commute', 'Training', 'Race', 'Social', 'Fun', 'Weekend'];
 
@@ -26,7 +27,7 @@
   async function loadActivities() {
     loading = true;
     try {
-      activities = await api.getActivities(selectedDate, selectedDate);
+      activities = await api.getActivities(selectedDate, selectedDate, $viewingUserId ?? undefined);
     } catch (err) {
       console.error('Failed to load activities:', err);
     } finally {
@@ -35,6 +36,9 @@
   }
 
   onMount(loadActivities);
+
+  // Reload when viewing user changes
+  $: $viewingUserId, loadActivities();
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
@@ -130,15 +134,17 @@
           <ChevronRight size={20} />
         </button>
       </div>
-      <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
-        <Plus size={20} />
-        Add Activity
-      </button>
+      {#if !$isViewingOther}
+        <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
+          <Plus size={20} />
+          Add Activity
+        </button>
+      {/if}
     </div>
   </div>
 
   <!-- Add activity form -->
-  {#if showForm}
+  {#if showForm && !$isViewingOther}
     <form on:submit|preventDefault={handleSubmit} class="card p-6 mb-6">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
@@ -325,15 +331,17 @@
                 {/if}
 
                 <!-- Delete button -->
-                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-end">
-                  <button
-                    on:click|stopPropagation={() => deleteActivity(activity.id)}
-                    class="flex items-center gap-2 px-3 py-1.5 text-sm text-accent-600 hover:bg-accent-50 dark:hover:bg-accent-900/20 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={16} />
-                    Delete
-                  </button>
-                </div>
+                {#if !$isViewingOther}
+                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-end">
+                    <button
+                      on:click|stopPropagation={() => deleteActivity(activity.id)}
+                      class="flex items-center gap-2 px-3 py-1.5 text-sm text-accent-600 hover:bg-accent-50 dark:hover:bg-accent-900/20 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+                {/if}
               </div>
             {/if}
           </li>

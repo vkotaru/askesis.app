@@ -5,7 +5,7 @@ from datetime import date
 
 from app.database import get_db
 from app.models import User, DailyLog
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
@@ -60,10 +60,12 @@ class DailyLogResponse(BaseModel):
 def get_logs(
     start_date: date | None = None,
     end_date: date | None = None,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(DailyLog).filter(DailyLog.user_id == current_user.id)
+    target_user = check_view_permission(user_id, "daily_logs", db, current_user)
+    query = db.query(DailyLog).filter(DailyLog.user_id == target_user.id)
 
     if start_date:
         query = query.filter(DailyLog.date >= start_date)
@@ -77,11 +79,13 @@ def get_logs(
 @router.get("/{log_date}", response_model=DailyLogResponse)
 def get_log_by_date(
     log_date: date,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    target_user = check_view_permission(user_id, "daily_logs", db, current_user)
     log = db.query(DailyLog).filter(
-        DailyLog.user_id == current_user.id,
+        DailyLog.user_id == target_user.id,
         DailyLog.date == log_date
     ).first()
 

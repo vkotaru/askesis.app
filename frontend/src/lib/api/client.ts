@@ -117,6 +117,34 @@ export interface ProgressPhoto {
   url: string;
 }
 
+// Sharing types
+export type DataCategory = 'daily_logs' | 'nutrition' | 'activities' | 'measurements' | 'photos';
+
+export interface DataShare {
+  id: number;
+  shared_with_id: number;
+  shared_with_name: string;
+  shared_with_email: string;
+  shared_with_picture?: string;
+  categories: DataCategory[];
+}
+
+export interface SharedWithMe {
+  id: number;
+  owner_id: number;
+  owner_name: string;
+  owner_email: string;
+  owner_picture?: string;
+  categories: DataCategory[];
+}
+
+export interface ShareableUser {
+  id: number;
+  name: string;
+  email: string;
+  picture?: string;
+}
+
 // API Client
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -160,13 +188,17 @@ export const api = {
   getMe: () => fetchJSON<User>('/auth/me'),
 
   // Daily Log
-  getDailyLogs: (startDate?: string, endDate?: string) => {
+  getDailyLogs: (startDate?: string, endDate?: string, userId?: number) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
+    if (userId) params.set('user_id', userId.toString());
     return fetchJSON<DailyLog[]>(`/api/daily-log/?${params}`);
   },
-  getDailyLog: (date: string) => fetchJSON<DailyLog>(`/api/daily-log/${date}`),
+  getDailyLog: (date: string, userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : '';
+    return fetchJSON<DailyLog>(`/api/daily-log/${date}${params}`);
+  },
   saveDailyLog: (data: DailyLogInput) =>
     fetchJSON<DailyLog>('/api/daily-log/', {
       method: 'POST',
@@ -174,9 +206,12 @@ export const api = {
     }),
 
   // Nutrition
-  getMeals: (date?: string) => {
-    const params = date ? `?meal_date=${date}` : '';
-    return fetchJSON<Meal[]>(`/api/nutrition/meals${params}`);
+  getMeals: (date?: string, userId?: number) => {
+    const params = new URLSearchParams();
+    if (date) params.set('meal_date', date);
+    if (userId) params.set('user_id', userId.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return fetchJSON<Meal[]>(`/api/nutrition/meals${query}`);
   },
   createMeal: (data: MealInput) =>
     fetchJSON<Meal>('/api/nutrition/meals', {
@@ -208,10 +243,11 @@ export const api = {
   getMealPhotoUrl: (mealId: number) => `/api/nutrition/meals/${mealId}/photo`,
 
   // Activities
-  getActivities: (startDate?: string, endDate?: string) => {
+  getActivities: (startDate?: string, endDate?: string, userId?: number) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
+    if (userId) params.set('user_id', userId.toString());
     return fetchJSON<Activity[]>(`/api/activities/?${params}`);
   },
   createActivity: (data: ActivityInput) =>
@@ -221,10 +257,12 @@ export const api = {
     }),
   deleteActivity: (id: number) =>
     fetchJSON(`/api/activities/${id}`, { method: 'DELETE' }),
-  getCalendar: (year: number, month: number) =>
-    fetchJSON<Record<string, CalendarEvent[]>>(
-      `/api/activities/calendar/${year}/${month}`
-    ),
+  getCalendar: (year: number, month: number, userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : '';
+    return fetchJSON<Record<string, CalendarEvent[]>>(
+      `/api/activities/calendar/${year}/${month}${params}`
+    );
+  },
 
   // Settings
   getSettings: () => fetchJSON<UserSettings>('/api/settings/'),
@@ -235,14 +273,21 @@ export const api = {
     }),
 
   // Body Measurements
-  getMeasurements: (startDate?: string, endDate?: string) => {
+  getMeasurements: (startDate?: string, endDate?: string, userId?: number) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
+    if (userId) params.set('user_id', userId.toString());
     return fetchJSON<BodyMeasurement[]>(`/api/measurements/?${params}`);
   },
-  getLatestMeasurement: () => fetchJSON<BodyMeasurement | null>('/api/measurements/latest'),
-  getMeasurement: (date: string) => fetchJSON<BodyMeasurement>(`/api/measurements/${date}`),
+  getLatestMeasurement: (userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : '';
+    return fetchJSON<BodyMeasurement | null>(`/api/measurements/latest${params}`);
+  },
+  getMeasurement: (date: string, userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : '';
+    return fetchJSON<BodyMeasurement>(`/api/measurements/${date}${params}`);
+  },
   saveMeasurement: (data: BodyMeasurementInput) =>
     fetchJSON<BodyMeasurement>('/api/measurements/', {
       method: 'POST',
@@ -252,15 +297,18 @@ export const api = {
     fetchJSON(`/api/measurements/${id}`, { method: 'DELETE' }),
 
   // Progress Photos
-  getPhotos: (startDate?: string, endDate?: string, view?: PhotoView) => {
+  getPhotos: (startDate?: string, endDate?: string, view?: PhotoView, userId?: number) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
     if (view) params.set('view', view);
+    if (userId) params.set('user_id', userId.toString());
     return fetchJSON<ProgressPhoto[]>(`/api/photos/?${params}`);
   },
-  getPhotosByDate: (date: string) =>
-    fetchJSON<ProgressPhoto[]>(`/api/photos/date/${date}`),
+  getPhotosByDate: (date: string, userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : '';
+    return fetchJSON<ProgressPhoto[]>(`/api/photos/date/${date}${params}`);
+  },
   uploadPhoto: (file: File, date: string, view: PhotoView, notes?: string) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -272,4 +320,21 @@ export const api = {
   deletePhoto: (id: number) =>
     fetchJSON(`/api/photos/${id}`, { method: 'DELETE' }),
   getPhotoUrl: (id: number) => `/api/photos/file/${id}`,
+
+  // Sharing
+  getMyShares: () => fetchJSON<DataShare[]>('/api/sharing/my-shares'),
+  getSharedWithMe: () => fetchJSON<SharedWithMe[]>('/api/sharing/shared-with-me'),
+  getShareableUsers: () => fetchJSON<ShareableUser[]>('/api/sharing/users'),
+  createShare: (email: string, categories: DataCategory[]) =>
+    fetchJSON<DataShare>('/api/sharing/', {
+      method: 'POST',
+      body: JSON.stringify({ shared_with_email: email, categories }),
+    }),
+  updateShare: (id: number, categories: DataCategory[]) =>
+    fetchJSON<DataShare>(`/api/sharing/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ categories }),
+    }),
+  deleteShare: (id: number) =>
+    fetchJSON(`/api/sharing/${id}`, { method: 'DELETE' }),
 };

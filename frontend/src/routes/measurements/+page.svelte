@@ -4,6 +4,7 @@
   import { Ruler, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
+  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
   let saving = false;
@@ -30,7 +31,7 @@
   async function loadMeasurement() {
     loading = true;
     try {
-      const measurement = await api.getMeasurement(selectedDate);
+      const measurement = await api.getMeasurement(selectedDate, $viewingUserId ?? undefined);
       neck = measurement.neck;
       shoulders = measurement.shoulders;
       chest = measurement.chest;
@@ -49,7 +50,7 @@
     } catch {
       // No measurement for this date, try to load latest as reference
       try {
-        const latest = await api.getLatestMeasurement();
+        const latest = await api.getLatestMeasurement($viewingUserId ?? undefined);
         if (latest) {
           // Pre-fill with latest values for convenience
           neck = latest.neck;
@@ -97,6 +98,9 @@
   }
 
   onMount(loadMeasurement);
+
+  // Reload when viewing user changes
+  $: $viewingUserId, loadMeasurement();
 
   async function handleSubmit() {
     saving = true;
@@ -387,23 +391,25 @@
           ></textarea>
         </div>
 
-        <div class="flex justify-end">
-          <button
-            type="submit"
-            disabled={saving}
-            class={clsx('btn-primary flex items-center gap-2 px-8', saved && 'bg-primary-600')}
-          >
-            {#if saving}
-              <span class="animate-spin">⏳</span>
-              Saving...
-            {:else if saved}
-              <Check size={18} />
-              Saved!
-            {:else}
-              Save Measurements
-            {/if}
-          </button>
-        </div>
+        {#if !$isViewingOther}
+          <div class="flex justify-end">
+            <button
+              type="submit"
+              disabled={saving}
+              class={clsx('btn-primary flex items-center gap-2 px-8', saved && 'bg-primary-600')}
+            >
+              {#if saving}
+                <span class="animate-spin">⏳</span>
+                Saving...
+              {:else if saved}
+                <Check size={18} />
+                Saved!
+              {:else}
+                Save Measurements
+              {/if}
+            </button>
+          </div>
+        {/if}
       </div>
     </form>
   {/if}

@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy import String, Integer, Float, Text, ForeignKey, Date, DateTime, Enum, Boolean
+from sqlalchemy import String, Integer, Float, Text, ForeignKey, Date, DateTime, Enum, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
@@ -181,3 +181,20 @@ class ProgressPhoto(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+
+class DataShare(Base):
+    __tablename__ = "data_shares"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    shared_with_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    categories: Mapped[str] = mapped_column(String(255))  # Comma-separated: "daily_logs,nutrition"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
+    shared_with: Mapped["User"] = relationship("User", foreign_keys=[shared_with_id])
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "shared_with_id", name="unique_share"),
+    )

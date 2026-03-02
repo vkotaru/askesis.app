@@ -5,7 +5,7 @@ from datetime import date
 
 from app.database import get_db
 from app.models import User, BodyMeasurement
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
@@ -41,10 +41,12 @@ class MeasurementResponse(MeasurementCreate):
 def get_measurements(
     start_date: date | None = None,
     end_date: date | None = None,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == current_user.id)
+    target_user = check_view_permission(user_id, "measurements", db, current_user)
+    query = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == target_user.id)
 
     if start_date:
         query = query.filter(BodyMeasurement.date >= start_date)
@@ -56,22 +58,26 @@ def get_measurements(
 
 @router.get("/latest", response_model=MeasurementResponse | None)
 def get_latest_measurement(
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    target_user = check_view_permission(user_id, "measurements", db, current_user)
     return db.query(BodyMeasurement).filter(
-        BodyMeasurement.user_id == current_user.id
+        BodyMeasurement.user_id == target_user.id
     ).order_by(BodyMeasurement.date.desc()).first()
 
 
 @router.get("/{measurement_date}", response_model=MeasurementResponse)
 def get_measurement_by_date(
     measurement_date: date,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    target_user = check_view_permission(user_id, "measurements", db, current_user)
     measurement = db.query(BodyMeasurement).filter(
-        BodyMeasurement.user_id == current_user.id,
+        BodyMeasurement.user_id == target_user.id,
         BodyMeasurement.date == measurement_date
     ).first()
 

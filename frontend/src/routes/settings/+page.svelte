@@ -1,8 +1,74 @@
 <script lang="ts">
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2 } from 'lucide-svelte';
+  import { onMount } from 'svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
-  import type { UserSettings } from '$lib/api/client';
+  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory } from '$lib/api/client';
+
+  // Sharing state
+  let myShares: DataShare[] = [];
+  let sharedWithMe: SharedWithMe[] = [];
+  let shareableUsers: ShareableUser[] = [];
+  let loadingShares = true;
+  let showAddShare = false;
+  let selectedUserEmail = '';
+  let selectedCategories: DataCategory[] = [];
+
+  const CATEGORIES: { value: DataCategory; label: string }[] = [
+    { value: 'daily_logs', label: 'Daily Logs' },
+    { value: 'nutrition', label: 'Nutrition' },
+    { value: 'activities', label: 'Activities' },
+    { value: 'measurements', label: 'Measurements' },
+    { value: 'photos', label: 'Photos' },
+  ];
+
+  async function loadShares() {
+    loadingShares = true;
+    try {
+      [myShares, sharedWithMe, shareableUsers] = await Promise.all([
+        api.getMyShares(),
+        api.getSharedWithMe(),
+        api.getShareableUsers(),
+      ]);
+    } catch (err) {
+      console.error('Failed to load shares:', err);
+    } finally {
+      loadingShares = false;
+    }
+  }
+
+  async function createShare() {
+    if (!selectedUserEmail || selectedCategories.length === 0) return;
+    try {
+      await api.createShare(selectedUserEmail, selectedCategories);
+      showAddShare = false;
+      selectedUserEmail = '';
+      selectedCategories = [];
+      loadShares();
+    } catch (err) {
+      console.error('Failed to create share:', err);
+    }
+  }
+
+  async function deleteShare(id: number) {
+    if (!confirm('Remove this share?')) return;
+    try {
+      await api.deleteShare(id);
+      loadShares();
+    } catch (err) {
+      console.error('Failed to delete share:', err);
+    }
+  }
+
+  function toggleCategory(cat: DataCategory) {
+    if (selectedCategories.includes(cat)) {
+      selectedCategories = selectedCategories.filter(c => c !== cat);
+    } else {
+      selectedCategories = [...selectedCategories, cat];
+    }
+  }
+
+  onMount(loadShares);
 
   type Theme = UserSettings['theme'];
   type FontSize = UserSettings['font_size'];
@@ -162,6 +228,152 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Data Sharing -->
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <Share2 size={20} class="text-accent-500" />
+          <h2 class="text-lg font-semibold">Data Sharing</h2>
+        </div>
+        {#if !showAddShare && !loadingShares}
+          <button
+            on:click={() => (showAddShare = true)}
+            class="flex items-center gap-2 px-3 py-2 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600"
+          >
+            <Plus size={16} />
+            Share with someone
+          </button>
+        {/if}
+      </div>
+
+      {#if loadingShares}
+        <div class="flex items-center justify-center py-8">
+          <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+        </div>
+      {:else}
+        <!-- Add Share Form -->
+        {#if showAddShare}
+          <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+            <h3 class="font-medium mb-3">Share your data with</h3>
+
+            <div class="mb-4">
+              <label class="label">Select user</label>
+              <select bind:value={selectedUserEmail} class="input">
+                <option value="">Choose a user...</option>
+                {#each shareableUsers.filter(u => !myShares.some(s => s.shared_with_email === u.email)) as user}
+                  <option value={user.email}>{user.name} ({user.email})</option>
+                {/each}
+              </select>
+            </div>
+
+            <div class="mb-4">
+              <label class="label">Categories to share</label>
+              <div class="flex flex-wrap gap-2">
+                {#each CATEGORIES as { value, label }}
+                  <button
+                    on:click={() => toggleCategory(value)}
+                    class={clsx(
+                      'px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors',
+                      selectedCategories.includes(value)
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                    )}
+                  >
+                    {#if selectedCategories.includes(value)}
+                      <Check size={14} />
+                    {/if}
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="flex gap-3">
+              <button on:click={() => (showAddShare = false)} class="btn-secondary">
+                Cancel
+              </button>
+              <button
+                on:click={createShare}
+                disabled={!selectedUserEmail || selectedCategories.length === 0}
+                class="btn-primary"
+              >
+                Share
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- My Shares -->
+        <div class="mb-6">
+          <h3 class="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+            <Users size={16} />
+            People I'm sharing with
+          </h3>
+          {#if myShares.length === 0}
+            <p class="text-gray-500 text-sm py-4 text-center">You haven't shared your data with anyone yet.</p>
+          {:else}
+            <div class="space-y-3">
+              {#each myShares as share}
+                <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                  {#if share.shared_with_picture}
+                    <img src={share.shared_with_picture} alt={share.shared_with_name} class="w-10 h-10 rounded-full" />
+                  {:else}
+                    <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                      <span class="text-gray-600 dark:text-gray-300 font-medium">
+                        {share.shared_with_name?.charAt(0) || '?'}
+                      </span>
+                    </div>
+                  {/if}
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium truncate">{share.shared_with_name}</p>
+                    <p class="text-xs text-gray-500 truncate">{share.categories.join(', ')}</p>
+                  </div>
+                  <button
+                    on:click={() => deleteShare(share.id)}
+                    class="p-2 text-gray-400 hover:text-red-500"
+                    title="Remove share"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Shared With Me -->
+        <div>
+          <h3 class="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+            <Share2 size={16} />
+            People sharing with me
+          </h3>
+          {#if sharedWithMe.length === 0}
+            <p class="text-gray-500 text-sm py-4 text-center">No one is sharing their data with you yet.</p>
+          {:else}
+            <div class="space-y-3">
+              {#each sharedWithMe as share}
+                <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                  {#if share.owner_picture}
+                    <img src={share.owner_picture} alt={share.owner_name} class="w-10 h-10 rounded-full" />
+                  {:else}
+                    <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                      <span class="text-gray-600 dark:text-gray-300 font-medium">
+                        {share.owner_name?.charAt(0) || '?'}
+                      </span>
+                    </div>
+                  {/if}
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium truncate">{share.owner_name}</p>
+                    <p class="text-xs text-gray-500 truncate">{share.categories.join(', ')}</p>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <!-- About -->

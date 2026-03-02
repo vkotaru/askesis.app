@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import engine, Base
-from app.routers import auth, daily_log, nutrition, activities, settings, measurements, photos
+from app.routers import auth, daily_log, nutrition, activities, settings, measurements, photos, sharing
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Note: Database schema is managed by Alembic migrations
+# Run `alembic upgrade head` before starting the server
 
 app = FastAPI(title="Askesis", version="0.1.0")
 
@@ -26,6 +25,7 @@ app.include_router(activities.router, prefix="/api/activities", tags=["activitie
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(measurements.router, prefix="/api/measurements", tags=["measurements"])
 app.include_router(photos.router, prefix="/api/photos", tags=["photos"])
+app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 
 
 @app.get("/health")

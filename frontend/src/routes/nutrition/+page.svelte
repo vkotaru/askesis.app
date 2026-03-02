@@ -4,6 +4,7 @@
   import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis } from '$lib/api/client';
+  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -24,7 +25,7 @@
   async function loadMeals() {
     loading = true;
     try {
-      meals = await api.getMeals(selectedDate);
+      meals = await api.getMeals(selectedDate, $viewingUserId ?? undefined);
     } catch (err) {
       console.error('Failed to load meals:', err);
     } finally {
@@ -33,6 +34,9 @@
   }
 
   onMount(loadMeals);
+
+  // Reload when viewing user changes
+  $: $viewingUserId, loadMeals();
 
   $: totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0);
 
@@ -158,13 +162,15 @@
       <p class="text-gray-500 text-sm mt-1">Track your meals and calories</p>
     </div>
     <div class="flex items-center gap-2">
-      <button
-        on:click={copyYesterday}
-        class="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-        title="Copy yesterday's meals"
-      >
-        <Copy size={16} />
-      </button>
+      {#if !$isViewingOther}
+        <button
+          on:click={copyYesterday}
+          class="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+          title="Copy yesterday's meals"
+        >
+          <Copy size={16} />
+        </button>
+      {/if}
       <button
         type="button"
         on:click={prevDay}
@@ -211,7 +217,7 @@
                 alt={meal.label}
                 class="w-16 h-16 rounded-lg object-cover flex-shrink-0"
               />
-            {:else}
+            {:else if !$isViewingOther}
               <button
                 on:click={() => triggerMealPhotoUpload(meal.id)}
                 disabled={uploadingMealId === meal.id}
@@ -224,6 +230,10 @@
                   <Camera size={20} class="text-gray-400" />
                 {/if}
               </button>
+            {:else}
+              <div class="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                <Camera size={20} class="text-gray-400" />
+              </div>
             {/if}
 
             <input
@@ -258,12 +268,14 @@
               {#if meal.calories}
                 <span class="font-medium">{meal.calories} cal</span>
               {/if}
-              <button
-                on:click={() => deleteMeal(meal.id)}
-                class="text-gray-400 hover:text-red-500"
-              >
-                <Trash2 size={18} />
-              </button>
+              {#if !$isViewingOther}
+                <button
+                  on:click={() => deleteMeal(meal.id)}
+                  class="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={18} />
+                </button>
+              {/if}
             </div>
           </li>
         {/each}
@@ -274,7 +286,9 @@
   </div>
 
   <!-- Add meal form -->
-  {#if showForm}
+  {#if $isViewingOther}
+    <!-- Read-only mode - no add form -->
+  {:else if showForm}
     <form on:submit|preventDefault={handleSubmit} class="card p-6">
       <h2 class="text-lg font-semibold mb-4">Add Meal</h2>
 
