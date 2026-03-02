@@ -5,7 +5,7 @@ from datetime import date
 
 from app.database import get_db
 from app.models import User, Activity, Exercise, WorkoutTemplate, ActivityType
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
@@ -59,10 +59,12 @@ def get_activities(
     start_date: date | None = None,
     end_date: date | None = None,
     activity_type: ActivityType | None = None,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(Activity).filter(Activity.user_id == current_user.id)
+    target_user = check_view_permission(user_id, "activities", db, current_user)
+    query = db.query(Activity).filter(Activity.user_id == target_user.id)
 
     if start_date:
         query = query.filter(Activity.date >= start_date)
@@ -77,12 +79,14 @@ def get_activities(
 @router.get("/{activity_id}", response_model=ActivityResponse)
 def get_activity(
     activity_id: int,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    target_user = check_view_permission(user_id, "activities", db, current_user)
     activity = db.query(Activity).filter(
         Activity.id == activity_id,
-        Activity.user_id == current_user.id
+        Activity.user_id == target_user.id
     ).first()
 
     if not activity:
@@ -167,16 +171,18 @@ def delete_activity(
 def get_calendar(
     year: int,
     month: int,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from calendar import monthrange
 
+    target_user = check_view_permission(user_id, "activities", db, current_user)
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
 
     activities = db.query(Activity).filter(
-        Activity.user_id == current_user.id,
+        Activity.user_id == target_user.id,
         Activity.date >= start,
         Activity.date <= end
     ).all()

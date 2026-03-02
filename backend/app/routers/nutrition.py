@@ -24,7 +24,7 @@ except ImportError:
 
 from app.database import get_db
 from app.models import User, Meal, MealTemplate
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
@@ -162,10 +162,12 @@ class MealTemplateResponse(MealTemplateCreate):
 @router.get("/meals")
 def get_meals(
     meal_date: date | None = None,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(Meal).filter(Meal.user_id == current_user.id)
+    target_user = check_view_permission(user_id, "nutrition", db, current_user)
+    query = db.query(Meal).filter(Meal.user_id == target_user.id)
 
     if meal_date:
         query = query.filter(Meal.date == meal_date)
@@ -286,13 +288,14 @@ def get_meal_photo(
     current_user: User = Depends(get_current_user),
 ):
     """Get photo for a meal."""
-    meal = db.query(Meal).filter(
-        Meal.id == meal_id,
-        Meal.user_id == current_user.id
-    ).first()
+    meal = db.query(Meal).filter(Meal.id == meal_id).first()
 
     if not meal or not meal.photo_path:
         raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Check permission - allow owner or shared users
+    if meal.user_id != current_user.id:
+        check_view_permission(meal.user_id, "nutrition", db, current_user)
 
     file_path = Path(meal.photo_path)
     if not file_path.exists():

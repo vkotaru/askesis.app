@@ -4,6 +4,7 @@
   import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
+  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const FEELINGS = [
     { value: 'happy', emoji: '😊', label: 'Happy', color: 'bg-mood-5' },
@@ -38,7 +39,7 @@
 
   async function loadLog() {
     try {
-      const log = await api.getDailyLog(selectedDate);
+      const log = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
       weight = log.weight;
       sleep_hours = log.sleep_hours;
       steps = log.steps;
@@ -61,6 +62,9 @@
   }
 
   onMount(loadLog);
+
+  // Reload when viewing user changes
+  $: $viewingUserId, loadLog();
 
   function prevDay() {
     selectedDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
@@ -286,22 +290,24 @@
       ></textarea>
     </div>
 
-    <div class="mt-6 flex justify-end">
-      <button
-        type="submit"
-        disabled={saving}
-        class={clsx('btn-primary flex items-center gap-2', saved && 'bg-primary-600')}
-      >
-        {#if saving}
-          <span class="animate-spin">⏳</span>
-          Saving...
-        {:else if saved}
-          <Check size={18} />
-          Saved!
-        {:else}
-          Save Log
-        {/if}
-      </button>
-    </div>
+    {#if !$isViewingOther}
+      <div class="mt-6 flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          class={clsx('btn-primary flex items-center gap-2', saved && 'bg-primary-600')}
+        >
+          {#if saving}
+            <span class="animate-spin">⏳</span>
+            Saving...
+          {:else if saved}
+            <Check size={18} />
+            Saved!
+          {:else}
+            Save Log
+          {/if}
+        </button>
+      </div>
+    {/if}
   </form>
 </div>

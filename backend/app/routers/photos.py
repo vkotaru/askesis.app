@@ -17,7 +17,7 @@ except ImportError:
 
 from app.database import get_db
 from app.models import User, ProgressPhoto, PhotoView
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
@@ -69,10 +69,12 @@ def get_photos(
     start_date: date | None = None,
     end_date: date | None = None,
     view: PhotoView | None = None,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == current_user.id)
+    target_user = check_view_permission(user_id, "photos", db, current_user)
+    query = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == target_user.id)
 
     if start_date:
         query = query.filter(ProgressPhoto.date >= start_date)
@@ -99,11 +101,13 @@ def get_photos(
 @router.get("/date/{photo_date}", response_model=list[PhotoResponse])
 def get_photos_by_date(
     photo_date: date,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    target_user = check_view_permission(user_id, "photos", db, current_user)
     photos = db.query(ProgressPhoto).filter(
-        ProgressPhoto.user_id == current_user.id,
+        ProgressPhoto.user_id == target_user.id,
         ProgressPhoto.date == photo_date
     ).all()
 
@@ -199,13 +203,14 @@ def get_photo_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    photo = db.query(ProgressPhoto).filter(
-        ProgressPhoto.id == photo_id,
-        ProgressPhoto.user_id == current_user.id
-    ).first()
+    photo = db.query(ProgressPhoto).filter(ProgressPhoto.id == photo_id).first()
 
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Check permission - allow owner or shared users
+    if photo.user_id != current_user.id:
+        check_view_permission(photo.user_id, "photos", db, current_user)
 
     file_path = Path(photo.file_path)
     if not file_path.exists():

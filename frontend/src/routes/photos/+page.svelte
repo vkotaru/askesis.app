@@ -4,6 +4,7 @@
   import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type ProgressPhoto, type PhotoView } from '$lib/api/client';
+  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const VIEWS: { value: PhotoView; label: string; emoji: string }[] = [
     { value: 'front', label: 'Front', emoji: '🧍' },
@@ -24,7 +25,7 @@
   async function loadPhotos() {
     loading = true;
     try {
-      photos = await api.getPhotosByDate(selectedDate);
+      photos = await api.getPhotosByDate(selectedDate, $viewingUserId ?? undefined);
     } catch (err) {
       console.error('Failed to load photos:', err);
       photos = [];
@@ -34,6 +35,9 @@
   }
 
   onMount(loadPhotos);
+
+  // Reload when viewing user changes
+  $: $viewingUserId, loadPhotos();
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
@@ -147,23 +151,30 @@
                 alt="{label} view"
                 class="w-full h-full object-cover"
               />
-              <div class="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors group">
-                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    on:click={() => triggerUpload(value)}
-                    class="p-3 bg-white/90 rounded-full mr-2 hover:bg-white transition-colors"
-                    title="Replace photo"
-                  >
-                    <Upload size={20} class="text-gray-700" />
-                  </button>
-                  <button
-                    on:click={() => deletePhoto(photo)}
-                    class="p-3 bg-white/90 rounded-full hover:bg-white transition-colors"
-                    title="Delete photo"
-                  >
-                    <Trash2 size={20} class="text-accent-500" />
-                  </button>
+              {#if !$isViewingOther}
+                <div class="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors group">
+                  <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      on:click={() => triggerUpload(value)}
+                      class="p-3 bg-white/90 rounded-full mr-2 hover:bg-white transition-colors"
+                      title="Replace photo"
+                    >
+                      <Upload size={20} class="text-gray-700" />
+                    </button>
+                    <button
+                      on:click={() => deletePhoto(photo)}
+                      class="p-3 bg-white/90 rounded-full hover:bg-white transition-colors"
+                      title="Delete photo"
+                    >
+                      <Trash2 size={20} class="text-accent-500" />
+                    </button>
+                  </div>
                 </div>
+              {/if}
+            {:else if $isViewingOther}
+              <div class="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                <Image size={48} class="mb-3 opacity-30" />
+                <span class="text-sm">No photo</span>
               </div>
             {:else}
               <button

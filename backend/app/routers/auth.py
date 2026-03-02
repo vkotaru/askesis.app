@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.config import get_settings
-from app.models import User
+from app.models import User, DataShare
 
 router = APIRouter()
 settings = get_settings()
@@ -67,6 +67,42 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=401, detail="User not found")
 
     return user
+
+
+def check_view_permission(
+    user_id: int | None,
+    category: str,
+    db: Session,
+    current_user: User,
+) -> User:
+    """
+    Check if current_user has permission to view user_id's data for the given category.
+    Returns the target user if permission granted, raises 403 otherwise.
+    If user_id is None, returns current_user (viewing own data).
+    """
+    if user_id is None or user_id == current_user.id:
+        return current_user
+
+    # Check if a share exists
+    share = db.query(DataShare).filter(
+        DataShare.owner_id == user_id,
+        DataShare.shared_with_id == current_user.id,
+    ).first()
+
+    if not share:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check if category is in shared categories
+    categories = share.categories.split(",") if share.categories else []
+    if category not in categories:
+        raise HTTPException(status_code=403, detail=f"No access to {category}")
+
+    # Get target user
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return target_user
 
 
 @router.get("/login")
