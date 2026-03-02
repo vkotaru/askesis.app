@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     allowed_emails: list[str] = []
-    dev_mode: bool = True  # Skip OAuth in development
+    dev_mode: bool = False  # Must explicitly enable in .env for development
+    cors_origins: list[str] = ["http://localhost:5173"]  # Override in production
+    token_expire_hours: int = 2  # Short-lived tokens
 
     class Config:
         env_file = ".env"

@@ -1,20 +1,48 @@
-from fastapi import FastAPI
+import logging
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import get_settings
 from app.routers import auth, daily_log, nutrition, activities, settings, measurements, photos, sharing
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("askesis")
 
 # Note: Database schema is managed by Alembic migrations
 # Run `alembic upgrade head` before starting the server
 
+app_settings = get_settings()
 app = FastAPI(title="Askesis", version="0.1.0")
 
-# CORS for frontend
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all requests with timing."""
+    start_time = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start_time) * 1000
+
+    # Log request (skip health checks to reduce noise)
+    if request.url.path != "/health":
+        logger.info(
+            f"{request.method} {request.url.path} - {response.status_code} - {duration_ms:.0f}ms"
+        )
+
+    return response
+
+
+# CORS for frontend - origins configured via CORS_ORIGINS env var
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=app_settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # Routers

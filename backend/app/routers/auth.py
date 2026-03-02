@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -26,9 +27,21 @@ if not settings.dev_mode:
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=7)
+    expire = datetime.utcnow() + timedelta(hours=settings.token_expire_hours)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.secret_key, algorithm="HS256")
+
+
+def set_auth_cookie(response, access_token: str) -> None:
+    """Set secure auth cookie with appropriate flags."""
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        max_age=settings.token_expire_hours * 60 * 60,
+        samesite="strict",
+        secure=not settings.dev_mode,  # HTTPS only in production
+    )
 
 
 def get_or_create_dev_user(db: Session) -> User:
@@ -92,8 +105,14 @@ def check_view_permission(
     if not share:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Check if category is in shared categories
-    categories = share.categories.split(",") if share.categories else []
+    # Check if category is in shared categories (supports JSON or legacy comma-separated)
+    if share.categories and share.categories.startswith("["):
+        try:
+            categories = json.loads(share.categories)
+        except json.JSONDecodeError:
+            categories = share.categories.split(",")
+    else:
+        categories = share.categories.split(",") if share.categories else []
     if category not in categories:
         raise HTTPException(status_code=403, detail=f"No access to {category}")
 
@@ -112,13 +131,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
         user = get_or_create_dev_user(db)
         access_token = create_access_token({"sub": user.email})
         response = RedirectResponse(url="/")
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            max_age=7 * 24 * 60 * 60,
-            samesite="lax",
-        )
+        set_auth_cookie(response, access_token)
         return response
 
     redirect_uri = request.url_for("auth_callback")
@@ -153,13 +166,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     # Create JWT and set cookie
     access_token = create_access_token({"sub": email})
     response = RedirectResponse(url="/")
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        max_age=7 * 24 * 60 * 60,  # 7 days
-        samesite="lax",
-    )
+    set_auth_cookie(response, access_token)
     return response
 
 

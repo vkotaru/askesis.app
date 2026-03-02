@@ -1,5 +1,6 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -51,6 +52,20 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+def parse_categories(categories_str: str | None) -> list[str]:
+    """Parse categories from JSON or legacy comma-separated format."""
+    if not categories_str:
+        return []
+    # Try JSON first (new format)
+    if categories_str.startswith("["):
+        try:
+            return json.loads(categories_str)
+        except json.JSONDecodeError:
+            pass
+    # Fall back to comma-separated (legacy)
+    return categories_str.split(",")
+
+
 def share_to_response(share: DataShare) -> ShareResponse:
     return ShareResponse(
         id=share.id,
@@ -58,7 +73,7 @@ def share_to_response(share: DataShare) -> ShareResponse:
         shared_with_name=share.shared_with.name,
         shared_with_email=share.shared_with.email,
         shared_with_picture=share.shared_with.picture,
-        categories=share.categories.split(",") if share.categories else [],
+        categories=parse_categories(share.categories),
     )
 
 
@@ -69,7 +84,7 @@ def share_to_shared_with_me(share: DataShare) -> SharedWithMeResponse:
         owner_name=share.owner.name,
         owner_email=share.owner.email,
         owner_picture=share.owner.picture,
-        categories=share.categories.split(",") if share.categories else [],
+        categories=parse_categories(share.categories),
     )
 
 
@@ -79,7 +94,12 @@ def get_my_shares(
     current_user: User = Depends(get_current_user),
 ):
     """Get list of users I'm sharing data with."""
-    shares = db.query(DataShare).filter(DataShare.owner_id == current_user.id).all()
+    shares = (
+        db.query(DataShare)
+        .options(joinedload(DataShare.shared_with))
+        .filter(DataShare.owner_id == current_user.id)
+        .all()
+    )
     return [share_to_response(s) for s in shares]
 
 
@@ -89,7 +109,12 @@ def get_shared_with_me(
     current_user: User = Depends(get_current_user),
 ):
     """Get list of users who are sharing data with me."""
-    shares = db.query(DataShare).filter(DataShare.shared_with_id == current_user.id).all()
+    shares = (
+        db.query(DataShare)
+        .options(joinedload(DataShare.owner))
+        .filter(DataShare.shared_with_id == current_user.id)
+        .all()
+    )
     return [share_to_shared_with_me(s) for s in shares]
 
 
@@ -138,7 +163,7 @@ def create_share(
     share = DataShare(
         owner_id=current_user.id,
         shared_with_id=target_user.id,
-        categories=",".join(data.categories),
+        categories=json.dumps(data.categories),
     )
     db.add(share)
     db.commit()
@@ -171,7 +196,7 @@ def update_share(
     if not data.categories:
         raise HTTPException(400, "At least one category required")
 
-    share.categories = ",".join(data.categories)
+    share.categories = json.dumps(data.categories)
     db.commit()
     db.refresh(share)
 

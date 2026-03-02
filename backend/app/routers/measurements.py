@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import date
 
 from app.database import get_db
@@ -9,24 +9,30 @@ from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
 
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
+
+# Body measurement range in cm (reasonable human ranges)
+CM_MIN, CM_MAX = 10, 200
+
 
 class MeasurementCreate(BaseModel):
     date: date
-    neck: float | None = None
-    shoulders: float | None = None
-    chest: float | None = None
-    bicep_left: float | None = None
-    bicep_right: float | None = None
-    forearm_left: float | None = None
-    forearm_right: float | None = None
-    waist: float | None = None
-    abdomen: float | None = None
-    hips: float | None = None
-    thigh_left: float | None = None
-    thigh_right: float | None = None
-    calf_left: float | None = None
-    calf_right: float | None = None
-    notes: str | None = None
+    neck: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    shoulders: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    chest: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    bicep_left: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    bicep_right: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    forearm_left: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    forearm_right: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    waist: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    abdomen: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    hips: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    thigh_left: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    thigh_right: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    calf_left: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    calf_right: float | None = Field(None, ge=CM_MIN, le=CM_MAX)
+    notes: str | None = Field(None, max_length=2000)
 
 
 class MeasurementResponse(MeasurementCreate):
@@ -42,6 +48,8 @@ def get_measurements(
     start_date: date | None = None,
     end_date: date | None = None,
     user_id: int | None = None,
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -53,7 +61,7 @@ def get_measurements(
     if end_date:
         query = query.filter(BodyMeasurement.date <= end_date)
 
-    return query.order_by(BodyMeasurement.date.desc()).all()
+    return query.order_by(BodyMeasurement.date.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/latest", response_model=MeasurementResponse | None)
