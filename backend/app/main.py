@@ -1,7 +1,9 @@
 import logging
 import time
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import auth, daily_log, nutrition, activities, settings, measurements, photos, sharing
@@ -59,3 +61,9 @@ app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+# Serve frontend static files (must be last - catches all unmatched routes)
+STATIC_DIR = Path(__file__).parent.parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
