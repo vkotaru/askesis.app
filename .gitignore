@@ -21,6 +21,10 @@ dist/
 
 # SvelteKit
 .svelte-kit/
+frontend/build/
+
+# Backend static (built from frontend)
+backend/static/
 
 # IDE
 .vscode/

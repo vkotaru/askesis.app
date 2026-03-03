@@ -1,6 +1,6 @@
 #!/bin/bash
-# Railway deployment start script
-# Runs migrations before starting the server
+# Local development start script
+# For production, Railway uses nixpacks.toml
 
 set -e
 
