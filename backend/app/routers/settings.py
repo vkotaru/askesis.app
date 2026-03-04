@@ -15,6 +15,7 @@ class UserSettingsSchema(BaseModel):
     font_size: str = "medium"
     font_family: str = "space-grotesk"
     content_width: str = "medium"
+    color_scheme: str = "forest"
 
     class Config:
         from_attributes = True
@@ -25,6 +26,7 @@ class UserSettingsUpdate(BaseModel):
     font_size: str | None = None
     font_family: str | None = None
     content_width: str | None = None
+    color_scheme: str | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -40,6 +42,7 @@ def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
             font_size="medium",
             font_family="space-grotesk",
             content_width="medium",
+            color_scheme="forest",
         )
         db.add(settings)
         try:
@@ -88,6 +91,8 @@ def update_settings(
         settings.font_family = settings_data.font_family
     if settings_data.content_width is not None:
         settings.content_width = settings_data.content_width
+    if settings_data.color_scheme is not None:
+        settings.color_scheme = settings_data.color_scheme
 
     db.commit()
     db.refresh(settings)

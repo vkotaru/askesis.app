@@ -17,6 +17,13 @@ class PhotoView(enum.Enum):
     BACK = "back"
 
 
+class TimeOfDay(enum.Enum):
+    MORNING = "morning"
+    AFTERNOON = "afternoon"
+    EVENING = "evening"
+    NIGHT = "night"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -42,6 +49,7 @@ class UserSettings(Base):
     font_size: Mapped[str] = mapped_column(String(20), default="medium")  # small, medium, large
     font_family: Mapped[str] = mapped_column(String(50), default="space-grotesk")
     content_width: Mapped[str] = mapped_column(String(20), default="medium")  # narrow, medium, wide, full
+    color_scheme: Mapped[str] = mapped_column(String(30), default="forest")  # forest, ocean, sunset, lavender, slate
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="settings")
@@ -91,9 +99,11 @@ class Activity(Base):
     date: Mapped[date] = mapped_column(Date, index=True)
     name: Mapped[str] = mapped_column(String(100))
     activity_type: Mapped[ActivityType] = mapped_column(Enum(ActivityType))
+    time_of_day: Mapped[TimeOfDay | None] = mapped_column(Enum(TimeOfDay), nullable=True)
     duration_mins: Mapped[int | None] = mapped_column(Integer)
     calories: Mapped[int | None] = mapped_column(Integer)
     distance_km: Mapped[float | None] = mapped_column(Float)
+    url: Mapped[str | None] = mapped_column(String(500))  # External link (Strava, Hevy, Garmin)
     notes: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[str | None] = mapped_column(String(255))  # Comma-separated
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -55,14 +55,18 @@ export interface Exercise {
   notes?: string;
 }
 
+export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
+
 export interface Activity {
   id: number;
   date: string;
   name: string;
   activity_type: 'cardio' | 'strength';
+  time_of_day?: TimeOfDay;
   duration_mins?: number;
   calories?: number;
   distance_km?: number;
+  url?: string;
   notes?: string;
   tags?: string;
   exercises: Exercise[];
@@ -77,11 +81,14 @@ export interface CalendarEvent {
   duration_mins?: number;
 }
 
+export type ColorScheme = 'forest' | 'ocean' | 'sunset' | 'lavender' | 'slate';
+
 export interface UserSettings {
   theme: 'light' | 'dark' | 'system';
   font_size: 'small' | 'medium' | 'large';
   font_family: string;
   content_width: 'narrow' | 'medium' | 'wide' | 'full';
+  color_scheme: ColorScheme;
 }
 
 export interface BodyMeasurement {

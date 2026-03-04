@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
-  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory } from '$lib/api/client';
+  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme } from '$lib/api/client';
 
   // Sharing state
   let myShares: DataShare[] = [];
@@ -103,6 +103,14 @@
     { value: 'dark', icon: Moon, label: 'Dark' },
     { value: 'system', icon: Monitor, label: 'System' },
   ];
+
+  const COLOR_SCHEMES: { value: ColorScheme; label: string; primary: string; accent: string }[] = [
+    { value: 'forest', label: 'Forest', primary: '#3d8b65', accent: '#f76a4d' },
+    { value: 'ocean', label: 'Ocean', primary: '#3b9af4', accent: '#14b8a6' },
+    { value: 'sunset', label: 'Sunset', primary: '#f97316', accent: '#ec4899' },
+    { value: 'lavender', label: 'Lavender', primary: '#a855f7', accent: '#f43f5e' },
+    { value: 'slate', label: 'Slate', primary: '#64748b', accent: '#3b82f6' },
+  ];
 </script>
 
 <svelte:head>
@@ -135,6 +143,33 @@
           >
             <Icon size={18} />
             {label}
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <!-- Color Scheme -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <Palette size={20} class="text-accent-500" />
+        <h2 class="text-lg font-semibold">Color Scheme</h2>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {#each COLOR_SCHEMES as { value, label, primary, accent }}
+          <button
+            on:click={() => settings.updateSetting('color_scheme', value)}
+            class={clsx(
+              'flex flex-col items-center gap-2 px-4 py-4 rounded-xl border-2 transition-all',
+              $settings.color_scheme === value
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
+                : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+            )}
+          >
+            <div class="flex gap-1">
+              <div class="w-6 h-6 rounded-full" style="background-color: {primary}"></div>
+              <div class="w-6 h-6 rounded-full" style="background-color: {accent}"></div>
+            </div>
+            <span class="font-medium text-sm">{label}</span>
           </button>
         {/each}
       </div>
