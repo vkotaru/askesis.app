@@ -135,6 +135,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
         return response
 
     redirect_uri = request.url_for("auth_callback")
+    # Force HTTPS in production (behind reverse proxy)
+    redirect_uri = str(redirect_uri).replace("http://", "https://")
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
