@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
 from app.routers import auth, daily_log, nutrition, activities, settings, measurements, photos, sharing
@@ -37,6 +38,9 @@ async def log_requests(request: Request, call_next):
 
     return response
 
+
+# Session middleware for OAuth state
+app.add_middleware(SessionMiddleware, secret_key=app_settings.secret_key)
 
 # CORS for frontend - origins configured via CORS_ORIGINS env var
 app.add_middleware(
