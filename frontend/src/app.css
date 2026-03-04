@@ -4,6 +4,29 @@
 
 :root {
   --font-sans: 'Space Grotesk', system-ui, sans-serif;
+
+  /* Default color scheme: forest */
+  --color-primary-50: #f1f8f4;
+  --color-primary-100: #dceee3;
+  --color-primary-200: #bbddc9;
+  --color-primary-300: #8ec5a7;
+  --color-primary-400: #5ea883;
+  --color-primary-500: #3d8b65;
+  --color-primary-600: #2d7050;
+  --color-primary-700: #265a42;
+  --color-primary-800: #224836;
+  --color-primary-900: #1d3c2e;
+
+  --color-accent-50: #fff5f3;
+  --color-accent-100: #ffe8e3;
+  --color-accent-200: #ffd5cc;
+  --color-accent-300: #ffb5a6;
+  --color-accent-400: #ff8a72;
+  --color-accent-500: #f76a4d;
+  --color-accent-600: #e44d2e;
+  --color-accent-700: #c03d22;
+  --color-accent-800: #9e3520;
+  --color-accent-900: #833221;
 }
 
 body {

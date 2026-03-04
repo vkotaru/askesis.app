@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-svelte';
+  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type Activity as ActivityType, type ActivityInput } from '$lib/api/client';
+  import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const ACTIVITY_TAGS = ['Commute', 'Training', 'Race', 'Social', 'Fun', 'Weekend'];
@@ -17,9 +17,24 @@
     Weekend: 'bg-strength-100 text-strength-700 dark:bg-strength-900/30 dark:text-strength-400',
   };
 
+  const TIME_OF_DAY_OPTIONS: { value: TimeOfDay; label: string; icon: typeof Sun }[] = [
+    { value: 'morning', label: 'Morning', icon: Sunrise },
+    { value: 'afternoon', label: 'Afternoon', icon: Sun },
+    { value: 'evening', label: 'Evening', icon: Sunset },
+    { value: 'night', label: 'Night', icon: Moon },
+  ];
+
+  function getPlatformFromUrl(url: string): { name: string; color: string } | null {
+    if (url.includes('strava.com')) return { name: 'Strava', color: 'text-orange-500' };
+    if (url.includes('hevy.com')) return { name: 'Hevy', color: 'text-blue-500' };
+    if (url.includes('garmin.com')) return { name: 'Garmin', color: 'text-cyan-600' };
+    return null;
+  }
+
   let activities: ActivityType[] = [];
   let showForm = false;
   let selectedTags: string[] = [];
+  let selectedTimeOfDay: TimeOfDay | null = null;
   let loading = true;
   let expandedActivity: number | null = null;
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
@@ -69,13 +84,16 @@
 
   async function handleSubmit(e: SubmitEvent) {
     const formData = new FormData(e.target as HTMLFormElement);
+    const urlValue = (formData.get('url') as string)?.trim();
     const data: ActivityInput = {
       date: formData.get('date') as string,
       name: formData.get('name') as string,
       activity_type: formData.get('activity_type') as 'cardio' | 'strength',
+      time_of_day: selectedTimeOfDay || undefined,
       duration_mins: parseInt(formData.get('duration_mins') as string) || undefined,
       calories: parseInt(formData.get('calories') as string) || undefined,
       distance_km: parseFloat(formData.get('distance_km') as string) || undefined,
+      url: urlValue || undefined,
       notes: formData.get('notes') as string,
       tags: selectedTags.join(','),
       exercises: [],
@@ -85,6 +103,7 @@
       await api.createActivity(data);
       showForm = false;
       selectedTags = [];
+      selectedTimeOfDay = null;
       loadActivities();
     } catch (err) {
       console.error('Failed to create activity:', err);
@@ -163,6 +182,27 @@
           </select>
         </div>
         <div>
+          <span class="label">Time of Day</span>
+          <div class="flex gap-2">
+            {#each TIME_OF_DAY_OPTIONS as tod}
+              {@const isSelected = selectedTimeOfDay === tod.value}
+              <button
+                type="button"
+                on:click={() => selectedTimeOfDay = isSelected ? null : tod.value}
+                class={clsx(
+                  'flex-1 flex flex-col items-center gap-1 p-2 rounded-lg border transition-all',
+                  isSelected
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-600'
+                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                <svelte:component this={tod.icon} size={16} />
+                <span class="text-xs">{tod.label}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+        <div>
           <label for="duration" class="label">Duration (mins)</label>
           <input id="duration" type="number" name="duration_mins" placeholder="30" class="input" />
         </div>
@@ -173,6 +213,10 @@
         <div>
           <label for="distance" class="label">Distance (km)</label>
           <input id="distance" type="number" name="distance_km" step="0.1" placeholder="5.0" class="input" />
+        </div>
+        <div class="md:col-span-3">
+          <label for="url" class="label">External Link (Strava, Hevy, Garmin)</label>
+          <input id="url" type="url" name="url" placeholder="https://www.strava.com/activities/..." class="input" />
         </div>
       </div>
 
@@ -203,7 +247,7 @@
       </div>
 
       <div class="mt-6 flex justify-end gap-3">
-        <button type="button" on:click={() => { showForm = false; selectedTags = []; }} class="btn-secondary">
+        <button type="button" on:click={() => { showForm = false; selectedTags = []; selectedTimeOfDay = null; }} class="btn-secondary">
           Cancel
         </button>
         <button type="submit" class="btn-primary">Save Activity</button>
@@ -244,7 +288,7 @@
                   {/if}
                 </div>
                 <div>
-                  <div class="flex items-center gap-2 mb-1">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
                     <span class="font-semibold">{activity.name}</span>
                     <span
                       class={clsx(
@@ -256,6 +300,31 @@
                     >
                       {activity.activity_type}
                     </span>
+                    {#if activity.time_of_day}
+                      {@const todOption = TIME_OF_DAY_OPTIONS.find(t => t.value === activity.time_of_day)}
+                      {#if todOption}
+                        <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 flex items-center gap-1">
+                          <svelte:component this={todOption.icon} size={12} />
+                          {todOption.label}
+                        </span>
+                      {/if}
+                    {/if}
+                    {#if activity.url}
+                      {@const platform = getPlatformFromUrl(activity.url)}
+                      <a
+                        href={activity.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        on:click|stopPropagation
+                        class={clsx(
+                          'text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 dark:bg-gray-700 flex items-center gap-1 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors',
+                          platform?.color || 'text-gray-600 dark:text-gray-400'
+                        )}
+                      >
+                        <ExternalLink size={12} />
+                        {platform?.name || 'Link'}
+                      </a>
+                    {/if}
                     {#if hasExercises}
                       <span class="text-xs text-gray-400">
                         ({activity.exercises.length} exercises)

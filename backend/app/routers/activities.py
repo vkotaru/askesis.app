@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from datetime import date
 
 from app.database import get_db
-from app.models import User, Activity, Exercise, WorkoutTemplate, ActivityType
+from app.models import User, Activity, Exercise, WorkoutTemplate, ActivityType, TimeOfDay
 from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
@@ -32,9 +32,11 @@ class ActivityCreate(BaseModel):
     date: date
     name: str = Field(..., min_length=1, max_length=100)
     activity_type: ActivityType
+    time_of_day: TimeOfDay | None = None
     duration_mins: int | None = Field(None, ge=1, le=1440)  # Max 24 hours
     calories: int | None = Field(None, ge=0, le=10000)
     distance_km: float | None = Field(None, ge=0, le=500)
+    url: str | None = Field(None, max_length=500)  # External link (Strava, Hevy, Garmin)
     notes: str | None = Field(None, max_length=2000)
     tags: str | None = Field(None, max_length=255)
     exercises: list[ExerciseCreate] = Field(default_factory=list, max_length=50)
@@ -46,9 +48,11 @@ class ActivityResponse(BaseModel):
     date: date
     name: str
     activity_type: ActivityType
+    time_of_day: TimeOfDay | None
     duration_mins: int | None
     calories: int | None
     distance_km: float | None
+    url: str | None
     notes: str | None
     tags: str | None
     exercises: list[ExerciseResponse]
