@@ -40,7 +40,12 @@ async def log_requests(request: Request, call_next):
 
 
 # Session middleware for OAuth state
-app.add_middleware(SessionMiddleware, secret_key=app_settings.secret_key)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=app_settings.secret_key,
+    same_site="lax",  # Allow cookie on OAuth redirect
+    https_only=not app_settings.dev_mode,  # HTTPS only in production
+)
 
 # CORS for frontend - origins configured via CORS_ORIGINS env var
 app.add_middleware(
