@@ -5,18 +5,25 @@ from app.config import get_settings
 
 settings = get_settings()
 
-engine = create_engine(
-    settings.database_url,
-    connect_args={"check_same_thread": False}  # SQLite specific
-)
+# Configure engine based on database type
+is_sqlite = settings.database_url.startswith("sqlite")
 
-# Enable WAL mode for better concurrent access
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+if is_sqlite:
+    engine = create_engine(
+        settings.database_url,
+        connect_args={"check_same_thread": False}  # SQLite specific
+    )
+
+    # Enable WAL mode for better concurrent access (SQLite only)
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+else:
+    # PostgreSQL or other databases
+    engine = create_engine(settings.database_url)
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
