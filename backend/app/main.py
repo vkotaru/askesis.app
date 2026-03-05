@@ -78,14 +78,23 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
     from fastapi.responses import FileResponse
 
-    # Mount static assets (JS, CSS, images, etc.)
-    app.mount("/_app", StaticFiles(directory=STATIC_DIR / "_app"), name="app-assets")
+    # Mount static assets directories if they exist
+    _app_dir = STATIC_DIR / "_app"
+    if _app_dir.exists():
+        app.mount("/_app", StaticFiles(directory=_app_dir), name="app-assets")
 
     # SPA fallback: serve index.html for all non-API routes
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        # Security: prevent path traversal
+        try:
+            file_path = (STATIC_DIR / full_path).resolve()
+            if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+                return FileResponse(STATIC_DIR / "index.html")
+        except (ValueError, OSError):
+            return FileResponse(STATIC_DIR / "index.html")
+
         # Try to serve the exact file first
-        file_path = STATIC_DIR / full_path
         if file_path.is_file():
             return FileResponse(file_path)
         # Otherwise serve index.html for client-side routing
