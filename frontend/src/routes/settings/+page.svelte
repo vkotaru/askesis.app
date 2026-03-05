@@ -546,7 +546,7 @@
         Askesis is a personal health tracking app for you and your family.
       </p>
       <div class="mt-4 flex items-center gap-4 text-sm text-gray-500">
-        <span>Version 0.1.0</span>
+        <span>Version 0.2.0</span>
         <span class="w-1 h-1 rounded-full bg-gray-300"></span>
         <span>Settings sync across devices</span>
       </div>
