@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Ruler, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
+  import { Ruler, Check, ChevronLeft, ChevronRight, Upload } from 'lucide-svelte';
+  import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
@@ -10,6 +11,7 @@
   let saving = false;
   let saved = false;
   let loading = true;
+  let showImportModal = false;
 
   // Measurement fields
   let neck: number | undefined;
@@ -162,7 +164,14 @@
       </h1>
       <p class="text-gray-500 text-sm mt-1">Track your body measurements in cm</p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-3">
+      {#if !$isViewingOther}
+        <button on:click={() => (showImportModal = true)} class="btn-secondary flex items-center gap-2">
+          <Upload size={20} />
+          Import
+        </button>
+      {/if}
+      <div class="flex items-center gap-2">
       <button
         type="button"
         on:click={prevDay}
@@ -183,6 +192,7 @@
       >
         <ChevronRight size={20} />
       </button>
+      </div>
     </div>
   </div>
 
@@ -414,3 +424,10 @@
     </form>
   {/if}
 </div>
+
+<ImportModal
+  bind:show={showImportModal}
+  dataType="measurements"
+  title="Import Measurements"
+  on:success={() => loadMeasurement()}
+/>

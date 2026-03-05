@@ -50,6 +50,11 @@ class UserSettings(Base):
     font_family: Mapped[str] = mapped_column(String(50), default="space-grotesk")
     content_width: Mapped[str] = mapped_column(String(20), default="medium")  # narrow, medium, wide, full
     color_scheme: Mapped[str] = mapped_column(String(30), default="forest")  # forest, ocean, sunset, lavender, slate
+    # Unit preferences (stored in metric, converted for display)
+    distance_unit: Mapped[str] = mapped_column(String(10), default="km")  # km, mi
+    measurement_unit: Mapped[str] = mapped_column(String(10), default="cm")  # cm, in
+    weight_unit: Mapped[str] = mapped_column(String(10), default="kg")  # kg, lb
+    water_unit: Mapped[str] = mapped_column(String(10), default="ml")  # ml, L, oz, cups
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="settings")

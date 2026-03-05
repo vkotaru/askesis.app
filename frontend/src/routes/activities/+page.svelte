@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon } from 'lucide-svelte';
+  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload } from 'lucide-svelte';
+  import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
@@ -33,6 +34,7 @@
 
   let activities: ActivityType[] = [];
   let showForm = false;
+  let showImportModal = false;
   let selectedTags: string[] = [];
   let selectedTimeOfDay: TimeOfDay | null = null;
   let loading = true;
@@ -154,6 +156,10 @@
         </button>
       </div>
       {#if !$isViewingOther}
+        <button on:click={() => (showImportModal = true)} class="btn-secondary flex items-center gap-2">
+          <Upload size={20} />
+          Import
+        </button>
         <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
           <Plus size={20} />
           Add Activity
@@ -425,3 +431,10 @@
     {/if}
   </div>
 </div>
+
+<ImportModal
+  bind:show={showImportModal}
+  dataType="activities"
+  title="Import Activities"
+  on:success={() => loadActivities()}
+/>
