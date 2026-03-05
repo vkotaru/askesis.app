@@ -73,7 +73,20 @@ def health_check():
     return {"status": "healthy"}
 
 
-# Serve frontend static files (must be last - catches all unmatched routes)
+# Serve frontend static files with SPA fallback
 STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    from fastapi.responses import FileResponse
+
+    # Mount static assets (JS, CSS, images, etc.)
+    app.mount("/_app", StaticFiles(directory=STATIC_DIR / "_app"), name="app-assets")
+
+    # SPA fallback: serve index.html for all non-API routes
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Try to serve the exact file first
+        file_path = STATIC_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html for client-side routing
+        return FileResponse(STATIC_DIR / "index.html")
