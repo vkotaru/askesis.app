@@ -15,11 +15,25 @@ const DEFAULT_SETTINGS: UserSettings = {
 };
 
 const FONT_MAP: Record<string, string> = {
+  // Geometric
   'space-grotesk': "'Space Grotesk', system-ui, sans-serif",
+  poppins: "'Poppins', system-ui, sans-serif",
+  outfit: "'Outfit', system-ui, sans-serif",
+  montserrat: "'Montserrat', system-ui, sans-serif",
+  manrope: "'Manrope', system-ui, sans-serif",
+  raleway: "'Raleway', system-ui, sans-serif",
+  // Humanist
   inter: "'Inter', system-ui, sans-serif",
   'plus-jakarta': "'Plus Jakarta Sans', system-ui, sans-serif",
+  'open-sans': "'Open Sans', system-ui, sans-serif",
+  'source-sans': "'Source Sans 3', system-ui, sans-serif",
+  'work-sans': "'Work Sans', system-ui, sans-serif",
+  lato: "'Lato', system-ui, sans-serif",
+  ubuntu: "'Ubuntu', system-ui, sans-serif",
+  // Grotesque
+  roboto: "'Roboto', system-ui, sans-serif",
   'dm-sans': "'DM Sans', system-ui, sans-serif",
-  outfit: "'Outfit', system-ui, sans-serif",
+  // Rounded
   nunito: "'Nunito', system-ui, sans-serif",
   rubik: "'Rubik', system-ui, sans-serif",
 };

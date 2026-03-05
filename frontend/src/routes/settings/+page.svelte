@@ -3,7 +3,7 @@
   import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
-  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
+  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme } from '$lib/api/client';
 
   // Sharing state
   let myShares: DataShare[] = [];
@@ -81,14 +81,28 @@
     { value: 'large', label: 'Large', size: '18px' },
   ];
 
-  const FONTS: { value: FontFamily; label: string; preview: string }[] = [
-    { value: 'space-grotesk', label: 'Space Grotesk', preview: 'Modern geometric' },
-    { value: 'inter', label: 'Inter', preview: 'Clean & readable' },
-    { value: 'plus-jakarta', label: 'Plus Jakarta Sans', preview: 'Friendly & warm' },
-    { value: 'dm-sans', label: 'DM Sans', preview: 'Geometric simplicity' },
-    { value: 'outfit', label: 'Outfit', preview: 'Contemporary' },
-    { value: 'nunito', label: 'Nunito', preview: 'Rounded & soft' },
-    { value: 'rubik', label: 'Rubik', preview: 'Slightly rounded' },
+  const FONTS: { value: FontFamily; label: string; family: string; category: string }[] = [
+    // Sans-serif - Geometric
+    { value: 'space-grotesk', label: 'Space Grotesk', family: 'Space Grotesk', category: 'Geometric' },
+    { value: 'poppins', label: 'Poppins', family: 'Poppins', category: 'Geometric' },
+    { value: 'outfit', label: 'Outfit', family: 'Outfit', category: 'Geometric' },
+    { value: 'montserrat', label: 'Montserrat', family: 'Montserrat', category: 'Geometric' },
+    { value: 'manrope', label: 'Manrope', family: 'Manrope', category: 'Geometric' },
+    { value: 'raleway', label: 'Raleway', family: 'Raleway', category: 'Geometric' },
+    // Sans-serif - Humanist
+    { value: 'inter', label: 'Inter', family: 'Inter', category: 'Humanist' },
+    { value: 'plus-jakarta', label: 'Plus Jakarta Sans', family: 'Plus Jakarta Sans', category: 'Humanist' },
+    { value: 'open-sans', label: 'Open Sans', family: 'Open Sans', category: 'Humanist' },
+    { value: 'source-sans', label: 'Source Sans 3', family: 'Source Sans 3', category: 'Humanist' },
+    { value: 'work-sans', label: 'Work Sans', family: 'Work Sans', category: 'Humanist' },
+    { value: 'lato', label: 'Lato', family: 'Lato', category: 'Humanist' },
+    { value: 'ubuntu', label: 'Ubuntu', family: 'Ubuntu', category: 'Humanist' },
+    // Sans-serif - Grotesque
+    { value: 'roboto', label: 'Roboto', family: 'Roboto', category: 'Grotesque' },
+    { value: 'dm-sans', label: 'DM Sans', family: 'DM Sans', category: 'Grotesque' },
+    // Sans-serif - Rounded
+    { value: 'nunito', label: 'Nunito', family: 'Nunito', category: 'Rounded' },
+    { value: 'rubik', label: 'Rubik', family: 'Rubik', category: 'Rounded' },
   ];
 
   const CONTENT_WIDTHS: { value: ContentWidth; label: string; description: string }[] = [
@@ -210,7 +224,7 @@
           <select
             class="input"
             value={$settings.distance_unit}
-            on:change={(e) => settings.updateSetting('distance_unit', e.currentTarget.value as DistanceUnit)}
+            on:change={(e) => settings.updateSetting('distance_unit', e.currentTarget.value)}
           >
             {#each DISTANCE_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -222,7 +236,7 @@
           <select
             class="input"
             value={$settings.measurement_unit}
-            on:change={(e) => settings.updateSetting('measurement_unit', e.currentTarget.value as MeasurementUnit)}
+            on:change={(e) => settings.updateSetting('measurement_unit', e.currentTarget.value)}
           >
             {#each MEASUREMENT_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -234,7 +248,7 @@
           <select
             class="input"
             value={$settings.weight_unit}
-            on:change={(e) => settings.updateSetting('weight_unit', e.currentTarget.value as WeightUnit)}
+            on:change={(e) => settings.updateSetting('weight_unit', e.currentTarget.value)}
           >
             {#each WEIGHT_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -246,7 +260,7 @@
           <select
             class="input"
             value={$settings.water_unit}
-            on:change={(e) => settings.updateSetting('water_unit', e.currentTarget.value as WaterUnit)}
+            on:change={(e) => settings.updateSetting('water_unit', e.currentTarget.value)}
           >
             {#each WATER_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -265,24 +279,53 @@
 
       <!-- Font Family -->
       <div class="mb-6">
-        <label class="label">Font Family</label>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {#each FONTS as { value, label, preview }}
-            <button
-              on:click={() => settings.updateSetting('font_family', value)}
-              class={clsx(
-                'text-left px-4 py-3 rounded-xl border-2 transition-all',
-                $settings.font_family === value
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
-                  : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-              )}
-              style="font-family: '{label}', system-ui, sans-serif"
+        <label for="font-family" class="label">Font Family</label>
+        <select
+          id="font-family"
+          class="input max-w-md"
+          value={$settings.font_family}
+          on:change={(e) => settings.updateSetting('font_family', e.currentTarget.value)}
+        >
+          <optgroup label="Geometric">
+            {#each FONTS.filter(f => f.category === 'Geometric') as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </optgroup>
+          <optgroup label="Humanist">
+            {#each FONTS.filter(f => f.category === 'Humanist') as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </optgroup>
+          <optgroup label="Grotesque">
+            {#each FONTS.filter(f => f.category === 'Grotesque') as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </optgroup>
+          <optgroup label="Rounded">
+            {#each FONTS.filter(f => f.category === 'Rounded') as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </optgroup>
+        </select>
+        <!-- Font Preview -->
+        {@const selectedFont = FONTS.find(f => f.value === $settings.font_family)}
+        {#if selectedFont}
+          <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+            <p class="text-xs text-gray-500 mb-2">Preview</p>
+            <p
+              class="text-xl font-medium"
+              style="font-family: '{selectedFont.family}', system-ui, sans-serif"
             >
-              <span class="font-semibold block">{label}</span>
-              <span class="text-sm text-gray-500">{preview}</span>
-            </button>
-          {/each}
-        </div>
+              The quick brown fox jumps over the lazy dog.
+            </p>
+            <p
+              class="text-sm text-gray-600 dark:text-gray-400 mt-2"
+              style="font-family: '{selectedFont.family}', system-ui, sans-serif"
+            >
+              0123456789 • ABCDEFGHIJKLMNOPQRSTUVWXYZ • abcdefghijklmnopqrstuvwxyz
+            </p>
+          </div>
+        {/if}
       </div>
 
       <!-- Font Size -->
