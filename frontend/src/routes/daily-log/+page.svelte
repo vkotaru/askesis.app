@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload } from 'lucide-svelte';
+  import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
@@ -26,6 +27,7 @@
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
   let saving = false;
   let saved = false;
+  let showImportModal = false;
 
   // Form fields - directly bound
   let weight: number | undefined;
@@ -124,7 +126,14 @@
       <h1 class="text-2xl font-bold">Daily Log</h1>
       <p class="text-gray-500 text-sm mt-1">Track your daily metrics</p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-3">
+      {#if !$isViewingOther}
+        <button on:click={() => (showImportModal = true)} class="btn-secondary flex items-center gap-2">
+          <Upload size={20} />
+          Import
+        </button>
+      {/if}
+      <div class="flex items-center gap-2">
       <button
         type="button"
         on:click={prevDay}
@@ -145,6 +154,7 @@
       >
         <ChevronRight size={20} />
       </button>
+      </div>
     </div>
   </div>
 
@@ -311,3 +321,10 @@
     {/if}
   </form>
 </div>
+
+<ImportModal
+  bind:show={showImportModal}
+  dataType="daily-logs"
+  title="Import Daily Logs"
+  on:success={() => loadLog()}
+/>

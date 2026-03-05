@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
-  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme } from '$lib/api/client';
+  import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
 
   // Sharing state
   let myShares: DataShare[] = [];
@@ -111,6 +111,28 @@
     { value: 'lavender', label: 'Lavender', primary: '#a855f7', accent: '#f43f5e' },
     { value: 'slate', label: 'Slate', primary: '#64748b', accent: '#3b82f6' },
   ];
+
+  const DISTANCE_UNITS: { value: DistanceUnit; label: string }[] = [
+    { value: 'km', label: 'Kilometers (km)' },
+    { value: 'mi', label: 'Miles (mi)' },
+  ];
+
+  const MEASUREMENT_UNITS: { value: MeasurementUnit; label: string }[] = [
+    { value: 'cm', label: 'Centimeters (cm)' },
+    { value: 'in', label: 'Inches (in)' },
+  ];
+
+  const WEIGHT_UNITS: { value: WeightUnit; label: string }[] = [
+    { value: 'kg', label: 'Kilograms (kg)' },
+    { value: 'lb', label: 'Pounds (lb)' },
+  ];
+
+  const WATER_UNITS: { value: WaterUnit; label: string }[] = [
+    { value: 'ml', label: 'Milliliters (ml)' },
+    { value: 'L', label: 'Liters (L)' },
+    { value: 'oz', label: 'Fluid ounces (oz)' },
+    { value: 'cups', label: 'Cups' },
+  ];
 </script>
 
 <svelte:head>
@@ -172,6 +194,65 @@
             <span class="font-medium text-sm">{label}</span>
           </button>
         {/each}
+      </div>
+    </div>
+
+    <!-- Units -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <Ruler size={20} class="text-rest-500" />
+        <h2 class="text-lg font-semibold">Units</h2>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">Data is stored in metric units and converted for display based on your preferences.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <label class="label">Distance (running)</label>
+          <select
+            class="input"
+            value={$settings.distance_unit}
+            on:change={(e) => settings.updateSetting('distance_unit', e.currentTarget.value as DistanceUnit)}
+          >
+            {#each DISTANCE_UNITS as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </select>
+        </div>
+        <div>
+          <label class="label">Body Measurements</label>
+          <select
+            class="input"
+            value={$settings.measurement_unit}
+            on:change={(e) => settings.updateSetting('measurement_unit', e.currentTarget.value as MeasurementUnit)}
+          >
+            {#each MEASUREMENT_UNITS as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </select>
+        </div>
+        <div>
+          <label class="label">Body Weight</label>
+          <select
+            class="input"
+            value={$settings.weight_unit}
+            on:change={(e) => settings.updateSetting('weight_unit', e.currentTarget.value as WeightUnit)}
+          >
+            {#each WEIGHT_UNITS as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </select>
+        </div>
+        <div>
+          <label class="label">Water Intake</label>
+          <select
+            class="input"
+            value={$settings.water_unit}
+            on:change={(e) => settings.updateSetting('water_unit', e.currentTarget.value as WaterUnit)}
+          >
+            {#each WATER_UNITS as { value, label }}
+              <option value={value}>{label}</option>
+            {/each}
+          </select>
+        </div>
       </div>
     </div>
 

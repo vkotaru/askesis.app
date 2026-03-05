@@ -16,6 +16,11 @@ class UserSettingsSchema(BaseModel):
     font_family: str = "space-grotesk"
     content_width: str = "medium"
     color_scheme: str = "forest"
+    # Unit preferences
+    distance_unit: str = "km"
+    measurement_unit: str = "cm"
+    weight_unit: str = "kg"
+    water_unit: str = "ml"
 
     class Config:
         from_attributes = True
@@ -27,6 +32,10 @@ class UserSettingsUpdate(BaseModel):
     font_family: str | None = None
     content_width: str | None = None
     color_scheme: str | None = None
+    distance_unit: str | None = None
+    measurement_unit: str | None = None
+    weight_unit: str | None = None
+    water_unit: str | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -43,6 +52,10 @@ def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
             font_family="space-grotesk",
             content_width="medium",
             color_scheme="forest",
+            distance_unit="km",
+            measurement_unit="cm",
+            weight_unit="kg",
+            water_unit="ml",
         )
         db.add(settings)
         try:
@@ -93,6 +106,14 @@ def update_settings(
         settings.content_width = settings_data.content_width
     if settings_data.color_scheme is not None:
         settings.color_scheme = settings_data.color_scheme
+    if settings_data.distance_unit is not None:
+        settings.distance_unit = settings_data.distance_unit
+    if settings_data.measurement_unit is not None:
+        settings.measurement_unit = settings_data.measurement_unit
+    if settings_data.weight_unit is not None:
+        settings.weight_unit = settings_data.weight_unit
+    if settings_data.water_unit is not None:
+        settings.water_unit = settings_data.water_unit
 
     db.commit()
     db.refresh(settings)

@@ -8,6 +8,10 @@ const DEFAULT_SETTINGS: UserSettings = {
   font_family: 'space-grotesk',
   content_width: 'medium',
   color_scheme: 'forest',
+  distance_unit: 'km',
+  measurement_unit: 'cm',
+  weight_unit: 'kg',
+  water_unit: 'ml',
 };
 
 const FONT_MAP: Record<string, string> = {

@@ -82,6 +82,10 @@ export interface CalendarEvent {
 }
 
 export type ColorScheme = 'forest' | 'ocean' | 'sunset' | 'lavender' | 'slate';
+export type DistanceUnit = 'km' | 'mi';
+export type MeasurementUnit = 'cm' | 'in';
+export type WeightUnit = 'kg' | 'lb';
+export type WaterUnit = 'ml' | 'L' | 'oz' | 'cups';
 
 export interface UserSettings {
   theme: 'light' | 'dark' | 'system';
@@ -89,6 +93,10 @@ export interface UserSettings {
   font_family: string;
   content_width: 'narrow' | 'medium' | 'wide' | 'full';
   color_scheme: ColorScheme;
+  distance_unit: DistanceUnit;
+  measurement_unit: MeasurementUnit;
+  weight_unit: WeightUnit;
+  water_unit: WaterUnit;
 }
 
 export interface BodyMeasurement {
@@ -150,6 +158,31 @@ export interface ShareableUser {
   name: string;
   email: string;
   picture?: string;
+}
+
+// Import types
+export interface ImportPreview {
+  columns: string[];
+  rows: Record<string, string>[];
+  total_rows: number;
+}
+
+export interface ColumnMapping {
+  csv_column: string;
+  field: string;
+  unit?: string;
+}
+
+export interface ImportRequest {
+  data: Record<string, string>[];
+  column_mapping: ColumnMapping[];
+  unit_mapping: Record<string, string>;
+}
+
+export interface ImportResult {
+  success_count: number;
+  error_count: number;
+  errors: string[];
 }
 
 // API Client
@@ -344,4 +377,26 @@ export const api = {
     }),
   deleteShare: (id: number) =>
     fetchJSON(`/api/sharing/${id}`, { method: 'DELETE' }),
+
+  // Import
+  previewCsv: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchFormData<ImportPreview>('/api/import/preview', formData);
+  },
+  importActivities: (data: ImportRequest) =>
+    fetchJSON<ImportResult>('/api/import/activities', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  importDailyLogs: (data: ImportRequest) =>
+    fetchJSON<ImportResult>('/api/import/daily-logs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  importMeasurements: (data: ImportRequest) =>
+    fetchJSON<ImportResult>('/api/import/measurements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
