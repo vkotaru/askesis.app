@@ -105,6 +105,8 @@
     { value: 'rubik', label: 'Rubik', family: 'Rubik', category: 'Rounded' },
   ];
 
+  $: selectedFont = FONTS.find(f => f.value === $settings.font_family);
+
   const CONTENT_WIDTHS: { value: ContentWidth; label: string; description: string }[] = [
     { value: 'narrow', label: 'Narrow', description: '768px - Focused reading' },
     { value: 'medium', label: 'Medium', description: '1024px - Balanced' },
@@ -308,7 +310,6 @@
           </optgroup>
         </select>
         <!-- Font Preview -->
-        {@const selectedFont = FONTS.find(f => f.value === $settings.font_family)}
         {#if selectedFont}
           <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
             <p class="text-xs text-gray-500 mb-2">Preview</p>
