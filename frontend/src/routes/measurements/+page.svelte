@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Ruler, Check, ChevronLeft, ChevronRight, Upload } from 'lucide-svelte';
+  import { Ruler, Check, ChevronLeft, ChevronRight, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+
+  let recentMeasurements: BodyMeasurement[] = [];
 
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
   let saving = false;
@@ -99,10 +101,31 @@
     notes = '';
   }
 
-  onMount(loadMeasurement);
+  async function loadRecentMeasurements() {
+    try {
+      const endDate = format(new Date(), 'yyyy-MM-dd');
+      const startDate = format(subDays(new Date(), 365), 'yyyy-MM-dd');
+      const measurements = await api.getMeasurements(startDate, endDate, $viewingUserId ?? undefined);
+      // Sort by date descending and take last 10
+      recentMeasurements = measurements.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+    } catch {
+      recentMeasurements = [];
+    }
+  }
+
+  onMount(() => {
+    loadMeasurement();
+    loadRecentMeasurements();
+  });
 
   // Reload when viewing user changes
   $: $viewingUserId, loadMeasurement();
+  $: $viewingUserId, loadRecentMeasurements();
+
+  function goToDate(date: string) {
+    selectedDate = date;
+    loadMeasurement();
+  }
 
   async function handleSubmit() {
     saving = true;
@@ -127,6 +150,7 @@
         notes: notes || undefined,
       });
       saved = true;
+      loadRecentMeasurements(); // Refresh recent entries
       setTimeout(() => (saved = false), 2000);
     } catch (err) {
       console.error('Failed to save:', err);
@@ -423,11 +447,90 @@
       </div>
     </form>
   {/if}
+
+<!-- Recent Measurements -->
+  {#if recentMeasurements.length > 0}
+    <div class="card p-6 mt-6">
+      <div class="flex items-center gap-2 mb-4">
+        <History size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Recent Measurements</h2>
+        <span class="text-sm text-gray-400 ml-auto">Last 10 entries</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left border-b border-gray-200 dark:border-gray-700">
+              <th class="pb-3 font-medium text-gray-500">Date</th>
+              <th class="pb-3 font-medium text-gray-500">Chest</th>
+              <th class="pb-3 font-medium text-gray-500">Waist</th>
+              <th class="pb-3 font-medium text-gray-500">Hips</th>
+              <th class="pb-3 font-medium text-gray-500">Bicep (L/R)</th>
+              <th class="pb-3 font-medium text-gray-500">Thigh (L/R)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each recentMeasurements as measurement}
+              <tr
+                class={clsx(
+                  'border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors',
+                  measurement.date === selectedDate && 'bg-primary-50 dark:bg-primary-900/20'
+                )}
+                on:click={() => goToDate(measurement.date)}
+              >
+                <td class="py-3">
+                  <div class="flex items-center gap-2">
+                    <Calendar size={14} class="text-gray-400" />
+                    <span class="font-medium">{format(parseISO(measurement.date), 'MMM d')}</span>
+                    <span class="text-gray-400 text-xs">{format(parseISO(measurement.date), 'yyyy')}</span>
+                  </div>
+                </td>
+                <td class="py-3">
+                  {#if measurement.chest}
+                    {measurement.chest} cm
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if measurement.waist}
+                    {measurement.waist} cm
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if measurement.hips}
+                    {measurement.hips} cm
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if measurement.bicep_left || measurement.bicep_right}
+                    {measurement.bicep_left ?? '—'} / {measurement.bicep_right ?? '—'}
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if measurement.thigh_left || measurement.thigh_right}
+                    {measurement.thigh_left ?? '—'} / {measurement.thigh_right ?? '—'}
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <ImportModal
   bind:show={showImportModal}
   dataType="measurements"
   title="Import Measurements"
-  on:success={() => loadMeasurement()}
+  on:success={() => { loadMeasurement(); loadRecentMeasurements(); }}
 />

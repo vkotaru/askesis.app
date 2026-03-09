@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload } from 'lucide-svelte';
+  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+
+  let recentActivities: ActivityType[] = [];
 
   const ACTIVITY_TAGS = ['Commute', 'Training', 'Race', 'Social', 'Fun', 'Weekend'];
 
@@ -52,10 +54,31 @@
     }
   }
 
-  onMount(loadActivities);
+  async function loadRecentActivities() {
+    try {
+      const endDate = format(new Date(), 'yyyy-MM-dd');
+      const startDate = format(subDays(new Date(), 60), 'yyyy-MM-dd');
+      const allActivities = await api.getActivities(startDate, endDate, $viewingUserId ?? undefined);
+      // Sort by date descending and take last 10
+      recentActivities = allActivities.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+    } catch {
+      recentActivities = [];
+    }
+  }
+
+  onMount(() => {
+    loadActivities();
+    loadRecentActivities();
+  });
 
   // Reload when viewing user changes
   $: $viewingUserId, loadActivities();
+  $: $viewingUserId, loadRecentActivities();
+
+  function goToDate(date: string) {
+    selectedDate = date;
+    loadActivities();
+  }
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
@@ -107,6 +130,7 @@
       selectedTags = [];
       selectedTimeOfDay = null;
       loadActivities();
+      loadRecentActivities();
     } catch (err) {
       console.error('Failed to create activity:', err);
     }
@@ -116,6 +140,7 @@
     try {
       await api.deleteActivity(id);
       loadActivities();
+      loadRecentActivities();
     } catch (err) {
       console.error('Failed to delete activity:', err);
     }
@@ -430,11 +455,100 @@
       </div>
     {/if}
   </div>
+
+<!-- Recent Activities -->
+  {#if recentActivities.length > 0}
+    <div class="card p-6 mt-6">
+      <div class="flex items-center gap-2 mb-4">
+        <History size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Recent Activities</h2>
+        <span class="text-sm text-gray-400 ml-auto">Last 10 entries</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left border-b border-gray-200 dark:border-gray-700">
+              <th class="pb-3 font-medium text-gray-500">Date</th>
+              <th class="pb-3 font-medium text-gray-500">Activity</th>
+              <th class="pb-3 font-medium text-gray-500">Type</th>
+              <th class="pb-3 font-medium text-gray-500">Duration</th>
+              <th class="pb-3 font-medium text-gray-500">Distance</th>
+              <th class="pb-3 font-medium text-gray-500">Calories</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each recentActivities as activity}
+              <tr
+                class={clsx(
+                  'border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors',
+                  activity.date === selectedDate && 'bg-primary-50 dark:bg-primary-900/20'
+                )}
+                on:click={() => goToDate(activity.date)}
+              >
+                <td class="py-3">
+                  <div class="flex items-center gap-2">
+                    <Calendar size={14} class="text-gray-400" />
+                    <span class="font-medium">{format(parseISO(activity.date), 'MMM d')}</span>
+                    <span class="text-gray-400 text-xs">{format(parseISO(activity.date), 'EEE')}</span>
+                  </div>
+                </td>
+                <td class="py-3">
+                  <span class="font-medium">{activity.name}</span>
+                  {#if activity.tags}
+                    <div class="flex gap-1 mt-1">
+                      {#each activity.tags.split(',').slice(0, 2) as tag}
+                        <span class={clsx('text-xs px-1.5 py-0.5 rounded', TAG_COLORS[tag] || 'bg-gray-100 dark:bg-gray-700')}>
+                          {tag}
+                        </span>
+                      {/each}
+                    </div>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  <span
+                    class={clsx(
+                      'text-xs px-2 py-0.5 rounded-full font-medium',
+                      activity.activity_type === 'cardio'
+                        ? 'bg-cardio-100 text-cardio-700 dark:bg-cardio-900/30 dark:text-cardio-400'
+                        : 'bg-strength-100 text-strength-700 dark:bg-strength-900/30 dark:text-strength-400'
+                    )}
+                  >
+                    {activity.activity_type}
+                  </span>
+                </td>
+                <td class="py-3">
+                  {#if activity.duration_mins}
+                    {activity.duration_mins} min
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if activity.distance_km}
+                    {activity.distance_km} km
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if activity.calories}
+                    {activity.calories} cal
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <ImportModal
   bind:show={showImportModal}
   dataType="activities"
   title="Import Activities"
-  on:success={() => loadActivities()}
+  on:success={() => { loadActivities(); loadRecentActivities(); }}
 />
