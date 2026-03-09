@@ -27,6 +27,11 @@
 
   $: todayLog = logs.find((l) => l.date === today);
   $: weightData = logs.filter((l) => l.weight).reverse();
+
+  // Calculate dynamic min/max for weight chart
+  $: weightMin = weightData.length > 0 ? Math.min(...weightData.map(l => l.weight || 0)) - 2 : 0;
+  $: weightMax = weightData.length > 0 ? Math.max(...weightData.map(l => l.weight || 0)) + 2 : 100;
+  $: weightRange = weightMax - weightMin || 1;
 </script>
 
 <svelte:head>
@@ -123,10 +128,13 @@
         {#if weightData.length > 0}
           <div class="h-64 flex items-end gap-2">
             {#each weightData as log}
+              {@const weight = log.weight || 0}
+              {@const heightPercent = ((weight - weightMin) / weightRange) * 100}
               <div class="flex-1 flex flex-col items-center gap-2">
+                <span class="text-xs text-gray-500 mb-1">{weight}</span>
                 <div
-                  class="w-full bg-primary-400 rounded-t"
-                  style="height: {((log.weight || 0) - 50) * 4}px; min-height: 20px;"
+                  class="w-full bg-primary-400 rounded-t transition-all"
+                  style="height: {Math.max(heightPercent, 5)}%; min-height: 20px;"
                 ></div>
                 <span class="text-xs text-gray-500">{format(new Date(log.date), 'EEE')}</span>
               </div>

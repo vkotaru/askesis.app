@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+
+  let recentLogs: DailyLog[] = [];
 
   const FEELINGS = [
     { value: 'happy', emoji: '😊', label: 'Happy', color: 'bg-mood-5' },
@@ -63,10 +65,31 @@
     }
   }
 
-  onMount(loadLog);
+  async function loadRecentLogs() {
+    try {
+      const endDate = format(new Date(), 'yyyy-MM-dd');
+      const startDate = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+      const logs = await api.getDailyLogs(startDate, endDate, $viewingUserId ?? undefined);
+      // Sort by date descending and take last 10
+      recentLogs = logs.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+    } catch {
+      recentLogs = [];
+    }
+  }
+
+  onMount(() => {
+    loadLog();
+    loadRecentLogs();
+  });
 
   // Reload when viewing user changes
   $: $viewingUserId, loadLog();
+  $: $viewingUserId, loadRecentLogs();
+
+  function goToDate(date: string) {
+    selectedDate = date;
+    loadLog();
+  }
 
   function prevDay() {
     selectedDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
@@ -102,6 +125,7 @@
         notes: notes || undefined,
       });
       saved = true;
+      loadRecentLogs(); // Refresh recent entries
       setTimeout(() => (saved = false), 2000);
     } catch (err) {
       console.error('Failed to save:', err);
@@ -320,11 +344,111 @@
       </div>
     {/if}
   </form>
+
+<!-- Recent Entries -->
+  {#if recentLogs.length > 0}
+    <div class="card p-6 mt-6">
+      <div class="flex items-center gap-2 mb-4">
+        <History size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Recent Entries</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left border-b border-gray-200 dark:border-gray-700">
+              <th class="pb-3 font-medium text-gray-500">Date</th>
+              <th class="pb-3 font-medium text-gray-500">Weight</th>
+              <th class="pb-3 font-medium text-gray-500">Sleep</th>
+              <th class="pb-3 font-medium text-gray-500">Steps</th>
+              <th class="pb-3 font-medium text-gray-500">Water</th>
+              <th class="pb-3 font-medium text-gray-500">Feelings</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each recentLogs as log}
+              <tr
+                class={clsx(
+                  'border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors',
+                  log.date === selectedDate && 'bg-primary-50 dark:bg-primary-900/20'
+                )}
+                on:click={() => goToDate(log.date)}
+              >
+                <td class="py-3">
+                  <div class="flex items-center gap-2">
+                    <Calendar size={14} class="text-gray-400" />
+                    <span class="font-medium">{format(parseISO(log.date), 'MMM d')}</span>
+                    <span class="text-gray-400 text-xs">{format(parseISO(log.date), 'EEE')}</span>
+                  </div>
+                </td>
+                <td class="py-3">
+                  {#if log.weight}
+                    <span class="flex items-center gap-1">
+                      <Scale size={14} class="text-rest-500" />
+                      {log.weight} kg
+                    </span>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if log.sleep_hours}
+                    <span class="flex items-center gap-1">
+                      <Moon size={14} class="text-strength-500" />
+                      {log.sleep_hours} hrs
+                    </span>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if log.steps}
+                    <span class="flex items-center gap-1">
+                      <Footprints size={14} class="text-cardio-500" />
+                      {log.steps.toLocaleString()}
+                    </span>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if log.water_ml}
+                    <span class="flex items-center gap-1">
+                      <Droplets size={14} class="text-cardio-400" />
+                      {log.water_ml} ml
+                    </span>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if log.feelings && log.feelings.length > 0}
+                    <div class="flex gap-1 flex-wrap">
+                      {#each log.feelings.slice(0, 3) as feeling}
+                        {@const feelingData = FEELINGS.find(f => f.value === feeling)}
+                        {#if feelingData}
+                          <span class="text-base" title={feelingData.label}>{feelingData.emoji}</span>
+                        {/if}
+                      {/each}
+                      {#if log.feelings.length > 3}
+                        <span class="text-xs text-gray-400">+{log.feelings.length - 3}</span>
+                      {/if}
+                    </div>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <ImportModal
   bind:show={showImportModal}
   dataType="daily-logs"
   title="Import Daily Logs"
-  on:success={() => loadLog()}
+  on:success={() => { loadLog(); loadRecentLogs(); }}
 />
