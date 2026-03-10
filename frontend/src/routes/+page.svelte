@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { format, subDays } from 'date-fns';
+  import { format } from 'date-fns';
   import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog, type Activity as ActivityType } from '$lib/api/client';
@@ -10,13 +10,13 @@
   let loading = true;
 
   const today = format(new Date(), 'yyyy-MM-dd');
-  const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
 
   onMount(async () => {
     try {
+      // Fetch recent data (limit to 30 entries for dashboard)
       [logs, activities] = await Promise.all([
-        api.getDailyLogs(weekAgo, today),
-        api.getActivities(weekAgo, today),
+        api.getDailyLogs(undefined, undefined, undefined, 30),
+        api.getActivities(undefined, undefined, undefined, 10),
       ]);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -26,6 +26,7 @@
   });
 
   $: todayLog = logs.find((l) => l.date === today);
+  // Sort oldest to newest for chart display
   $: weightData = logs.filter((l) => l.weight).reverse();
 
   // Calculate dynamic min/max for weight chart
@@ -123,7 +124,7 @@
         <div class="flex items-center gap-2 mb-4">
           <TrendingUp size={20} class="text-primary-500" />
           <h2 class="text-lg font-semibold">Weight Trend</h2>
-          <span class="text-sm text-gray-400 ml-auto">Last 7 days</span>
+          <span class="text-sm text-gray-400 ml-auto">{weightData.length} entries</span>
         </div>
         {#if weightData.length > 0}
           <div class="h-64 flex items-end gap-2">

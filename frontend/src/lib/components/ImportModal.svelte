@@ -219,6 +219,14 @@
         unit_mapping: unitMapping,
       };
 
+      console.log('Import request:', {
+        dataType,
+        rowCount: csvData.length,
+        columnMapping,
+        unitMapping,
+        sampleRow: csvData[0],
+      });
+
       // Call appropriate import endpoint
       if (dataType === 'activities') {
         result = await api.importActivities(request);
@@ -227,6 +235,8 @@
       } else {
         result = await api.importMeasurements(request);
       }
+
+      console.log('Import result:', result);
 
       step = 'result';
 
@@ -431,6 +441,12 @@
               <h3 class="text-xl font-semibold mb-2">Import Complete</h3>
               <p class="text-gray-600 dark:text-gray-400 mb-4">
                 Successfully imported {result.success_count} records
+              </p>
+            {:else if result}
+              <AlertCircle size={48} class="mx-auto text-yellow-500 mb-4" />
+              <h3 class="text-xl font-semibold mb-2">No Records Imported</h3>
+              <p class="text-gray-600 dark:text-gray-400 mb-4">
+                0 records were imported. Check if the date column is mapped correctly.
               </p>
             {:else}
               <AlertCircle size={48} class="mx-auto text-yellow-500 mb-4" />

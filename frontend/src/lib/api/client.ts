@@ -228,11 +228,12 @@ export const api = {
   getMe: () => fetchJSON<User>('/auth/me'),
 
   // Daily Log
-  getDailyLogs: (startDate?: string, endDate?: string, userId?: number) => {
+  getDailyLogs: (startDate?: string, endDate?: string, userId?: number, limit?: number) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
     if (userId) params.set('user_id', userId.toString());
+    if (limit) params.set('limit', limit.toString());
     return fetchJSON<DailyLog[]>(`/api/daily-log/?${params}`);
   },
   getDailyLog: (date: string, userId?: number) => {
@@ -283,11 +284,12 @@ export const api = {
   getMealPhotoUrl: (mealId: number) => `/api/nutrition/meals/${mealId}/photo`,
 
   // Activities
-  getActivities: (startDate?: string, endDate?: string, userId?: number) => {
+  getActivities: (startDate?: string, endDate?: string, userId?: number, limit?: number) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
     if (userId) params.set('user_id', userId.toString());
+    if (limit) params.set('limit', limit.toString());
     return fetchJSON<Activity[]>(`/api/activities/?${params}`);
   },
   createActivity: (data: ActivityInput) =>

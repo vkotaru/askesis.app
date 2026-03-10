@@ -67,12 +67,10 @@
 
   async function loadRecentLogs() {
     try {
-      const endDate = format(new Date(), 'yyyy-MM-dd');
-      const startDate = format(subDays(new Date(), 30), 'yyyy-MM-dd');
-      const logs = await api.getDailyLogs(startDate, endDate, $viewingUserId ?? undefined);
-      // Sort by date descending and take last 10
-      recentLogs = logs.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
-    } catch {
+      // Fetch 10 most recent logs (backend returns sorted by date desc)
+      recentLogs = await api.getDailyLogs(undefined, undefined, $viewingUserId ?? undefined, 10);
+    } catch (e) {
+      console.error('Failed to load logs:', e);
       recentLogs = [];
     }
   }
