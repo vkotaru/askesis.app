@@ -180,22 +180,16 @@
 </svelte:head>
 
 <div>
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-bold flex items-center gap-2">
-        <Ruler size={24} class="text-strength-500" />
-        Body Measurements
-      </h1>
-      <p class="text-gray-500 text-sm mt-1">Track your body measurements in cm</p>
-    </div>
-    <div class="flex items-center gap-3">
-      {#if !$isViewingOther}
-        <button on:click={() => (showImportModal = true)} class="btn-secondary flex items-center gap-2">
-          <Upload size={20} />
-          Import
-        </button>
-      {/if}
-      <div class="flex items-center gap-2">
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold flex items-center gap-2">
+      <Ruler size={24} class="text-strength-500" />
+      Body Measurements
+    </h1>
+    <p class="text-gray-500 text-sm mt-1">Track your body measurements in cm</p>
+
+    <!-- Date Navigation -->
+    <div class="flex items-center justify-center gap-2 mt-4">
       <button
         type="button"
         on:click={prevDay}
@@ -207,7 +201,7 @@
         type="date"
         value={selectedDate}
         on:change={handleDateChange}
-        class="input max-w-[180px]"
+        class="input max-w-[180px] text-center"
       />
       <button
         type="button"
@@ -216,7 +210,6 @@
       >
         <ChevronRight size={20} />
       </button>
-      </div>
     </div>
   </div>
 
@@ -446,6 +439,19 @@
         {/if}
       </div>
     </form>
+  {/if}
+
+<!-- Import Button -->
+  {#if !$isViewingOther}
+    <div class="mt-6">
+      <button
+        on:click={() => (showImportModal = true)}
+        class="btn-secondary w-full flex items-center justify-center gap-2"
+      >
+        <Upload size={20} />
+        Import Bulk
+      </button>
+    </div>
   {/if}
 
 <!-- Recent Measurements -->
