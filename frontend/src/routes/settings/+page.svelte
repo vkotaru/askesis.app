@@ -71,15 +71,8 @@
   onMount(loadShares);
 
   type Theme = UserSettings['theme'];
-  type FontSize = UserSettings['font_size'];
   type FontFamily = UserSettings['font_family'];
   type ContentWidth = UserSettings['content_width'];
-
-  const FONT_SIZES: { value: FontSize; label: string; size: string }[] = [
-    { value: 'small', label: 'Small', size: '14px' },
-    { value: 'medium', label: 'Medium', size: '16px' },
-    { value: 'large', label: 'Large', size: '18px' },
-  ];
 
   const FONTS: { value: FontFamily; label: string; family: string; category: string }[] = [
     // Sans-serif - Geometric
@@ -332,19 +325,26 @@
       <!-- Font Size -->
       <div>
         <label class="label">Font Size</label>
-        <div class="flex gap-3">
-          {#each FONT_SIZES as option}
+        <div class="grid grid-cols-3 lg:grid-cols-6 gap-2">
+          {#each [
+            { value: 'xs', label: 'XS', size: '12px' },
+            { value: 'sm', label: 'S', size: '14px' },
+            { value: 'medium', label: 'M', size: '16px' },
+            { value: 'lg', label: 'L', size: '18px' },
+            { value: 'xl', label: 'XL', size: '20px' },
+            { value: '2xl', label: '2XL', size: '24px' },
+          ] as option (option.value)}
             <button
               on:click={() => settings.updateSetting('font_size', option.value)}
               class={clsx(
-                'px-4 py-3 rounded-xl border-2 transition-all flex-1',
+                'px-3 py-2 rounded-xl border-2 transition-all text-center',
                 $settings.font_size === option.value
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
                   : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
               )}
             >
               <span class="font-medium block">{option.label}</span>
-              <span class="text-sm text-gray-500">{option.size}</span>
+              <span class="text-xs text-gray-500">{option.size}</span>
             </button>
           {/each}
         </div>

@@ -4,6 +4,7 @@
 
 :root {
   --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --content-font-size: 16px;
 
   /* Default color scheme: forest */
   --color-primary-50: #f1f8f4;
@@ -34,6 +35,11 @@ body {
 }
 
 @layer components {
+  /* Content area uses user-configurable font size */
+  .content-area {
+    font-size: var(--content-font-size);
+  }
+
   .card {
     @apply bg-white dark:bg-gray-800 rounded-xl shadow-soft;
   }

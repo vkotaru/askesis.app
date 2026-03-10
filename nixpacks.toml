@@ -1,12 +1,13 @@
 # Nixpacks configuration for multi-language project (Node.js + Python)
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "python311", "python311Packages.pip"]
+nixPkgs = ["nodejs_20", "python311", "python311Packages.pip", "python311Packages.virtualenv"]
 
 [phases.install]
 cmds = [
   "cd frontend && npm ci",
-  "cd backend && pip install --upgrade pip && pip install -r requirements.txt"
+  "python -m venv /app/venv",
+  ". /app/venv/bin/activate && cd backend && pip install --upgrade pip && pip install -r requirements.txt"
 ]
 
 [phases.build]

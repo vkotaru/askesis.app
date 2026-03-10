@@ -153,9 +153,16 @@ function applySettings(settings: UserSettings) {
     root.classList.remove('dark');
   }
 
-  // Font size
-  root.style.fontSize =
-    settings.font_size === 'small' ? '14px' : settings.font_size === 'large' ? '18px' : '16px';
+  // Font size - map presets to pixel values
+  const fontSizeMap: Record<string, string> = {
+    'xs': '12px',
+    'sm': '14px',
+    'medium': '16px',
+    'lg': '18px',
+    'xl': '20px',
+    '2xl': '24px',
+  };
+  root.style.setProperty('--content-font-size', fontSizeMap[settings.font_size] || '16px');
 
   // Font family - set CSS variable so body inherits it
   root.style.setProperty('--font-sans', FONT_MAP[settings.font_family] || FONT_MAP['space-grotesk']);
