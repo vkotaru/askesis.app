@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     token_expire_hours: int = 2  # Short-lived tokens
 
     # File upload limits (in bytes)
-    max_image_size: int = 10 * 1024 * 1024  # 10MB
-    max_csv_size: int = 5 * 1024 * 1024  # 5MB
+    max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)
+    max_csv_size: int = 10 * 1024 * 1024  # 10MB
 
     class Config:
         env_file = ".env"

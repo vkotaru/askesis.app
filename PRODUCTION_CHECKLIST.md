@@ -6,7 +6,7 @@
   - FIXED: Validates at startup, exits if SECRET_KEY is placeholder in production
 
 - [x] **No file upload size limits** - `photos.py`, `nutrition.py`, `import_router.py`
-  - FIXED: Added max_image_size (10MB) and max_csv_size (5MB) to config
+  - FIXED: Added max_image_size (50MB) and max_csv_size (10MB) to config
 
 - [x] **SQLite in production** - `config.py`
   - FIXED: Warns at startup if using SQLite in production mode
