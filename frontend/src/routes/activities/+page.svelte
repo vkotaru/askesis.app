@@ -152,45 +152,44 @@
 </svelte:head>
 
 <div>
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-bold">Activities</h1>
-      <p class="text-gray-500 text-sm mt-1">Track your workouts and exercises</p>
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold">Activities</h1>
+    <p class="text-gray-500 text-sm mt-1">Track your workouts and exercises</p>
+
+    <!-- Date Navigation -->
+    <div class="flex items-center justify-center gap-2 mt-4">
+      <button
+        type="button"
+        on:click={prevDay}
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+      >
+        <ChevronLeft size={20} />
+      </button>
+      <input
+        type="date"
+        value={selectedDate}
+        on:change={handleDateChange}
+        class="input max-w-[180px] text-center"
+      />
+      <button
+        type="button"
+        on:click={nextDay}
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+      >
+        <ChevronRight size={20} />
+      </button>
     </div>
-    <div class="flex items-center gap-3">
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          on:click={prevDay}
-          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-        >
-          <ChevronLeft size={20} />
-        </button>
-        <input
-          type="date"
-          value={selectedDate}
-          on:change={handleDateChange}
-          class="input max-w-[180px]"
-        />
-        <button
-          type="button"
-          on:click={nextDay}
-          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-        >
-          <ChevronRight size={20} />
-        </button>
-      </div>
-      {#if !$isViewingOther}
-        <button on:click={() => (showImportModal = true)} class="btn-secondary flex items-center gap-2">
-          <Upload size={20} />
-          Import
-        </button>
+
+    <!-- Add Activity Button -->
+    {#if !$isViewingOther}
+      <div class="flex justify-center mt-4">
         <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
           <Plus size={20} />
           Add Activity
         </button>
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 
   <!-- Add activity form -->
@@ -455,6 +454,19 @@
       </div>
     {/if}
   </div>
+
+<!-- Import Button -->
+  {#if !$isViewingOther}
+    <div class="mt-6">
+      <button
+        on:click={() => (showImportModal = true)}
+        class="btn-secondary w-full flex items-center justify-center gap-2"
+      >
+        <Upload size={20} />
+        Import Bulk
+      </button>
+    </div>
+  {/if}
 
 <!-- Recent Activities -->
   {#if recentActivities.length > 0}

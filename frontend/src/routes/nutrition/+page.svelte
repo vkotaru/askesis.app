@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image } from 'lucide-svelte';
+  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload } from 'lucide-svelte';
+  import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
@@ -11,6 +12,7 @@
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
   let meals: Meal[] = [];
   let showForm = false;
+  let showImportModal = false;
   let loading = true;
   let uploadingMealId: number | null = null;
   let analyzingPhoto = false;
@@ -156,21 +158,13 @@
 </svelte:head>
 
 <div>
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-bold">Nutrition</h1>
-      <p class="text-gray-500 text-sm mt-1">Track your meals and calories</p>
-    </div>
-    <div class="flex items-center gap-2">
-      {#if !$isViewingOther}
-        <button
-          on:click={copyYesterday}
-          class="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-          title="Copy yesterday's meals"
-        >
-          <Copy size={16} />
-        </button>
-      {/if}
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold">Nutrition</h1>
+    <p class="text-gray-500 text-sm mt-1">Track your meals and calories</p>
+
+    <!-- Date Navigation -->
+    <div class="flex items-center justify-center gap-2 mt-4">
       <button
         type="button"
         on:click={prevDay}
@@ -182,7 +176,7 @@
         type="date"
         value={selectedDate}
         on:change={handleDateChange}
-        class="input max-w-[180px]"
+        class="input max-w-[180px] text-center"
       />
       <button
         type="button"
@@ -191,6 +185,15 @@
       >
         <ChevronRight size={20} />
       </button>
+      {#if !$isViewingOther}
+        <button
+          on:click={copyYesterday}
+          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+          title="Copy yesterday's meals"
+        >
+          <Copy size={16} />
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -417,4 +420,24 @@
       Add meal
     </button>
   {/if}
+
+  <!-- Import Button -->
+  {#if !$isViewingOther}
+    <div class="mt-6">
+      <button
+        on:click={() => (showImportModal = true)}
+        class="btn-secondary w-full flex items-center justify-center gap-2"
+      >
+        <Upload size={20} />
+        Import Bulk
+      </button>
+    </div>
+  {/if}
 </div>
+
+<ImportModal
+  bind:show={showImportModal}
+  dataType="nutrition"
+  title="Import Meals"
+  on:success={() => loadMeals()}
+/>
