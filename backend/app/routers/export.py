@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -272,13 +272,26 @@ def create_sqlite_export(db: Session, user: User) -> Path:
     return temp_path
 
 
+def cleanup_temp_file(path: Path):
+    """Background task to clean up temp file after response is sent."""
+    try:
+        if path.exists():
+            path.unlink()
+    except Exception:
+        pass  # Best effort cleanup
+
+
 @router.get("/sqlite")
 def export_sqlite(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Export all user data to a SQLite database file."""
     db_path = create_sqlite_export(db, current_user)
+
+    # Schedule cleanup after response is sent
+    background_tasks.add_task(cleanup_temp_file, db_path)
 
     # Generate filename with date
     date_str = datetime.now().strftime("%Y-%m-%d")

@@ -22,8 +22,14 @@ if is_sqlite:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 else:
-    # PostgreSQL or other databases
-    engine = create_engine(settings.database_url)
+    # PostgreSQL with connection pool settings
+    engine = create_engine(
+        settings.database_url,
+        pool_recycle=3600,  # Recycle connections after 1 hour
+        pool_pre_ping=True,  # Verify connections before use
+        pool_size=5,  # Base pool size
+        max_overflow=10,  # Allow up to 15 total connections
+    )
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
