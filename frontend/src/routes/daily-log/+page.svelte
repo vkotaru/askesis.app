@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar, CheckCircle } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
@@ -138,6 +138,13 @@
     selectedDate = (e.target as HTMLInputElement).value;
     loadLog();
   }
+
+  // Check if current date has any data
+  $: hasData = weight !== undefined || sleep_hours !== undefined || steps !== undefined ||
+               water_ml !== undefined || feelings.length > 0 || caffeine_mg !== undefined || notes !== '';
+
+  // Check if selected date exists in recent logs
+  $: dateHasEntry = recentLogs.some(log => log.date === selectedDate);
 </script>
 
 <svelte:head>
@@ -159,12 +166,20 @@
       >
         <ChevronLeft size={20} />
       </button>
-      <input
-        type="date"
-        value={selectedDate}
-        on:change={handleDateChange}
-        class="input max-w-[180px] text-center"
-      />
+      <div class="relative">
+        <input
+          type="date"
+          value={selectedDate}
+          on:change={handleDateChange}
+          class={clsx(
+            'input max-w-[180px] text-center',
+            hasData && 'border-primary-300 dark:border-primary-700'
+          )}
+        />
+        {#if hasData}
+          <div class="absolute -top-1 -right-1 w-3 h-3 bg-primary-500 rounded-full border-2 border-white dark:border-gray-800"></div>
+        {/if}
+      </div>
       <button
         type="button"
         on:click={nextDay}
@@ -173,6 +188,14 @@
         <ChevronRight size={20} />
       </button>
     </div>
+
+    <!-- Data status indicator -->
+    {#if hasData}
+      <div class="flex items-center justify-center gap-1 mt-2 text-sm text-primary-600 dark:text-primary-400">
+        <CheckCircle size={14} />
+        <span>Data recorded</span>
+      </div>
+    {/if}
   </div>
 
   <form on:submit|preventDefault={handleSubmit} class="card p-6">
@@ -353,12 +376,74 @@
 
 <!-- Recent Entries -->
   {#if recentLogs.length > 0}
-    <div class="card p-6 mt-6">
+    <div class="card p-4 md:p-6 mt-6">
       <div class="flex items-center gap-2 mb-4">
         <History size={20} class="text-primary-500" />
         <h2 class="text-lg font-semibold">Recent Entries</h2>
+        <span class="text-sm text-gray-400 ml-auto">{recentLogs.length} days</span>
       </div>
-      <div class="overflow-x-auto">
+
+      <!-- Mobile: Card-based list -->
+      <div class="md:hidden space-y-2">
+        {#each recentLogs as log}
+          <button
+            type="button"
+            on:click={() => goToDate(log.date)}
+            class={clsx(
+              'w-full p-3 rounded-xl text-left transition-all',
+              log.date === selectedDate
+                ? 'bg-primary-100 dark:bg-primary-900/30 border-2 border-primary-300 dark:border-primary-700'
+                : 'bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:border-gray-200 dark:hover:border-gray-600'
+            )}
+          >
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-semibold">{format(parseISO(log.date), 'MMM d, EEE')}</span>
+              {#if log.feelings && log.feelings.length > 0}
+                <div class="flex gap-0.5">
+                  {#each log.feelings.slice(0, 3) as feeling}
+                    {@const feelingData = FEELINGS.find(f => f.value === feeling)}
+                    {#if feelingData}
+                      <span class="text-sm">{feelingData.emoji}</span>
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
+            </div>
+            <div class="flex flex-wrap gap-3 text-sm text-gray-600 dark:text-gray-400">
+              {#if log.weight}
+                <span class="flex items-center gap-1">
+                  <Scale size={12} class="text-rest-500" />
+                  {log.weight}kg
+                </span>
+              {/if}
+              {#if log.sleep_hours}
+                <span class="flex items-center gap-1">
+                  <Moon size={12} class="text-strength-500" />
+                  {log.sleep_hours}h
+                </span>
+              {/if}
+              {#if log.steps}
+                <span class="flex items-center gap-1">
+                  <Footprints size={12} class="text-cardio-500" />
+                  {log.steps.toLocaleString()}
+                </span>
+              {/if}
+              {#if log.water_ml}
+                <span class="flex items-center gap-1">
+                  <Droplets size={12} class="text-cardio-400" />
+                  {log.water_ml}ml
+                </span>
+              {/if}
+              {#if !log.weight && !log.sleep_hours && !log.steps && !log.water_ml}
+                <span class="text-gray-400 text-xs">No data recorded</span>
+              {/if}
+            </div>
+          </button>
+        {/each}
+      </div>
+
+      <!-- Desktop: Table view -->
+      <div class="hidden md:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="text-left border-b border-gray-200 dark:border-gray-700">
