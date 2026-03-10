@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme } from '$lib/api/client';
@@ -69,6 +69,36 @@
   }
 
   onMount(loadShares);
+
+  let exporting = false;
+
+  async function exportData() {
+    exporting = true;
+    try {
+      const response = await fetch('/api/export/sqlite', {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Export failed');
+
+      const blob = await response.blob();
+      const filename = response.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1]
+        || `askesis-${new Date().toISOString().split('T')[0]}.db`;
+
+      // Download the file
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      exporting = false;
+    }
+  }
 
   type Theme = UserSettings['theme'];
   type FontFamily = UserSettings['font_family'];
@@ -534,6 +564,33 @@
           {/if}
         </div>
       {/if}
+    </div>
+
+    <!-- Data Export -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <Database size={20} class="text-cardio-500" />
+        <h2 class="text-lg font-semibold">Data Export</h2>
+      </div>
+      <p class="text-gray-600 dark:text-gray-400 mb-4">
+        Export all your data to a SQLite database file for backup or analysis.
+      </p>
+      <button
+        on:click={exportData}
+        disabled={exporting}
+        class="btn-secondary flex items-center gap-2"
+      >
+        {#if exporting}
+          <span class="animate-spin">⏳</span>
+          Exporting...
+        {:else}
+          <Download size={18} />
+          Export Data (.db)
+        {/if}
+      </button>
+      <p class="text-xs text-gray-500 mt-3">
+        Use with the <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">askesis</code> Python package for data analysis.
+      </p>
     </div>
 
     <!-- About -->
