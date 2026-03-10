@@ -298,15 +298,20 @@
 
         {:else if step === 'mapping'}
           <!-- Column Mapping -->
-          <div class="space-y-6">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm text-gray-500">
-                  {preview?.total_rows} rows found in CSV
-                </p>
-                <p class="text-sm text-gray-500">
-                  {mappedFieldCount} of {preview?.columns.length} columns mapped
-                </p>
+          <div class="space-y-4">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+              <div class="flex items-center gap-4 text-sm">
+                <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  {preview?.total_rows} rows found
+                </span>
+                <span class={clsx(
+                  'px-2 py-1 rounded-lg',
+                  mappedFieldCount > 0
+                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                    : 'bg-gray-100 dark:bg-gray-700'
+                )}>
+                  {mappedFieldCount} of {preview?.columns.length} mapped
+                </span>
               </div>
               <button
                 on:click={() => { step = 'upload'; preview = null; }}
@@ -316,71 +321,76 @@
               </button>
             </div>
 
-            <!-- Mapping Table -->
-            <div class="overflow-x-auto">
-              <table class="w-full">
-                <thead>
-                  <tr class="border-b dark:border-gray-700">
-                    <th class="text-left py-2 px-3 text-sm font-medium text-gray-500">CSV Column</th>
-                    <th class="text-left py-2 px-3 text-sm font-medium text-gray-500">Maps To</th>
-                    <th class="text-left py-2 px-3 text-sm font-medium text-gray-500">Unit</th>
-                    <th class="text-left py-2 px-3 text-sm font-medium text-gray-500">Sample</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each preview?.columns || [] as col}
-                    {@const mapping = mappings[col] || { field: '', unit: '' }}
-                    {@const unitType = mapping.field ? getFieldUnitType(mapping.field) : undefined}
-                    <tr class="border-b dark:border-gray-700">
-                      <td class="py-2 px-3 font-medium">{col}</td>
-                      <td class="py-2 px-3">
-                        <select
-                          class="input py-1 text-sm"
-                          value={mapping.field}
-                          on:change={(e) => {
-                            const field = e.currentTarget.value;
-                            const newUnitType = getFieldUnitType(field);
-                            mappings[col] = {
-                              field,
-                              unit: newUnitType ? UNIT_OPTIONS[newUnitType][0].value : ''
-                            };
-                          }}
-                        >
-                          <option value="">-- Skip --</option>
-                          {#each fields as field}
-                            <option value={field.value}>{field.label}</option>
-                          {/each}
-                        </select>
-                      </td>
-                      <td class="py-2 px-3">
-                        {#if unitType}
-                          <select
-                            class="input py-1 text-sm"
-                            value={mapping.unit}
-                            on:change={(e) => {
-                              mappings[col] = { ...mapping, unit: e.currentTarget.value };
-                            }}
-                          >
-                            {#each UNIT_OPTIONS[unitType] as unit}
-                              <option value={unit.value}>{unit.label}</option>
-                            {/each}
-                          </select>
-                        {:else}
-                          <span class="text-gray-400 text-sm">-</span>
-                        {/if}
-                      </td>
-                      <td class="py-2 px-3 text-sm text-gray-500 truncate max-w-[150px]">
-                        {preview?.rows[0]?.[col] || '-'}
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
+            <!-- Mapping List -->
+            <div class="space-y-3">
+              {#each preview?.columns || [] as col}
+                {@const mapping = mappings[col] || { field: '', unit: '' }}
+                {@const unitType = mapping.field ? getFieldUnitType(mapping.field) : undefined}
+                {@const isMapped = !!mapping.field}
+                <div class={clsx(
+                  'p-3 rounded-xl border-2 transition-all',
+                  isMapped
+                    ? 'border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
+                )}>
+                  <!-- CSV Column Name -->
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium text-sm">{col}</span>
+                    {#if preview?.rows[0]?.[col]}
+                      <span class="text-xs text-gray-400 truncate max-w-[120px]">
+                        e.g. "{preview.rows[0][col]}"
+                      </span>
+                    {/if}
+                  </div>
+
+                  <!-- Field Mapping -->
+                  <div class="flex gap-2">
+                    <select
+                      class={clsx(
+                        'flex-1 px-3 py-2 rounded-lg border text-sm bg-white dark:bg-gray-800',
+                        isMapped
+                          ? 'border-primary-300 dark:border-primary-700'
+                          : 'border-gray-300 dark:border-gray-600'
+                      )}
+                      value={mapping.field}
+                      on:change={(e) => {
+                        const field = e.currentTarget.value;
+                        const newUnitType = getFieldUnitType(field);
+                        mappings[col] = {
+                          field,
+                          unit: newUnitType ? UNIT_OPTIONS[newUnitType][0].value : ''
+                        };
+                      }}
+                    >
+                      <option value="">Skip this column</option>
+                      <optgroup label="Available Fields">
+                        {#each fields as field}
+                          <option value={field.value}>{field.label}</option>
+                        {/each}
+                      </optgroup>
+                    </select>
+
+                    {#if unitType}
+                      <select
+                        class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm bg-white dark:bg-gray-800 min-w-[100px]"
+                        value={mapping.unit}
+                        on:change={(e) => {
+                          mappings[col] = { ...mapping, unit: e.currentTarget.value };
+                        }}
+                      >
+                        {#each UNIT_OPTIONS[unitType] as unit}
+                          <option value={unit.value}>{unit.label}</option>
+                        {/each}
+                      </select>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
             </div>
 
-            <!-- Preview rows -->
+            <!-- Preview rows (hidden on mobile) -->
             {#if preview && preview.rows.length > 0}
-              <div>
+              <div class="hidden md:block">
                 <h3 class="text-sm font-medium text-gray-500 mb-2">Preview (first 5 rows)</h3>
                 <div class="overflow-x-auto border dark:border-gray-700 rounded-lg">
                   <table class="w-full text-sm">
