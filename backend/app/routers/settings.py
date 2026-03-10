@@ -12,7 +12,7 @@ router = APIRouter()
 
 class UserSettingsSchema(BaseModel):
     theme: str = "system"
-    font_size: str = "medium"
+    font_size: str = "medium"  # xs, sm, medium, lg, xl, 2xl
     font_family: str = "space-grotesk"
     content_width: str = "medium"
     color_scheme: str = "forest"
@@ -28,7 +28,7 @@ class UserSettingsSchema(BaseModel):
 
 class UserSettingsUpdate(BaseModel):
     theme: str | None = None
-    font_size: str | None = None
+    font_size: str | None = None  # xs, sm, medium, lg, xl, 2xl
     font_family: str | None = None
     content_width: str | None = None
     color_scheme: str | None = None

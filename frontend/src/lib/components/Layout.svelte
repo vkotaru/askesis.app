@@ -127,7 +127,7 @@
         </div>
       </div>
     {/if}
-    <div class={clsx('mx-auto transition-all duration-300 p-8', widthClass)}>
+    <div class={clsx('mx-auto transition-all duration-300 p-8 content-area', widthClass)}>
       <slot />
     </div>
   </main>

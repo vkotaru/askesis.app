@@ -89,7 +89,7 @@ export type WaterUnit = 'ml' | 'L' | 'oz' | 'cups';
 
 export interface UserSettings {
   theme: 'light' | 'dark' | 'system';
-  font_size: 'small' | 'medium' | 'large';
+  font_size: 'xs' | 'sm' | 'medium' | 'lg' | 'xl' | '2xl';
   font_family: string;
   content_width: 'narrow' | 'medium' | 'wide' | 'full';
   color_scheme: ColorScheme;
