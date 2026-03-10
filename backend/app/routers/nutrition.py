@@ -22,6 +22,7 @@ try:
 except ImportError:
     GEMINI_AVAILABLE = False
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import User, Meal, MealTemplate
 from app.routers.auth import get_current_user, check_view_permission
@@ -235,6 +236,8 @@ async def upload_meal_photo(
     current_user: User = Depends(get_current_user),
 ):
     """Upload a photo for a meal and optionally analyze with Gemini."""
+    settings = get_settings()
+
     meal = db.query(Meal).filter(
         Meal.id == meal_id,
         Meal.user_id == current_user.id
@@ -248,13 +251,20 @@ async def upload_meal_photo(
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
+    # Read and validate file size
+    content = await file.read()
+    if len(content) > settings.max_image_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {settings.max_image_size // (1024*1024)}MB"
+        )
+
     # Generate unique filename
     file_ext = Path(file.filename).suffix.lower() if file.filename else ".jpg"
     unique_name = f"{current_user.id}_{meal_id}_{uuid.uuid4().hex[:8]}{file_ext}"
     file_path = MEAL_UPLOAD_DIR / unique_name
 
     # Save uploaded file
-    content = await file.read()
     with open(file_path, "wb") as f:
         f.write(content)
 
@@ -325,6 +335,8 @@ async def analyze_food_photo(
     current_user: User = Depends(get_current_user),
 ):
     """Analyze a food photo without creating a meal (preview)."""
+    settings = get_settings()
+
     if not GEMINI_AVAILABLE:
         raise HTTPException(status_code=503, detail="Gemini API not available")
 
@@ -333,11 +345,19 @@ async def analyze_food_photo(
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
+    # Read and validate file size
+    content = await file.read()
+    if len(content) > settings.max_image_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {settings.max_image_size // (1024*1024)}MB"
+        )
+
     # Save temporarily
     temp_name = f"temp_{uuid.uuid4().hex}.jpg"
     temp_path = MEAL_UPLOAD_DIR / temp_name
+    processed_path = None
 
-    content = await file.read()
     with open(temp_path, "wb") as f:
         f.write(content)
 
@@ -348,9 +368,9 @@ async def analyze_food_photo(
         return analysis.model_dump() if analysis else {"error": "Analysis failed"}
 
     finally:
-        # Clean up temp file
+        # Clean up temp files
         temp_path.unlink(missing_ok=True)
-        if processed_path.exists():
+        if processed_path and processed_path.exists():
             processed_path.unlink()
 
 

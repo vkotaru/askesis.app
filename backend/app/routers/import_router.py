@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import User, Activity, Exercise, DailyLog, BodyMeasurement, ActivityType, TimeOfDay
 from app.routers.auth import get_current_user
@@ -141,10 +142,25 @@ async def preview_csv(
     current_user: User = Depends(get_current_user),
 ):
     """Upload a CSV file and preview its structure."""
+    settings = get_settings()
+
+    # Validate file extension
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV")
 
+    # Validate content type (allow common CSV types)
+    valid_types = ["text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"]
+    if file.content_type and file.content_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid content type: {file.content_type}")
+
+    # Read with size limit
     content = await file.read()
+    if len(content) > settings.max_csv_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {settings.max_csv_size // (1024*1024)}MB"
+        )
+
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
@@ -249,15 +265,6 @@ def import_daily_logs(
     current_user: User = Depends(get_current_user),
 ):
     """Import daily logs from mapped CSV data."""
-    import logging
-    logger = logging.getLogger(__name__)
-
-    logger.info(f"Import daily logs: {len(request.data)} rows, user={current_user.id}")
-    logger.info(f"Column mapping: {request.column_mapping}")
-    logger.info(f"Unit mapping: {request.unit_mapping}")
-    if request.data:
-        logger.info(f"Sample row: {request.data[0]}")
-
     field_types = {
         "weight": "weight",
         "water_ml": "water",
@@ -269,18 +276,11 @@ def import_daily_logs(
     for i, row in enumerate(request.data):
         try:
             mapped = apply_column_mapping(row, request.column_mapping)
-            if i == 0:
-                logger.info(f"Row 0 after column mapping: {mapped}")
             mapped = convert_units(mapped, request.unit_mapping, field_types)
-            if i == 0:
-                logger.info(f"Row 0 after unit conversion: {mapped}")
 
             log_date = parse_date(mapped.get("date", ""))
             if not log_date:
                 raise ValueError("Date is required")
-
-            if i == 0:
-                logger.info(f"Row 0 parsed date: {log_date}")
 
             # Check for existing log on this date
             existing = db.query(DailyLog).filter(
@@ -289,7 +289,6 @@ def import_daily_logs(
             ).first()
 
             if existing:
-                logger.info(f"Row {i}: Updating existing log for {log_date}")
                 # Update existing log
                 if mapped.get("weight"):
                     existing.weight = parse_float(str(mapped["weight"]))
@@ -305,12 +304,10 @@ def import_daily_logs(
                     existing.notes = mapped["notes"].strip() or None
             else:
                 # Create new log
-                weight_val = parse_float(str(mapped.get("weight", "")))
-                logger.info(f"Row {i}: Creating new log for {log_date}, weight={weight_val}")
                 log = DailyLog(
                     user_id=current_user.id,
                     date=log_date,
-                    weight=weight_val,
+                    weight=parse_float(str(mapped.get("weight", ""))),
                     sleep_hours=parse_float(str(mapped.get("sleep_hours", ""))),
                     steps=parse_int(str(mapped.get("steps", ""))),
                     water_ml=parse_int(str(mapped.get("water_ml", ""))),
@@ -322,16 +319,10 @@ def import_daily_logs(
             success_count += 1
 
         except Exception as e:
-            logger.error(f"Row {i + 1} error: {str(e)}")
             errors.append(f"Row {i + 1}: {str(e)}")
 
     if success_count > 0:
         db.commit()
-        logger.info(f"Committed {success_count} daily logs to database")
-
-    # Verify the data was saved
-    total_logs = db.query(DailyLog).filter(DailyLog.user_id == current_user.id).count()
-    logger.info(f"Total daily logs for user {current_user.id}: {total_logs}")
 
     return ImportResult(
         success_count=success_count,

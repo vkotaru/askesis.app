@@ -15,6 +15,7 @@ try:
 except ImportError:
     pass  # HEIC support optional
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import User, ProgressPhoto, PhotoView
 from app.routers.auth import get_current_user, check_view_permission
@@ -147,10 +148,21 @@ async def upload_photo(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    settings = get_settings()
+
     # Validate file type
     allowed_types = {"image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type. Use JPEG, PNG, HEIC, or WebP.")
+
+    # Check file size before reading entire file
+    # Note: file.size may not be reliable, so we'll check after reading
+    content = await file.read()
+    if len(content) > settings.max_image_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {settings.max_image_size // (1024*1024)}MB"
+        )
 
     # Check if photo already exists for this date/view
     existing = db.query(ProgressPhoto).filter(
@@ -164,8 +176,7 @@ async def upload_photo(
     unique_name = f"{current_user.id}_{photo_date.isoformat()}_{view.value}_{uuid.uuid4().hex[:8]}{file_ext}"
     file_path = UPLOAD_DIR / unique_name
 
-    # Save uploaded file
-    content = await file.read()
+    # Save uploaded file (content already read above for size check)
     with open(file_path, "wb") as f:
         f.write(content)
 

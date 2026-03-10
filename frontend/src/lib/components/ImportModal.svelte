@@ -219,14 +219,6 @@
         unit_mapping: unitMapping,
       };
 
-      console.log('Import request:', {
-        dataType,
-        rowCount: csvData.length,
-        columnMapping,
-        unitMapping,
-        sampleRow: csvData[0],
-      });
-
       // Call appropriate import endpoint
       if (dataType === 'activities') {
         result = await api.importActivities(request);
@@ -235,8 +227,6 @@
       } else {
         result = await api.importMeasurements(request);
       }
-
-      console.log('Import result:', result);
 
       step = 'result';
 
