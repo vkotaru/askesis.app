@@ -1,12 +1,12 @@
-import os
+import io
 import uuid
 from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from PIL import Image, ImageOps
 
 try:
@@ -19,31 +19,20 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import User, ProgressPhoto, PhotoView
 from app.routers.auth import get_current_user, check_view_permission
+from app import google_drive
 
 router = APIRouter()
 
-# Upload directory
-UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "photos"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
-
-
-def validate_file_path(file_path: Path) -> Path:
-    """Validate that file path is within upload directory (prevent path traversal)."""
-    resolved = file_path.resolve()
-    upload_resolved = UPLOAD_DIR.resolve()
-    if not str(resolved).startswith(str(upload_resolved)):
-        raise HTTPException(status_code=403, detail="Invalid file path")
-    return resolved
 
 
 class PhotoResponse(BaseModel):
     id: int
     date: date
     view: str
-    file_path: str
+    file_path: str | None  # Legacy, may be None for Drive-stored photos
+    drive_file_id: str | None  # Google Drive file ID
     notes: str | None
     url: str
 
@@ -51,9 +40,9 @@ class PhotoResponse(BaseModel):
         from_attributes = True
 
 
-def process_image(file_path: Path, max_size: int = 1200, quality: int = 85) -> Path:
-    """Process uploaded image: resize, optimize, convert to JPEG."""
-    img = Image.open(file_path)
+def process_image_bytes(content: bytes, max_size: int = 1200, quality: int = 85) -> bytes:
+    """Process uploaded image: resize, optimize, convert to JPEG. Returns bytes."""
+    img = Image.open(io.BytesIO(content))
 
     # Fix rotation based on EXIF
     img = ImageOps.exif_transpose(img)
@@ -66,15 +55,20 @@ def process_image(file_path: Path, max_size: int = 1200, quality: int = 85) -> P
     if img.size[0] > max_size or img.size[1] > max_size:
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
-    # Save as optimized JPEG
-    output_path = file_path.with_suffix(".jpg")
-    img.save(output_path, "JPEG", quality=quality, optimize=True)
+    # Save as optimized JPEG to bytes
+    output = io.BytesIO()
+    img.save(output, "JPEG", quality=quality, optimize=True)
+    output.seek(0)
+    return output.read()
 
-    # Remove original if different
-    if output_path != file_path and file_path.exists():
-        file_path.unlink()
 
-    return output_path
+def require_drive_access(user: User):
+    """Ensure user has Google Drive access configured."""
+    if not user.google_refresh_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Google Drive access not configured. Please log out and log in again to grant Drive permissions."
+        )
 
 
 @router.get("/", response_model=list[PhotoResponse])
@@ -106,6 +100,7 @@ def get_photos(
             date=p.date,
             view=p.view.value,
             file_path=p.file_path,
+            drive_file_id=p.drive_file_id,
             notes=p.notes,
             url=f"/api/photos/file/{p.id}",
         )
@@ -132,11 +127,27 @@ def get_photos_by_date(
             date=p.date,
             view=p.view.value,
             file_path=p.file_path,
+            drive_file_id=p.drive_file_id,
             notes=p.notes,
             url=f"/api/photos/file/{p.id}",
         )
         for p in photos
     ]
+
+
+@router.get("/drive-status")
+def get_drive_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Check if user has Google Drive configured and working."""
+    if not current_user.google_refresh_token:
+        return {"configured": False, "working": False, "message": "Please log out and log in again to enable photo storage."}
+
+    try:
+        working = google_drive.check_drive_access(current_user.google_refresh_token)
+        return {"configured": True, "working": working, "message": "Google Drive connected" if working else "Drive access expired, please re-login"}
+    except Exception as e:
+        return {"configured": True, "working": False, "message": str(e)}
 
 
 @router.post("/upload", response_model=PhotoResponse)
@@ -149,14 +160,14 @@ async def upload_photo(
     current_user: User = Depends(get_current_user),
 ):
     settings = get_settings()
+    require_drive_access(current_user)
 
     # Validate file type
     allowed_types = {"image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type. Use JPEG, PNG, HEIC, or WebP.")
 
-    # Check file size before reading entire file
-    # Note: file.size may not be reliable, so we'll check after reading
+    # Read and check file size
     content = await file.read()
     if len(content) > settings.max_image_size:
         raise HTTPException(
@@ -171,30 +182,35 @@ async def upload_photo(
         ProgressPhoto.view == view
     ).first()
 
-    # Generate unique filename
-    file_ext = Path(file.filename).suffix.lower() if file.filename else ".jpg"
-    unique_name = f"{current_user.id}_{photo_date.isoformat()}_{view.value}_{uuid.uuid4().hex[:8]}{file_ext}"
-    file_path = UPLOAD_DIR / unique_name
-
-    # Save uploaded file (content already read above for size check)
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    # Process image (resize, optimize)
+    # Process image (resize, optimize, convert to JPEG)
     try:
-        processed_path = process_image(file_path)
+        processed_content = process_image_bytes(content)
     except Exception as e:
-        file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
 
-    # Delete old photo file if replacing
-    if existing and existing.file_path:
-        old_path = Path(existing.file_path)
-        if old_path.exists():
-            old_path.unlink()
+    # Generate unique filename for Drive
+    filename = f"askesis_{current_user.id}_{photo_date.isoformat()}_{view.value}_{uuid.uuid4().hex[:8]}.jpg"
+
+    # Upload to Google Drive
+    try:
+        drive_file_id = google_drive.upload_photo(
+            current_user.google_refresh_token,
+            processed_content,
+            filename,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Google Drive: {e}")
+
+    # Delete old photo from Drive if replacing
+    if existing and existing.drive_file_id:
+        try:
+            google_drive.delete_photo(current_user.google_refresh_token, existing.drive_file_id)
+        except Exception:
+            pass  # Ignore errors deleting old file
 
         # Update existing record
-        existing.file_path = str(processed_path)
+        existing.drive_file_id = drive_file_id
+        existing.file_path = None  # Clear legacy path
         existing.notes = notes
         db.commit()
         db.refresh(existing)
@@ -205,7 +221,8 @@ async def upload_photo(
             user_id=current_user.id,
             date=photo_date,
             view=view,
-            file_path=str(processed_path),
+            drive_file_id=drive_file_id,
+            file_path=None,
             notes=notes,
         )
         db.add(photo)
@@ -217,6 +234,7 @@ async def upload_photo(
         date=photo.date,
         view=photo.view.value,
         file_path=photo.file_path,
+        drive_file_id=photo.drive_file_id,
         notes=photo.notes,
         url=f"/api/photos/file/{photo.id}",
     )
@@ -237,12 +255,29 @@ def get_photo_file(
     if photo.user_id != current_user.id:
         check_view_permission(photo.user_id, "photos", db, current_user)
 
-    # Validate path is within upload directory (prevent path traversal)
-    file_path = validate_file_path(Path(photo.file_path))
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Photo file not found")
+    # Get the photo owner for their refresh token
+    owner = db.query(User).filter(User.id == photo.user_id).first()
+    if not owner:
+        raise HTTPException(status_code=404, detail="Photo owner not found")
 
-    return FileResponse(file_path, media_type="image/jpeg")
+    # Download from Google Drive
+    if photo.drive_file_id:
+        if not owner.google_refresh_token:
+            raise HTTPException(status_code=500, detail="Photo owner's Drive access expired")
+
+        try:
+            content = google_drive.download_photo(owner.google_refresh_token, photo.drive_file_id)
+            return Response(content=content, media_type="image/jpeg")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to download from Google Drive: {e}")
+
+    # Legacy: file stored locally (should not happen for new photos)
+    if photo.file_path:
+        file_path = Path(photo.file_path)
+        if file_path.exists():
+            return Response(content=file_path.read_bytes(), media_type="image/jpeg")
+
+    raise HTTPException(status_code=404, detail="Photo file not found")
 
 
 @router.delete("/{photo_id}")
@@ -259,12 +294,20 @@ def delete_photo(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    # Delete file
-    file_path = Path(photo.file_path)
-    if file_path.exists():
-        file_path.unlink()
+    # Delete from Google Drive
+    if photo.drive_file_id and current_user.google_refresh_token:
+        try:
+            google_drive.delete_photo(current_user.google_refresh_token, photo.drive_file_id)
+        except Exception:
+            pass  # Continue even if Drive delete fails
 
-    # Delete record
+    # Legacy: delete local file if exists
+    if photo.file_path:
+        file_path = Path(photo.file_path)
+        if file_path.exists():
+            file_path.unlink()
+
+    # Delete database record
     db.delete(photo)
     db.commit()
 

@@ -31,6 +31,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     picture: Mapped[str | None] = mapped_column(String(500))
+    google_refresh_token: Mapped[str | None] = mapped_column(Text)  # For Google Drive API access
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -191,7 +192,8 @@ class ProgressPhoto(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     date: Mapped[date] = mapped_column(Date, index=True)
     view: Mapped[PhotoView] = mapped_column(Enum(PhotoView))  # front, side, back
-    file_path: Mapped[str] = mapped_column(String(500))
+    file_path: Mapped[str | None] = mapped_column(String(500))  # Legacy local path (deprecated)
+    drive_file_id: Mapped[str | None] = mapped_column(String(100))  # Google Drive file ID
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
