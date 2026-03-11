@@ -17,6 +17,11 @@ export interface DailyLog {
   caffeine_mg?: number;
   ate_outside?: boolean;
   notes?: string;
+  // Daily nutrition totals
+  total_calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
 }
 
 export type DailyLogInput = Omit<DailyLog, 'id'>;

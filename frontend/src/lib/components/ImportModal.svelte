@@ -31,6 +31,10 @@
       { value: 'steps', label: 'Steps' },
       { value: 'water_ml', label: 'Water', unit_type: 'water' },
       { value: 'caffeine_mg', label: 'Caffeine (mg)' },
+      { value: 'total_calories', label: 'Total Calories' },
+      { value: 'protein_g', label: 'Protein (g)' },
+      { value: 'carbs_g', label: 'Carbs (g)' },
+      { value: 'fat_g', label: 'Fat (g)' },
       { value: 'notes', label: 'Notes' },
     ],
     'measurements': [
