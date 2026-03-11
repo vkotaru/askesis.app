@@ -114,9 +114,11 @@ function createSettingsStore() {
         const settings = await api.getSettings();
         set(settings);
         applySettings(settings);
-      } catch {
-        // Use defaults if not authenticated
+      } catch (err) {
+        // Use defaults if not authenticated or on error
+        console.error('Failed to load settings, using defaults:', err);
         set(DEFAULT_SETTINGS);
+        applySettings(DEFAULT_SETTINGS);
       }
     },
 
