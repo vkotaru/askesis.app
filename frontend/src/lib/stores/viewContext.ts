@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { api, type SharedWithMe, type DataCategory } from '$lib/api/client';
 
 interface ViewContextState {
@@ -46,9 +46,7 @@ function createViewContextStore() {
     },
 
     hasAccess(category: DataCategory): boolean {
-      let state: ViewContextState | null = null;
-      subscribe((s) => (state = s))();
-      if (!state) return true;
+      const state = get({ subscribe });
       if (!state.viewingUser) return true;
       return state.viewingUser.categories.includes(category);
     },
