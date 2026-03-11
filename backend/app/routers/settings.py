@@ -141,7 +141,7 @@ def backup_database(
 ):
     """Backup the database to Google Drive, overwriting any existing backup."""
     # Check if user has refresh token for Drive access
-    if not current_user.refresh_token:
+    if not current_user.google_refresh_token:
         raise HTTPException(
             status_code=400,
             detail="Google Drive access not configured. Please re-login to grant Drive access.",
@@ -179,7 +179,7 @@ def backup_database(
 
         # Upload to Google Drive (overwrites existing)
         file_id = upload_backup(
-            refresh_token=current_user.refresh_token,
+            refresh_token=current_user.google_refresh_token,
             file_content=db_content,
             filename="askesis_backup.db",
             parent_folder_id=parent_folder_id,
