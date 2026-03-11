@@ -1,14 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, subDays, subMonths } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown, Flame, Beef, Wheat } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type DailyLog, type Activity as ActivityType } from '$lib/api/client';
+  import { api, type DailyLog, type Activity as ActivityType, type Meal } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
   import { formatWeight, weightFromMetric, formatWater, formatDistance, getWeightLabel } from '$lib/utils/units';
 
   let logs: DailyLog[] = [];
   let activities: ActivityType[] = [];
+  let todayMeals: Meal[] = [];
+  let todayLog: DailyLog | null = null;
   let loading = true;
   let hoveredPoint: { x: number; y: number; weight: number; date: string } | null = null;
 
@@ -28,16 +30,30 @@
   onMount(async () => {
     try {
       // Fetch data - use higher limit for weight chart
-      [logs, activities] = await Promise.all([
+      const [logsData, activitiesData, mealsData] = await Promise.all([
         api.getDailyLogs(undefined, undefined, undefined, 365),
         api.getActivities(undefined, undefined, undefined, 10),
+        api.getMeals(today),
       ]);
+      logs = logsData;
+      activities = activitiesData;
+      todayMeals = mealsData;
+
+      // Try to get today's daily log for macros
+      try {
+        todayLog = await api.getDailyLog(today);
+      } catch {
+        todayLog = null;
+      }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
       loading = false;
     }
   });
+
+  // Calculate today's total calories from meals
+  $: todayCalories = todayMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
 
   // Get cutoff date for selected range
   function getRangeCutoff(range: TimeRange): Date | null {
@@ -212,6 +228,47 @@
           <div class="p-2 rounded-lg bg-cardio-100 dark:bg-cardio-900/30">
             <Droplets size={20} class="text-cardio-400" />
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Today's Nutrition -->
+    <div class="card p-4 mb-8">
+      <div class="flex items-center gap-2 mb-3">
+        <Flame size={18} class="text-nutrition-500" />
+        <h3 class="text-sm font-medium text-gray-500">Today's Nutrition</h3>
+      </div>
+      <div class="grid grid-cols-4 gap-4">
+        <div>
+          <p class="text-xs text-gray-400">Calories</p>
+          <p class="text-xl font-bold">{todayCalories || '—'}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <Beef size={10} class="text-strength-500" />
+            Protein
+          </p>
+          <p class="text-xl font-bold">
+            {todayLog?.protein_g ?? '—'}{#if todayLog?.protein_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+          </p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <Wheat size={10} class="text-cardio-500" />
+            Carbs
+          </p>
+          <p class="text-xl font-bold">
+            {todayLog?.carbs_g ?? '—'}{#if todayLog?.carbs_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+          </p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <Droplets size={10} class="text-nutrition-600" />
+            Fat
+          </p>
+          <p class="text-xl font-bold">
+            {todayLog?.fat_g ?? '—'}{#if todayLog?.fat_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+          </p>
         </div>
       </div>
     </div>
