@@ -25,9 +25,8 @@
   let mealPhotoInputs: Record<number, HTMLInputElement | null> = {};
   let newMealPhotoInput: HTMLInputElement | null = null;
 
-  // Editable macro fields
+  // Editable macro fields (protein, carbs, fat - calories come from meals)
   let editingMacros = false;
-  let macroCalories: number | undefined;
   let macroProtein: number | undefined;
   let macroCarbs: number | undefined;
   let macroFat: number | undefined;
@@ -47,14 +46,12 @@
   async function loadDailyLog() {
     try {
       dailyLog = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
-      // Populate macro fields from daily log
-      macroCalories = dailyLog.total_calories ?? undefined;
+      // Populate macro fields from daily log (calories come from meals, not stored)
       macroProtein = dailyLog.protein_g ?? undefined;
       macroCarbs = dailyLog.carbs_g ?? undefined;
       macroFat = dailyLog.fat_g ?? undefined;
     } catch {
       dailyLog = null;
-      macroCalories = undefined;
       macroProtein = undefined;
       macroCarbs = undefined;
       macroFat = undefined;
@@ -66,7 +63,6 @@
     try {
       await api.saveDailyLog({
         date: selectedDate,
-        total_calories: macroCalories,
         protein_g: macroProtein,
         carbs_g: macroCarbs,
         fat_g: macroFat,
@@ -257,7 +253,7 @@
             on:click={saveMacros}
             disabled={savingMacros}
             class="p-1.5 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded"
-            title="Save"
+            title="Save macros"
           >
             <Check size={16} />
           </button>
@@ -273,108 +269,80 @@
       {/if}
     </div>
 
-    {#if editingMacros}
-      <!-- Editable inputs -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div>
-          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
-            <Flame size={12} class="text-nutrition-500" />
-            Calories
-          </label>
-          <input
-            type="number"
-            bind:value={macroCalories}
-            placeholder="—"
-            class="input text-lg font-bold w-full"
-          />
-        </div>
-        <div>
-          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
-            <Beef size={12} class="text-strength-500" />
-            Protein (g)
-          </label>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <!-- Calories - always from meals, not editable -->
+      <div>
+        <p class="text-sm text-gray-500 flex items-center gap-1">
+          <Flame size={14} class="text-nutrition-500" />
+          Calories
+        </p>
+        <p class="text-2xl font-bold">{totalCalories || '—'}</p>
+        <p class="text-xs text-gray-400">from meals</p>
+      </div>
+
+      <!-- Protein - editable -->
+      <div>
+        <p class="text-sm text-gray-500 flex items-center gap-1">
+          <Beef size={14} class="text-strength-500" />
+          Protein
+        </p>
+        {#if editingMacros}
           <input
             type="number"
             step="0.1"
             bind:value={macroProtein}
             placeholder="—"
-            class="input text-lg font-bold w-full"
+            class="input text-lg font-bold w-full mt-1"
           />
-        </div>
-        <div>
-          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
-            <Wheat size={12} class="text-cardio-500" />
-            Carbs (g)
-          </label>
+        {:else}
+          <p class="text-2xl font-bold">
+            {macroProtein ?? '—'}{#if macroProtein}<span class="text-sm font-normal text-gray-400">g</span>{/if}
+          </p>
+        {/if}
+      </div>
+
+      <!-- Carbs - editable -->
+      <div>
+        <p class="text-sm text-gray-500 flex items-center gap-1">
+          <Wheat size={14} class="text-cardio-500" />
+          Carbs
+        </p>
+        {#if editingMacros}
           <input
             type="number"
             step="0.1"
             bind:value={macroCarbs}
             placeholder="—"
-            class="input text-lg font-bold w-full"
+            class="input text-lg font-bold w-full mt-1"
           />
-        </div>
-        <div>
-          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
-            <Droplet size={12} class="text-nutrition-600" />
-            Fat (g)
-          </label>
+        {:else}
+          <p class="text-2xl font-bold">
+            {macroCarbs ?? '—'}{#if macroCarbs}<span class="text-sm font-normal text-gray-400">g</span>{/if}
+          </p>
+        {/if}
+      </div>
+
+      <!-- Fat - editable -->
+      <div>
+        <p class="text-sm text-gray-500 flex items-center gap-1">
+          <Droplet size={14} class="text-nutrition-600" />
+          Fat
+        </p>
+        {#if editingMacros}
           <input
             type="number"
             step="0.1"
             bind:value={macroFat}
             placeholder="—"
-            class="input text-lg font-bold w-full"
+            class="input text-lg font-bold w-full mt-1"
           />
-        </div>
-      </div>
-    {:else if macroCalories || macroProtein || macroCarbs || macroFat}
-      <!-- Display values -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div>
-          <p class="text-sm text-gray-500 flex items-center gap-1">
-            <Flame size={14} class="text-nutrition-500" />
-            Calories
+        {:else}
+          <p class="text-2xl font-bold">
+            {macroFat ?? '—'}{#if macroFat}<span class="text-sm font-normal text-gray-400">g</span>{/if}
           </p>
-          <p class="text-2xl font-bold">{macroCalories ?? '—'}</p>
-        </div>
-        <div>
-          <p class="text-sm text-gray-500 flex items-center gap-1">
-            <Beef size={14} class="text-strength-500" />
-            Protein
-          </p>
-          <p class="text-2xl font-bold">{macroProtein ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
-        </div>
-        <div>
-          <p class="text-sm text-gray-500 flex items-center gap-1">
-            <Wheat size={14} class="text-cardio-500" />
-            Carbs
-          </p>
-          <p class="text-2xl font-bold">{macroCarbs ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
-        </div>
-        <div>
-          <p class="text-sm text-gray-500 flex items-center gap-1">
-            <Droplet size={14} class="text-nutrition-600" />
-            Fat
-          </p>
-          <p class="text-2xl font-bold">{macroFat ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
-        </div>
-      </div>
-    {:else}
-      <!-- Fallback: show meal total calories or prompt to add -->
-      <div class="text-center py-2">
-        <p class="text-sm text-gray-500">Total calories (from meals)</p>
-        <p class="text-3xl font-bold">{totalCalories}</p>
-        {#if !$isViewingOther}
-          <button
-            on:click={() => editingMacros = true}
-            class="mt-2 text-sm text-primary-600 hover:text-primary-700"
-          >
-            + Add daily macros
-          </button>
         {/if}
       </div>
-    {/if}
+    </div>
   </div>
 
   <!-- Meals list -->

@@ -122,8 +122,8 @@ def create_or_update_log(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Convert feelings list to comma-separated string
-    data = log_data.model_dump()
+    # Only get fields that were actually provided (not default None values)
+    data = log_data.model_dump(exclude_unset=True)
     if data.get("feelings"):
         data["feelings"] = ",".join(data["feelings"])
 
@@ -135,7 +135,7 @@ def create_or_update_log(
     )
 
     if existing:
-        # Update existing
+        # Update only provided fields (preserve existing data)
         for key, value in data.items():
             if key != "date":  # Don't update date
                 setattr(existing, key, value)
@@ -143,8 +143,11 @@ def create_or_update_log(
         db.refresh(existing)
         return DailyLogResponse.from_orm_with_feelings(existing)
 
-    # Create new
-    log = DailyLog(user_id=current_user.id, **data)
+    # Create new - use full data with defaults for creation
+    create_data = log_data.model_dump()
+    if create_data.get("feelings"):
+        create_data["feelings"] = ",".join(create_data["feelings"])
+    log = DailyLog(user_id=current_user.id, **create_data)
     db.add(log)
     db.commit()
     db.refresh(log)
