@@ -15,6 +15,7 @@ from app.models import (
     User,
     Activity,
     DailyLog,
+    DailyNutrition,
     BodyMeasurement,
     ActivityType,
     TimeOfDay,
@@ -288,7 +289,11 @@ def import_daily_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Import daily logs from mapped CSV data."""
+    """Import daily logs from mapped CSV data.
+
+    Wellness data (weight, sleep, steps, water, caffeine) goes to daily_logs.
+    Nutrition data (protein, carbs, fat) goes to daily_nutrition.
+    """
     field_types = {
         "weight": "weight",
         "water_ml": "water",
@@ -306,54 +311,82 @@ def import_daily_logs(
             if not log_date:
                 raise ValueError("Date is required")
 
-            # Check for existing log on this date
-            existing = (
-                db.query(DailyLog)
-                .filter(DailyLog.user_id == current_user.id, DailyLog.date == log_date)
-                .first()
+            # Check if we have any wellness data to import
+            has_wellness_data = any(
+                mapped.get(f)
+                for f in ["weight", "sleep_hours", "steps", "water_ml", "caffeine_mg"]
             )
 
-            if existing:
-                # Update existing log
-                if mapped.get("weight"):
-                    existing.weight = parse_float(str(mapped["weight"]))
-                if mapped.get("sleep_hours"):
-                    existing.sleep_hours = parse_float(str(mapped["sleep_hours"]))
-                if mapped.get("steps"):
-                    existing.steps = parse_int(str(mapped["steps"]))
-                if mapped.get("water_ml"):
-                    existing.water_ml = parse_int(str(mapped["water_ml"]))
-                if mapped.get("caffeine_mg"):
-                    existing.caffeine_mg = parse_int(str(mapped["caffeine_mg"]))
-                if mapped.get("notes"):
-                    existing.notes = mapped["notes"].strip() or None
-                # Daily nutrition totals
-                if mapped.get("total_calories"):
-                    existing.total_calories = parse_int(str(mapped["total_calories"]))
-                if mapped.get("protein_g"):
-                    existing.protein_g = parse_float(str(mapped["protein_g"]))
-                if mapped.get("carbs_g"):
-                    existing.carbs_g = parse_float(str(mapped["carbs_g"]))
-                if mapped.get("fat_g"):
-                    existing.fat_g = parse_float(str(mapped["fat_g"]))
-            else:
-                # Create new log
-                log = DailyLog(
-                    user_id=current_user.id,
-                    date=log_date,
-                    weight=parse_float(str(mapped.get("weight", ""))),
-                    sleep_hours=parse_float(str(mapped.get("sleep_hours", ""))),
-                    steps=parse_int(str(mapped.get("steps", ""))),
-                    water_ml=parse_int(str(mapped.get("water_ml", ""))),
-                    caffeine_mg=parse_int(str(mapped.get("caffeine_mg", ""))),
-                    notes=mapped.get("notes", "").strip() or None,
-                    # Daily nutrition totals
-                    total_calories=parse_int(str(mapped.get("total_calories", ""))),
-                    protein_g=parse_float(str(mapped.get("protein_g", ""))),
-                    carbs_g=parse_float(str(mapped.get("carbs_g", ""))),
-                    fat_g=parse_float(str(mapped.get("fat_g", ""))),
+            # Check if we have any nutrition data to import
+            has_nutrition_data = any(
+                mapped.get(f) for f in ["protein_g", "carbs_g", "fat_g"]
+            )
+
+            # Handle wellness data (daily_logs table)
+            if has_wellness_data:
+                existing_log = (
+                    db.query(DailyLog)
+                    .filter(DailyLog.user_id == current_user.id, DailyLog.date == log_date)
+                    .first()
                 )
-                db.add(log)
+
+                if existing_log:
+                    # Update existing log
+                    if mapped.get("weight"):
+                        existing_log.weight = parse_float(str(mapped["weight"]))
+                    if mapped.get("sleep_hours"):
+                        existing_log.sleep_hours = parse_float(str(mapped["sleep_hours"]))
+                    if mapped.get("steps"):
+                        existing_log.steps = parse_int(str(mapped["steps"]))
+                    if mapped.get("water_ml"):
+                        existing_log.water_ml = parse_int(str(mapped["water_ml"]))
+                    if mapped.get("caffeine_mg"):
+                        existing_log.caffeine_mg = parse_int(str(mapped["caffeine_mg"]))
+                    if mapped.get("notes"):
+                        existing_log.notes = mapped["notes"].strip() or None
+                else:
+                    # Create new log
+                    log = DailyLog(
+                        user_id=current_user.id,
+                        date=log_date,
+                        weight=parse_float(str(mapped.get("weight", ""))),
+                        sleep_hours=parse_float(str(mapped.get("sleep_hours", ""))),
+                        steps=parse_int(str(mapped.get("steps", ""))),
+                        water_ml=parse_int(str(mapped.get("water_ml", ""))),
+                        caffeine_mg=parse_int(str(mapped.get("caffeine_mg", ""))),
+                        notes=mapped.get("notes", "").strip() or None,
+                    )
+                    db.add(log)
+
+            # Handle nutrition data (daily_nutrition table)
+            if has_nutrition_data:
+                existing_nutrition = (
+                    db.query(DailyNutrition)
+                    .filter(
+                        DailyNutrition.user_id == current_user.id,
+                        DailyNutrition.date == log_date,
+                    )
+                    .first()
+                )
+
+                if existing_nutrition:
+                    # Update existing nutrition record
+                    if mapped.get("protein_g"):
+                        existing_nutrition.protein_g = parse_float(str(mapped["protein_g"]))
+                    if mapped.get("carbs_g"):
+                        existing_nutrition.carbs_g = parse_float(str(mapped["carbs_g"]))
+                    if mapped.get("fat_g"):
+                        existing_nutrition.fat_g = parse_float(str(mapped["fat_g"]))
+                else:
+                    # Create new nutrition record
+                    nutrition = DailyNutrition(
+                        user_id=current_user.id,
+                        date=log_date,
+                        protein_g=parse_float(str(mapped.get("protein_g", ""))),
+                        carbs_g=parse_float(str(mapped.get("carbs_g", ""))),
+                        fat_g=parse_float(str(mapped.get("fat_g", ""))),
+                    )
+                    db.add(nutrition)
 
             success_count += 1
 
