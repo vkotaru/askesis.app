@@ -1,16 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload } from 'lucide-svelte';
+  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
-  import { api, type Meal, type MealInput, type FoodAnalysis } from '$lib/api/client';
+  import { api, type Meal, type MealInput, type FoodAnalysis, type DailyLog } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
   let meals: Meal[] = [];
+  let dailyLog: DailyLog | null = null;
   let showForm = false;
   let showImportModal = false;
   let loading = true;
@@ -35,10 +36,22 @@
     }
   }
 
-  onMount(loadMeals);
+  async function loadDailyLog() {
+    try {
+      dailyLog = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
+    } catch {
+      dailyLog = null;
+    }
+  }
+
+  async function loadData() {
+    await Promise.all([loadMeals(), loadDailyLog()]);
+  }
+
+  onMount(loadData);
 
   // Reload when viewing user changes
-  $: $viewingUserId, loadMeals();
+  $: $viewingUserId, loadData();
 
   $: totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0);
 
@@ -88,17 +101,17 @@
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
-    loadMeals();
+    loadData();
   }
 
   function prevDay() {
     selectedDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
-    loadMeals();
+    loadData();
   }
 
   function nextDay() {
     selectedDate = format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
-    loadMeals();
+    loadData();
   }
 
   async function handleMealPhotoUpload(mealId: number, e: Event) {
@@ -197,10 +210,45 @@
     </div>
   </div>
 
-  <!-- Summary -->
+  <!-- Daily Nutrition Summary -->
   <div class="card p-4 mb-6">
-    <p class="text-sm text-gray-500">Total calories</p>
-    <p class="text-3xl font-bold">{totalCalories}</p>
+    {#if dailyLog?.total_calories || dailyLog?.protein_g || dailyLog?.carbs_g || dailyLog?.fat_g}
+      <!-- Imported daily totals -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <p class="text-sm text-gray-500 flex items-center gap-1">
+            <Flame size={14} class="text-nutrition-500" />
+            Calories
+          </p>
+          <p class="text-2xl font-bold">{dailyLog.total_calories ?? '—'}</p>
+        </div>
+        <div>
+          <p class="text-sm text-gray-500 flex items-center gap-1">
+            <Beef size={14} class="text-strength-500" />
+            Protein
+          </p>
+          <p class="text-2xl font-bold">{dailyLog.protein_g ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
+        </div>
+        <div>
+          <p class="text-sm text-gray-500 flex items-center gap-1">
+            <Wheat size={14} class="text-cardio-500" />
+            Carbs
+          </p>
+          <p class="text-2xl font-bold">{dailyLog.carbs_g ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
+        </div>
+        <div>
+          <p class="text-sm text-gray-500 flex items-center gap-1">
+            <Droplet size={14} class="text-nutrition-600" />
+            Fat
+          </p>
+          <p class="text-2xl font-bold">{dailyLog.fat_g ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
+        </div>
+      </div>
+    {:else}
+      <!-- Fallback: show meal total calories -->
+      <p class="text-sm text-gray-500">Total calories (from meals)</p>
+      <p class="text-3xl font-bold">{totalCalories}</p>
+    {/if}
   </div>
 
   <!-- Meals list -->
@@ -437,7 +485,7 @@
 
 <ImportModal
   bind:show={showImportModal}
-  dataType="nutrition"
-  title="Import Meals"
-  on:success={() => loadMeals()}
+  dataType="daily-logs"
+  title="Import Nutrition Data"
+  on:success={() => loadData()}
 />
