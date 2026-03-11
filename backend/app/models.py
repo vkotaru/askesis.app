@@ -126,7 +126,8 @@ class Meal(Base):
     time: Mapped[str | None] = mapped_column(String(10))  # HH:MM format
     calories: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
-    photo_path: Mapped[str | None] = mapped_column(String(500))  # Path to meal photo
+    photo_path: Mapped[str | None] = mapped_column(String(500))  # Legacy local path
+    drive_file_id: Mapped[str | None] = mapped_column(String(100))  # Google Drive file ID
     ai_analysis: Mapped[str | None] = mapped_column(Text)  # Gemini analysis result
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

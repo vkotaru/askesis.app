@@ -34,11 +34,12 @@ export interface Meal {
   calories?: number;
   description?: string;
   photo_path?: string;
+  drive_file_id?: string;
   ai_analysis?: string;
   photo_url?: string;
 }
 
-export type MealInput = Omit<Meal, 'id' | 'photo_path' | 'ai_analysis' | 'photo_url'>;
+export type MealInput = Omit<Meal, 'id' | 'photo_path' | 'drive_file_id' | 'ai_analysis' | 'photo_url'>;
 
 export interface FoodAnalysis {
   calories?: number;

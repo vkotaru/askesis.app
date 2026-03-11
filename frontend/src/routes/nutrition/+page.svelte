@@ -93,10 +93,11 @@
 
   async function handleSubmit(e: SubmitEvent) {
     const formData = new FormData(e.target as HTMLFormElement);
+    const timeValue = formData.get('time') as string;
     const data: MealInput = {
       date: selectedDate,
       label: formData.get('label') as string,
-      time: formData.get('time') as string,
+      time: timeValue || undefined,  // Convert empty string to undefined
       calories: parseInt(formData.get('calories') as string) || photoAnalysis?.calories || undefined,
       description: formData.get('description') as string || photoAnalysis?.description || undefined,
     };
