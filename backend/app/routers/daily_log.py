@@ -24,11 +24,6 @@ class DailyLogCreate(BaseModel):
     caffeine_mg: int | None = Field(None, ge=0, le=2000)
     ate_outside: bool | None = None
     notes: str | None = Field(None, max_length=2000)
-    # Daily nutrition totals
-    total_calories: int | None = Field(None, ge=0, le=20000)
-    protein_g: float | None = Field(None, ge=0, le=1000)
-    carbs_g: float | None = Field(None, ge=0, le=2000)
-    fat_g: float | None = Field(None, ge=0, le=1000)
 
 
 class DailyLogResponse(BaseModel):
@@ -43,11 +38,6 @@ class DailyLogResponse(BaseModel):
     caffeine_mg: int | None = None
     ate_outside: bool | None = None
     notes: str | None = None
-    # Daily nutrition totals
-    total_calories: int | None = None
-    protein_g: float | None = None
-    carbs_g: float | None = None
-    fat_g: float | None = None
 
     class Config:
         from_attributes = True
@@ -67,10 +57,6 @@ class DailyLogResponse(BaseModel):
             caffeine_mg=log.caffeine_mg,
             ate_outside=log.ate_outside,
             notes=log.notes,
-            total_calories=log.total_calories,
-            protein_g=log.protein_g,
-            carbs_g=log.carbs_g,
-            fat_g=log.fat_g,
         )
 
 

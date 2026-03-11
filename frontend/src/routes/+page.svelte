@@ -3,14 +3,14 @@
   import { format, subDays, subMonths } from 'date-fns';
   import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown, Flame, Beef, Wheat } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type DailyLog, type Activity as ActivityType, type Meal } from '$lib/api/client';
+  import { api, type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
   import { formatWeight, weightFromMetric, formatWater, formatDistance, getWeightLabel } from '$lib/utils/units';
 
   let logs: DailyLog[] = [];
   let activities: ActivityType[] = [];
   let todayMeals: Meal[] = [];
-  let todayLog: DailyLog | null = null;
+  let todayNutrition: DailyNutrition | null = null;
   let loading = true;
   let hoveredPoint: { x: number; y: number; weight: number; date: string } | null = null;
 
@@ -39,11 +39,11 @@
       activities = activitiesData;
       todayMeals = mealsData;
 
-      // Try to get today's daily log for macros
+      // Try to get today's nutrition for macros
       try {
-        todayLog = await api.getDailyLog(today);
+        todayNutrition = await api.getDailyNutrition(today);
       } catch {
-        todayLog = null;
+        todayNutrition = null;
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -249,7 +249,7 @@
             Protein
           </p>
           <p class="text-xl font-bold">
-            {todayLog?.protein_g ?? '—'}{#if todayLog?.protein_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+            {todayNutrition?.protein_g ?? '—'}{#if todayNutrition?.protein_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
           </p>
         </div>
         <div>
@@ -258,7 +258,7 @@
             Carbs
           </p>
           <p class="text-xl font-bold">
-            {todayLog?.carbs_g ?? '—'}{#if todayLog?.carbs_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+            {todayNutrition?.carbs_g ?? '—'}{#if todayNutrition?.carbs_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
           </p>
         </div>
         <div>
@@ -267,7 +267,7 @@
             Fat
           </p>
           <p class="text-xl font-bold">
-            {todayLog?.fat_g ?? '—'}{#if todayLog?.fat_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+            {todayNutrition?.fat_g ?? '—'}{#if todayNutrition?.fat_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
           </p>
         </div>
       </div>

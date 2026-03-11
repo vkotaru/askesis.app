@@ -4,14 +4,14 @@
   import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet, Pencil, Check } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
-  import { api, type Meal, type MealInput, type FoodAnalysis, type DailyLog } from '$lib/api/client';
+  import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
   let meals: Meal[] = [];
-  let dailyLog: DailyLog | null = null;
+  let dailyNutrition: DailyNutrition | null = null;
   let showForm = false;
   let showImportModal = false;
   let loading = true;
@@ -43,15 +43,15 @@
     }
   }
 
-  async function loadDailyLog() {
+  async function loadDailyNutrition() {
     try {
-      dailyLog = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
-      // Populate macro fields from daily log (calories come from meals, not stored)
-      macroProtein = dailyLog.protein_g ?? undefined;
-      macroCarbs = dailyLog.carbs_g ?? undefined;
-      macroFat = dailyLog.fat_g ?? undefined;
+      dailyNutrition = await api.getDailyNutrition(selectedDate, $viewingUserId ?? undefined);
+      // Populate macro fields from daily nutrition
+      macroProtein = dailyNutrition.protein_g ?? undefined;
+      macroCarbs = dailyNutrition.carbs_g ?? undefined;
+      macroFat = dailyNutrition.fat_g ?? undefined;
     } catch {
-      dailyLog = null;
+      dailyNutrition = null;
       macroProtein = undefined;
       macroCarbs = undefined;
       macroFat = undefined;
@@ -61,14 +61,14 @@
   async function saveMacros() {
     savingMacros = true;
     try {
-      await api.saveDailyLog({
+      await api.saveDailyNutrition({
         date: selectedDate,
         protein_g: macroProtein,
         carbs_g: macroCarbs,
         fat_g: macroFat,
       });
       editingMacros = false;
-      await loadDailyLog();
+      await loadDailyNutrition();
     } catch (err) {
       console.error('Failed to save macros:', err);
     } finally {
@@ -77,7 +77,7 @@
   }
 
   async function loadData() {
-    await Promise.all([loadMeals(), loadDailyLog()]);
+    await Promise.all([loadMeals(), loadDailyNutrition()]);
   }
 
   onMount(loadData);

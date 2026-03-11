@@ -17,12 +17,19 @@ export interface DailyLog {
   caffeine_mg?: number;
   ate_outside?: boolean;
   notes?: string;
-  // Daily nutrition totals
-  total_calories?: number;
+}
+
+export interface DailyNutrition {
+  id: number;
+  user_id: number;
+  date: string;
   protein_g?: number;
   carbs_g?: number;
   fat_g?: number;
+  notes?: string;
 }
+
+export type DailyNutritionInput = Omit<DailyNutrition, 'id' | 'user_id'>;
 
 export type DailyLogInput = Omit<DailyLog, 'id'>;
 
@@ -267,7 +274,18 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  // Nutrition
+  // Nutrition - Daily totals
+  getDailyNutrition: (date: string, userId?: number) => {
+    const params = userId ? `?user_id=${userId}` : '';
+    return fetchJSON<DailyNutrition>(`/api/nutrition/daily/${date}${params}`);
+  },
+  saveDailyNutrition: (data: DailyNutritionInput) =>
+    fetchJSON<DailyNutrition>('/api/nutrition/daily', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Nutrition - Meals
   getMeals: (date?: string, userId?: number) => {
     const params = new URLSearchParams();
     if (date) params.set('meal_date', date);
