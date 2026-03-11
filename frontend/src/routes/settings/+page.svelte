@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
@@ -581,6 +581,31 @@
           {/if}
         </div>
       {/if}
+    </div>
+
+    <!-- Google Drive -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <Cloud size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Google Drive</h2>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">
+        Progress photos are stored in your Google Drive. By default, they go to a folder called "Askesis Progress Photos" at the root of your Drive.
+      </p>
+      <div class="max-w-md">
+        <label for="drive-folder" class="label">Parent Folder ID (optional)</label>
+        <input
+          id="drive-folder"
+          type="text"
+          class="input"
+          placeholder="Leave empty for Drive root"
+          value={$settings.drive_parent_folder_id || ''}
+          on:change={(e) => settings.updateSetting('drive_parent_folder_id', e.currentTarget.value || null)}
+        />
+        <p class="text-xs text-gray-500 mt-2">
+          To store photos inside a specific folder, paste its ID here. You can find the folder ID in the URL when viewing the folder in Google Drive.
+        </p>
+      </div>
     </div>
 
     <!-- Data Export -->

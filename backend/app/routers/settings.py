@@ -21,6 +21,8 @@ class UserSettingsSchema(BaseModel):
     measurement_unit: str = "cm"
     weight_unit: str = "kg"
     water_unit: str = "ml"
+    # Google Drive settings
+    drive_parent_folder_id: str | None = None
 
     class Config:
         from_attributes = True
@@ -36,6 +38,7 @@ class UserSettingsUpdate(BaseModel):
     measurement_unit: str | None = None
     weight_unit: str | None = None
     water_unit: str | None = None
+    drive_parent_folder_id: str | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -112,6 +115,8 @@ def update_settings(
         settings.weight_unit = settings_data.weight_unit
     if settings_data.water_unit is not None:
         settings.water_unit = settings_data.water_unit
+    if settings_data.drive_parent_folder_id is not None:
+        settings.drive_parent_folder_id = settings_data.drive_parent_folder_id
 
     db.commit()
     db.refresh(settings)

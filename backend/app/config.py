@@ -19,9 +19,6 @@ class Settings(BaseSettings):
 
     # Google Drive storage
     drive_folder_name: str = "Askesis Progress Photos"  # Folder name in user's Drive
-    drive_parent_folder_id: str = (
-        ""  # Optional: parent folder ID to create app folder inside
-    )
 
     class Config:
         env_file = ".env"

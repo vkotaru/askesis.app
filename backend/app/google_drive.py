@@ -26,16 +26,20 @@ def get_drive_service(refresh_token: str):
     return build("drive", "v3", credentials=credentials)
 
 
-def get_or_create_app_folder(service) -> str:
-    """Get or create the app folder in user's Drive. Returns folder ID."""
+def get_or_create_app_folder(service, parent_folder_id: str | None = None) -> str:
+    """Get or create the app folder in user's Drive. Returns folder ID.
+
+    Args:
+        service: Google Drive service instance
+        parent_folder_id: Optional parent folder ID from user's settings
+    """
     settings = get_settings()
     folder_name = settings.drive_folder_name
-    parent_id = settings.drive_parent_folder_id
 
     # Search for existing folder (optionally within a specific parent)
     query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    if parent_id:
-        query += f" and '{parent_id}' in parents"
+    if parent_folder_id:
+        query += f" and '{parent_folder_id}' in parents"
     results = (
         service.files()
         .list(q=query, spaces="drive", fields="files(id, name)")
@@ -51,8 +55,8 @@ def get_or_create_app_folder(service) -> str:
         "name": folder_name,
         "mimeType": "application/vnd.google-apps.folder",
     }
-    if parent_id:
-        folder_metadata["parents"] = [parent_id]
+    if parent_folder_id:
+        folder_metadata["parents"] = [parent_folder_id]
     folder = service.files().create(body=folder_metadata, fields="id").execute()
     return folder["id"]
 
@@ -62,6 +66,7 @@ def upload_photo(
     file_content: bytes,
     filename: str,
     mime_type: str = "image/jpeg",
+    parent_folder_id: str | None = None,
 ) -> str:
     """
     Upload a photo to Google Drive.
@@ -71,12 +76,13 @@ def upload_photo(
         file_content: Raw file bytes
         filename: Name for the file in Drive
         mime_type: MIME type of the file
+        parent_folder_id: Optional parent folder ID from user's settings
 
     Returns:
         Google Drive file ID
     """
     service = get_drive_service(refresh_token)
-    folder_id = get_or_create_app_folder(service)
+    folder_id = get_or_create_app_folder(service, parent_folder_id)
 
     file_metadata = {
         "name": filename,
