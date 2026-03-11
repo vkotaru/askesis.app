@@ -406,7 +406,7 @@
                             <th class="pb-2 font-medium">Exercise</th>
                             <th class="pb-2 font-medium text-center">Sets</th>
                             <th class="pb-2 font-medium text-center">Reps</th>
-                            <th class="pb-2 font-medium text-center">Weight (kg)</th>
+                            <th class="pb-2 font-medium text-center">Weight ({getWeightLabel($settings.weight_unit)})</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -415,7 +415,7 @@
                               <td class="py-2 font-medium">{exercise.name}</td>
                               <td class="py-2 text-center">{exercise.sets || '-'}</td>
                               <td class="py-2 text-center font-mono text-xs">{exercise.reps || '-'}</td>
-                              <td class="py-2 text-center">{exercise.weight_kg || '-'}</td>
+                              <td class="py-2 text-center">{exercise.weight_kg ? formatWeight(exercise.weight_kg, $settings.weight_unit) : '-'}</td>
                             </tr>
                           {/each}
                         </tbody>

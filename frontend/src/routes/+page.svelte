@@ -409,7 +409,7 @@
                   <p class="text-sm text-gray-500">
                     {format(new Date(activity.date), 'MMM d')}
                     {#if activity.duration_mins} · {activity.duration_mins} min{/if}
-                    {#if activity.distance_km} · {activity.distance_km} km{/if}
+                    {#if activity.distance_km} · {formatDistance(activity.distance_km, $settings.distance_unit)}{/if}
                   </p>
                 </div>
                 <span
