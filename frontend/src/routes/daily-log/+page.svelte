@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar, CheckCircle } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar, CheckCircle, Flame, Beef, Wheat, Droplet } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
@@ -42,6 +42,11 @@
   let caffeine_mg: number | undefined;
   let ate_outside = false;
   let notes = '';
+  // Daily nutrition totals
+  let total_calories: number | undefined;
+  let protein_g: number | undefined;
+  let carbs_g: number | undefined;
+  let fat_g: number | undefined;
 
   async function loadLog() {
     try {
@@ -54,6 +59,11 @@
       caffeine_mg = log.caffeine_mg;
       ate_outside = log.ate_outside ?? false;
       notes = log.notes ?? '';
+      // Daily nutrition totals
+      total_calories = log.total_calories;
+      protein_g = log.protein_g;
+      carbs_g = log.carbs_g;
+      fat_g = log.fat_g;
     } catch {
       // No log for this date, reset to defaults
       weight = undefined;
@@ -64,6 +74,10 @@
       caffeine_mg = undefined;
       ate_outside = false;
       notes = '';
+      total_calories = undefined;
+      protein_g = undefined;
+      carbs_g = undefined;
+      fat_g = undefined;
     }
   }
 
@@ -123,6 +137,10 @@
         caffeine_mg,
         ate_outside,
         notes: notes || undefined,
+        total_calories,
+        protein_g,
+        carbs_g,
+        fat_g,
       });
       saved = true;
       loadRecentLogs(); // Refresh recent entries
@@ -141,7 +159,8 @@
 
   // Check if current date has any data
   $: hasData = weight !== undefined || sleep_hours !== undefined || steps !== undefined ||
-               water !== undefined || feelings.length > 0 || caffeine_mg !== undefined || notes !== '';
+               water !== undefined || feelings.length > 0 || caffeine_mg !== undefined || notes !== '' ||
+               total_calories !== undefined || protein_g !== undefined || carbs_g !== undefined || fat_g !== undefined;
 
   // Check if selected date exists in recent logs
   $: dateHasEntry = recentLogs.some(log => log.date === selectedDate);
@@ -297,6 +316,75 @@
             )}
           />
         </button>
+      </div>
+    </div>
+
+    <!-- Nutrition Summary -->
+    <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+      <h3 class="text-base font-medium mb-4 flex items-center gap-2">
+        <Flame size={18} class="text-nutrition-500" />
+        Daily Nutrition
+        <span class="text-gray-400 font-normal text-sm">(optional totals)</span>
+      </h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="space-y-2">
+          <label for="total_calories" class="label flex items-center gap-2">
+            <Flame size={14} class="text-nutrition-500" />
+            Calories
+          </label>
+          <input
+            id="total_calories"
+            type="number"
+            bind:value={total_calories}
+            placeholder="kcal"
+            class="input"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <label for="protein" class="label flex items-center gap-2">
+            <Beef size={14} class="text-strength-500" />
+            Protein <span class="text-gray-400 font-normal">(g)</span>
+          </label>
+          <input
+            id="protein"
+            type="number"
+            step="any"
+            bind:value={protein_g}
+            placeholder="g"
+            class="input"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <label for="carbs" class="label flex items-center gap-2">
+            <Wheat size={14} class="text-cardio-500" />
+            Carbs <span class="text-gray-400 font-normal">(g)</span>
+          </label>
+          <input
+            id="carbs"
+            type="number"
+            step="any"
+            bind:value={carbs_g}
+            placeholder="g"
+            class="input"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <label for="fat" class="label flex items-center gap-2">
+            <Droplet size={14} class="text-nutrition-600" />
+            Fat <span class="text-gray-400 font-normal">(g)</span>
+          </label>
+          <input
+            id="fat"
+            type="number"
+            step="any"
+            bind:value={fat_g}
+            placeholder="g"
+            class="input"
+          />
+        </div>
       </div>
     </div>
 

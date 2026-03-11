@@ -106,6 +106,11 @@ class DailyLog(Base):
     caffeine_mg: Mapped[int | None] = mapped_column(Integer)
     ate_outside: Mapped[bool | None] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Daily nutrition totals (optional, for tracking without individual meals)
+    total_calories: Mapped[int | None] = mapped_column(Integer)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="daily_logs")

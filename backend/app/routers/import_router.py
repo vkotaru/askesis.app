@@ -327,6 +327,15 @@ def import_daily_logs(
                     existing.caffeine_mg = parse_int(str(mapped["caffeine_mg"]))
                 if mapped.get("notes"):
                     existing.notes = mapped["notes"].strip() or None
+                # Daily nutrition totals
+                if mapped.get("total_calories"):
+                    existing.total_calories = parse_int(str(mapped["total_calories"]))
+                if mapped.get("protein_g"):
+                    existing.protein_g = parse_float(str(mapped["protein_g"]))
+                if mapped.get("carbs_g"):
+                    existing.carbs_g = parse_float(str(mapped["carbs_g"]))
+                if mapped.get("fat_g"):
+                    existing.fat_g = parse_float(str(mapped["fat_g"]))
             else:
                 # Create new log
                 log = DailyLog(
@@ -338,6 +347,11 @@ def import_daily_logs(
                     water_ml=parse_int(str(mapped.get("water_ml", ""))),
                     caffeine_mg=parse_int(str(mapped.get("caffeine_mg", ""))),
                     notes=mapped.get("notes", "").strip() or None,
+                    # Daily nutrition totals
+                    total_calories=parse_int(str(mapped.get("total_calories", ""))),
+                    protein_g=parse_float(str(mapped.get("protein_g", ""))),
+                    carbs_g=parse_float(str(mapped.get("carbs_g", ""))),
+                    fat_g=parse_float(str(mapped.get("fat_g", ""))),
                 )
                 db.add(log)
 
