@@ -1,10 +1,10 @@
-import os
+import io
 import uuid
 import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import date
@@ -26,26 +26,27 @@ except ImportError:
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, Meal, MealTemplate
+from app.models import User, Meal, MealTemplate, UserSettings
 from app.routers.auth import get_current_user, check_view_permission
+from app import google_drive
 
 router = APIRouter()
 
-# Upload directory for meal photos
-MEAL_UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "meals"
-MEAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Temp directory for Gemini analysis (photos are stored in Google Drive)
+TEMP_DIR = Path(__file__).parent.parent.parent / "uploads" / "temp"
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
 
 
-def validate_file_path(file_path: Path) -> Path:
-    """Validate that file path is within upload directory (prevent path traversal)."""
-    resolved = file_path.resolve()
-    upload_resolved = MEAL_UPLOAD_DIR.resolve()
-    if not str(resolved).startswith(str(upload_resolved)):
-        raise HTTPException(status_code=403, detail="Invalid file path")
-    return resolved
+def require_drive_access(user: User):
+    """Ensure user has Google Drive access configured."""
+    if not user.google_refresh_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Google Drive access not configured. Please log out and log in again to grant Drive permissions.",
+        )
 
 
 class MealCreate(BaseModel):
@@ -60,6 +61,7 @@ class MealResponse(MealCreate):
     id: int
     user_id: int
     photo_path: str | None = None
+    drive_file_id: str | None = None
     ai_analysis: str | None = None
     photo_url: str | None = None
 
@@ -74,30 +76,36 @@ class FoodAnalysis(BaseModel):
     macros: dict | None = None
 
 
-def process_meal_image(file_path: Path, max_size: int = 800, quality: int = 80) -> Path:
-    """Process uploaded meal image: resize, optimize."""
-    img = Image.open(file_path)
+def process_meal_image_bytes(
+    content: bytes, max_size: int = 800, quality: int = 80
+) -> bytes:
+    """Process uploaded meal image: resize, optimize, convert to JPEG. Returns bytes."""
+    img = Image.open(io.BytesIO(content))
+
+    # Fix rotation based on EXIF
     img = ImageOps.exif_transpose(img)
 
+    # Convert to RGB if needed
     if img.mode in ("RGBA", "P", "CMYK"):
         img = img.convert("RGB")
 
+    # Resize if too large (maintain aspect ratio)
     if img.size[0] > max_size or img.size[1] > max_size:
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
-    output_path = file_path.with_suffix(".jpg")
-    img.save(output_path, "JPEG", quality=quality, optimize=True)
-
-    if output_path != file_path and file_path.exists():
-        file_path.unlink()
-
-    return output_path
+    # Save as optimized JPEG to bytes
+    output = io.BytesIO()
+    img.save(output, "JPEG", quality=quality, optimize=True)
+    output.seek(0)
+    return output.read()
 
 
-async def analyze_food_with_gemini(image_path: Path) -> FoodAnalysis | None:
+async def analyze_food_with_gemini(image_content: bytes) -> FoodAnalysis | None:
     """Use Gemini to analyze food in image."""
     if not GEMINI_AVAILABLE:
         return None
+
+    import os
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -107,8 +115,8 @@ async def analyze_food_with_gemini(image_path: Path) -> FoodAnalysis | None:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
 
-        # Load image
-        img = Image.open(image_path)
+        # Load image from bytes
+        img = Image.open(io.BytesIO(image_content))
 
         prompt = """Analyze this food image and provide:
 1. Estimated total calories
@@ -146,6 +154,8 @@ Be conservative with calorie estimates. If you can't identify the food clearly, 
 
 def meal_to_response(meal: Meal) -> dict:
     """Convert Meal to response dict with photo URL."""
+    # Photo URL available if either Drive file or legacy local file exists
+    has_photo = meal.drive_file_id or meal.photo_path
     return {
         "id": meal.id,
         "user_id": meal.user_id,
@@ -155,10 +165,9 @@ def meal_to_response(meal: Meal) -> dict:
         "calories": meal.calories,
         "description": meal.description,
         "photo_path": meal.photo_path,
+        "drive_file_id": meal.drive_file_id,
         "ai_analysis": meal.ai_analysis,
-        "photo_url": f"/api/nutrition/meals/{meal.id}/photo"
-        if meal.photo_path
-        else None,
+        "photo_url": f"/api/nutrition/meals/{meal.id}/photo" if has_photo else None,
     }
 
 
@@ -244,6 +253,7 @@ async def upload_meal_photo(
 ):
     """Upload a photo for a meal and optionally analyze with Gemini."""
     settings = get_settings()
+    require_drive_access(current_user)
 
     meal = (
         db.query(Meal)
@@ -273,35 +283,51 @@ async def upload_meal_photo(
             detail=f"File too large. Maximum size is {settings.max_image_size // (1024 * 1024)}MB",
         )
 
-    # Generate unique filename
-    file_ext = Path(file.filename).suffix.lower() if file.filename else ".jpg"
-    unique_name = f"{current_user.id}_{meal_id}_{uuid.uuid4().hex[:8]}{file_ext}"
-    file_path = MEAL_UPLOAD_DIR / unique_name
-
-    # Save uploaded file
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    # Process image
+    # Process image (resize, optimize, convert to JPEG)
     try:
-        processed_path = process_meal_image(file_path)
+        processed_content = process_meal_image_bytes(content)
     except Exception as e:
-        file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
 
-    # Delete old photo if exists
-    if meal.photo_path:
-        old_path = Path(meal.photo_path)
-        if old_path.exists():
-            old_path.unlink()
+    # Generate unique filename for Drive
+    filename = f"meal_{current_user.id}_{meal_id}_{uuid.uuid4().hex[:8]}.jpg"
 
-    # Update meal with photo path
-    meal.photo_path = str(processed_path)
+    # Get user's Drive folder setting
+    user_settings = (
+        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    )
+    parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
+
+    # Upload to Google Drive
+    try:
+        drive_file_id = google_drive.upload_meal_photo(
+            current_user.google_refresh_token,
+            processed_content,
+            filename,
+            parent_folder_id=parent_folder_id,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to upload to Google Drive: {e}"
+        )
+
+    # Delete old photo from Drive if replacing
+    if meal.drive_file_id:
+        try:
+            google_drive.delete_photo(
+                current_user.google_refresh_token, meal.drive_file_id
+            )
+        except Exception:
+            pass  # Ignore errors deleting old file
+
+    # Update meal with Drive file ID
+    meal.drive_file_id = drive_file_id
+    meal.photo_path = None  # Clear legacy path
 
     # Analyze with Gemini if requested
     analysis = None
     if analyze:
-        analysis = await analyze_food_with_gemini(processed_path)
+        analysis = await analyze_food_with_gemini(processed_content)
         if analysis:
             meal.ai_analysis = json.dumps(analysis.model_dump())
             # Auto-fill calories and description if not set
@@ -328,19 +354,45 @@ def get_meal_photo(
     """Get photo for a meal."""
     meal = db.query(Meal).filter(Meal.id == meal_id).first()
 
-    if not meal or not meal.photo_path:
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    if not meal.drive_file_id and not meal.photo_path:
         raise HTTPException(status_code=404, detail="Photo not found")
 
     # Check permission - allow owner or shared users
     if meal.user_id != current_user.id:
         check_view_permission(meal.user_id, "nutrition", db, current_user)
 
-    # Validate path is within upload directory (prevent path traversal)
-    file_path = validate_file_path(Path(meal.photo_path))
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Photo file not found")
+    # Get the meal owner for their refresh token
+    owner = db.query(User).filter(User.id == meal.user_id).first()
+    if not owner:
+        raise HTTPException(status_code=404, detail="Meal owner not found")
 
-    return FileResponse(file_path, media_type="image/jpeg")
+    # Download from Google Drive
+    if meal.drive_file_id:
+        if not owner.google_refresh_token:
+            raise HTTPException(
+                status_code=500, detail="Meal owner's Drive access expired"
+            )
+
+        try:
+            content = google_drive.download_photo(
+                owner.google_refresh_token, meal.drive_file_id
+            )
+            return Response(content=content, media_type="image/jpeg")
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to download from Google Drive: {e}"
+            )
+
+    # Legacy: file stored locally (should not happen for new photos)
+    if meal.photo_path:
+        file_path = Path(meal.photo_path)
+        if file_path.exists():
+            return Response(content=file_path.read_bytes(), media_type="image/jpeg")
+
+    raise HTTPException(status_code=404, detail="Photo file not found")
 
 
 @router.post("/analyze-photo")
@@ -373,25 +425,13 @@ async def analyze_food_photo(
             detail=f"File too large. Maximum size is {settings.max_image_size // (1024 * 1024)}MB",
         )
 
-    # Save temporarily
-    temp_name = f"temp_{uuid.uuid4().hex}.jpg"
-    temp_path = MEAL_UPLOAD_DIR / temp_name
-    processed_path = None
-
-    with open(temp_path, "wb") as f:
-        f.write(content)
-
+    # Process image in memory (no temp files needed)
     try:
-        processed_path = process_meal_image(temp_path)
-        analysis = await analyze_food_with_gemini(processed_path)
-
+        processed_content = process_meal_image_bytes(content)
+        analysis = await analyze_food_with_gemini(processed_content)
         return analysis.model_dump() if analysis else {"error": "Analysis failed"}
-
-    finally:
-        # Clean up temp files
-        temp_path.unlink(missing_ok=True)
-        if processed_path and processed_path.exists():
-            processed_path.unlink()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
 
 
 @router.delete("/meals/{meal_id}")
@@ -408,6 +448,21 @@ def delete_meal(
 
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
+
+    # Delete photo from Google Drive
+    if meal.drive_file_id and current_user.google_refresh_token:
+        try:
+            google_drive.delete_photo(
+                current_user.google_refresh_token, meal.drive_file_id
+            )
+        except Exception:
+            pass  # Continue even if Drive delete fails
+
+    # Legacy: delete local file if exists
+    if meal.photo_path:
+        file_path = Path(meal.photo_path)
+        if file_path.exists():
+            file_path.unlink()
 
     db.delete(meal)
     db.commit()
