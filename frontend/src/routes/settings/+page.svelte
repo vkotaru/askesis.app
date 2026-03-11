@@ -70,6 +70,23 @@
 
   onMount(loadShares);
 
+  // Helper functions to handle select changes with proper typing
+  function handleDistanceUnitChange(e: Event) {
+    settings.updateSetting('distance_unit', (e.target as HTMLSelectElement).value as DistanceUnit);
+  }
+  function handleMeasurementUnitChange(e: Event) {
+    settings.updateSetting('measurement_unit', (e.target as HTMLSelectElement).value as MeasurementUnit);
+  }
+  function handleWeightUnitChange(e: Event) {
+    settings.updateSetting('weight_unit', (e.target as HTMLSelectElement).value as WeightUnit);
+  }
+  function handleWaterUnitChange(e: Event) {
+    settings.updateSetting('water_unit', (e.target as HTMLSelectElement).value as WaterUnit);
+  }
+  function handleFontSizeChange(size: string) {
+    settings.updateSetting('font_size', size as UserSettings['font_size']);
+  }
+
   let exporting = false;
 
   async function exportData() {
@@ -249,7 +266,7 @@
           <select
             class="input"
             value={$settings.distance_unit}
-            on:change={(e) => settings.updateSetting('distance_unit', e.currentTarget.value)}
+            on:change={handleDistanceUnitChange}
           >
             {#each DISTANCE_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -261,7 +278,7 @@
           <select
             class="input"
             value={$settings.measurement_unit}
-            on:change={(e) => settings.updateSetting('measurement_unit', e.currentTarget.value)}
+            on:change={handleMeasurementUnitChange}
           >
             {#each MEASUREMENT_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -273,7 +290,7 @@
           <select
             class="input"
             value={$settings.weight_unit}
-            on:change={(e) => settings.updateSetting('weight_unit', e.currentTarget.value)}
+            on:change={handleWeightUnitChange}
           >
             {#each WEIGHT_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -285,7 +302,7 @@
           <select
             class="input"
             value={$settings.water_unit}
-            on:change={(e) => settings.updateSetting('water_unit', e.currentTarget.value)}
+            on:change={handleWaterUnitChange}
           >
             {#each WATER_UNITS as { value, label }}
               <option value={value}>{label}</option>
@@ -365,7 +382,7 @@
             { value: '2xl', label: '2XL', size: '24px' },
           ] as option (option.value)}
             <button
-              on:click={() => settings.updateSetting('font_size', option.value)}
+              on:click={() => handleFontSizeChange(option.value)}
               class={clsx(
                 'px-3 py-2 rounded-xl border-2 transition-all text-center',
                 $settings.font_size === option.value
