@@ -5,7 +5,7 @@
   import { api, type ImportPreview, type ColumnMapping, type ImportRequest, type ImportResult } from '$lib/api/client';
 
   export let show = false;
-  export let dataType: 'activities' | 'daily-logs' | 'measurements' = 'activities';
+  export let dataType: 'activities' | 'daily-logs' | 'measurements' | 'nutrition' = 'activities';
   export let title = 'Import CSV';
 
   const dispatch = createEventDispatcher<{ close: void; success: ImportResult }>();
@@ -49,6 +49,17 @@
       { value: 'thigh_right', label: 'Thigh (Right)', unit_type: 'measurement' },
       { value: 'calf_left', label: 'Calf (Left)', unit_type: 'measurement' },
       { value: 'calf_right', label: 'Calf (Right)', unit_type: 'measurement' },
+      { value: 'notes', label: 'Notes' },
+    ],
+    'nutrition': [
+      { value: 'date', label: 'Date' },
+      { value: 'meal_type', label: 'Meal Type' },
+      { value: 'name', label: 'Meal Name' },
+      { value: 'calories', label: 'Calories' },
+      { value: 'protein', label: 'Protein (g)' },
+      { value: 'carbs', label: 'Carbs (g)' },
+      { value: 'fat', label: 'Fat (g)' },
+      { value: 'fiber', label: 'Fiber (g)' },
       { value: 'notes', label: 'Notes' },
     ],
   };
@@ -224,13 +235,15 @@
         result = await api.importActivities(request);
       } else if (dataType === 'daily-logs') {
         result = await api.importDailyLogs(request);
-      } else {
+      } else if (dataType === 'measurements') {
         result = await api.importMeasurements(request);
+      } else if (dataType === 'nutrition') {
+        throw new Error('Nutrition import is not yet supported');
       }
 
       step = 'result';
 
-      if (result.success_count > 0) {
+      if (result && result.success_count > 0) {
         dispatch('success', result);
       }
     } catch (err) {
