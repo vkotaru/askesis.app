@@ -161,3 +161,99 @@ def check_drive_access(refresh_token: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def get_or_create_backup_folder(service, parent_folder_id: str | None = None) -> str:
+    """Get or create the backup folder in user's Drive. Returns folder ID."""
+    folder_name = "Askesis Backups"
+
+    # Search for existing folder
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    if parent_folder_id:
+        query += f" and '{parent_folder_id}' in parents"
+    results = (
+        service.files()
+        .list(q=query, spaces="drive", fields="files(id, name)")
+        .execute()
+    )
+    files = results.get("files", [])
+
+    if files:
+        return files[0]["id"]
+
+    # Create folder
+    folder_metadata = {
+        "name": folder_name,
+        "mimeType": "application/vnd.google-apps.folder",
+    }
+    if parent_folder_id:
+        folder_metadata["parents"] = [parent_folder_id]
+    folder = service.files().create(body=folder_metadata, fields="id").execute()
+    return folder["id"]
+
+
+def upload_backup(
+    refresh_token: str,
+    file_content: bytes,
+    filename: str,
+    parent_folder_id: str | None = None,
+) -> str:
+    """
+    Upload or update a database backup in Google Drive.
+    Overwrites existing backup file if it exists.
+
+    Args:
+        refresh_token: User's Google refresh token
+        file_content: Raw file bytes
+        filename: Name for the backup file in Drive
+        parent_folder_id: Optional parent folder ID from user's settings
+
+    Returns:
+        Google Drive file ID
+    """
+    service = get_drive_service(refresh_token)
+    folder_id = get_or_create_backup_folder(service, parent_folder_id)
+
+    # Check if backup file already exists
+    query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
+    results = (
+        service.files()
+        .list(q=query, spaces="drive", fields="files(id, name)")
+        .execute()
+    )
+    existing_files = results.get("files", [])
+
+    media = MediaIoBaseUpload(
+        io.BytesIO(file_content),
+        mimetype="application/x-sqlite3",
+        resumable=True,
+    )
+
+    if existing_files:
+        # Update existing file (overwrite)
+        file_id = existing_files[0]["id"]
+        file = (
+            service.files()
+            .update(
+                fileId=file_id,
+                media_body=media,
+            )
+            .execute()
+        )
+        return file["id"]
+    else:
+        # Create new file
+        file_metadata = {
+            "name": filename,
+            "parents": [folder_id],
+        }
+        file = (
+            service.files()
+            .create(
+                body=file_metadata,
+                media_body=media,
+                fields="id",
+            )
+            .execute()
+        )
+        return file["id"]
