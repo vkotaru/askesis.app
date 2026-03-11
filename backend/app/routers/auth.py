@@ -1,4 +1,5 @@
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -8,6 +9,8 @@ from datetime import datetime, timedelta
 from app.database import get_db
 from app.config import get_settings
 from app.models import User, DataShare
+
+logger = logging.getLogger("askesis.auth")
 
 router = APIRouter()
 settings = get_settings()
@@ -162,6 +165,10 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     token = await oauth.google.authorize_access_token(request)
     user_info = token.get("userinfo")
 
+    # Debug: log what we received from Google
+    logger.info(f"OAuth token keys: {list(token.keys())}")
+    logger.info(f"Refresh token present: {'refresh_token' in token}")
+
     email = user_info["email"]
 
     # Check if email is allowed
@@ -182,6 +189,9 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     refresh_token = token.get("refresh_token")
     if refresh_token:
         user.google_refresh_token = refresh_token
+        logger.info(f"Saved refresh token for user {email}")
+    else:
+        logger.warning(f"No refresh token received for user {email}")
     db.commit()
 
     # Create JWT and set cookie

@@ -1,6 +1,7 @@
 """Google Drive storage service for progress photos."""
 
 import io
+import logging
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -9,10 +10,14 @@ from googleapiclient.errors import HttpError
 
 from app.config import get_settings
 
+logger = logging.getLogger("askesis.google_drive")
+
 
 def get_drive_service(refresh_token: str):
     """Build Google Drive service using refresh token."""
     settings = get_settings()
+
+    logger.info("Building Drive service with refresh token")
 
     credentials = Credentials(
         token=None,  # Will be refreshed
@@ -23,7 +28,13 @@ def get_drive_service(refresh_token: str):
         scopes=["https://www.googleapis.com/auth/drive.file"],
     )
 
-    return build("drive", "v3", credentials=credentials)
+    try:
+        service = build("drive", "v3", credentials=credentials)
+        logger.info("Drive service built successfully")
+        return service
+    except Exception as e:
+        logger.error(f"Failed to build Drive service: {e}")
+        raise
 
 
 def get_or_create_app_folder(service, parent_folder_id: str | None = None) -> str:
@@ -211,49 +222,63 @@ def upload_backup(
     Returns:
         Google Drive file ID
     """
-    service = get_drive_service(refresh_token)
-    folder_id = get_or_create_backup_folder(service, parent_folder_id)
+    logger.info(f"Starting backup upload: {filename}, size={len(file_content)} bytes")
+    try:
+        service = get_drive_service(refresh_token)
+        folder_id = get_or_create_backup_folder(service, parent_folder_id)
+        logger.info(f"Using backup folder: {folder_id}")
 
-    # Check if backup file already exists
-    query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-    results = (
-        service.files()
-        .list(q=query, spaces="drive", fields="files(id, name)")
-        .execute()
-    )
-    existing_files = results.get("files", [])
-
-    media = MediaIoBaseUpload(
-        io.BytesIO(file_content),
-        mimetype="application/x-sqlite3",
-        resumable=True,
-    )
-
-    if existing_files:
-        # Update existing file (overwrite)
-        file_id = existing_files[0]["id"]
-        file = (
+        # Check if backup file already exists
+        query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
+        results = (
             service.files()
-            .update(
-                fileId=file_id,
-                media_body=media,
-            )
+            .list(q=query, spaces="drive", fields="files(id, name)")
             .execute()
         )
-        return file["id"]
-    else:
-        # Create new file
-        file_metadata = {
-            "name": filename,
-            "parents": [folder_id],
-        }
-        file = (
-            service.files()
-            .create(
-                body=file_metadata,
-                media_body=media,
-                fields="id",
-            )
-            .execute()
+        existing_files = results.get("files", [])
+
+        media = MediaIoBaseUpload(
+            io.BytesIO(file_content),
+            mimetype="application/x-sqlite3",
+            resumable=True,
         )
-        return file["id"]
+
+        if existing_files:
+            # Update existing file (overwrite)
+            file_id = existing_files[0]["id"]
+            logger.info(f"Updating existing backup file: {file_id}")
+            file = (
+                service.files()
+                .update(
+                    fileId=file_id,
+                    media_body=media,
+                )
+                .execute()
+            )
+            logger.info("Backup updated successfully")
+            return file["id"]
+        else:
+            # Create new file
+            logger.info("Creating new backup file")
+            file_metadata = {
+                "name": filename,
+                "parents": [folder_id],
+            }
+            file = (
+                service.files()
+                .create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields="id",
+                )
+                .execute()
+            )
+            logger.info(f"Backup created successfully: {file['id']}")
+            return file["id"]
+    except HttpError as e:
+        logger.error(f"Google Drive API error: {e.status_code} - {e.reason}")
+        logger.error(f"Error details: {e.error_details}")
+        raise
+    except Exception as e:
+        logger.error(f"Backup upload failed: {type(e).__name__}: {e}")
+        raise
