@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, Activity, Exercise, DailyLog, BodyMeasurement, ActivityType, TimeOfDay
+from app.models import (
+    User,
+    Activity,
+    DailyLog,
+    BodyMeasurement,
+    ActivityType,
+    TimeOfDay,
+)
 from app.routers.auth import get_current_user
 from app.units import (
     to_metric_distance,
@@ -31,6 +38,7 @@ class PreviewResponse(BaseModel):
 
 class ColumnMapping(BaseModel):
     """Maps a CSV column to a data field."""
+
     csv_column: str
     field: str
     unit: str | None = None  # For numeric fields that need conversion
@@ -38,6 +46,7 @@ class ColumnMapping(BaseModel):
 
 class ImportRequest(BaseModel):
     """Request body for import endpoints."""
+
     data: list[dict[str, Any]]
     column_mapping: list[ColumnMapping]
     unit_mapping: dict[str, str] = Field(default_factory=dict)  # field -> unit
@@ -99,7 +108,9 @@ def parse_bool(value: str) -> bool | None:
     return None
 
 
-def apply_column_mapping(row: dict[str, str], mappings: list[ColumnMapping]) -> dict[str, Any]:
+def apply_column_mapping(
+    row: dict[str, str], mappings: list[ColumnMapping]
+) -> dict[str, Any]:
     """Apply column mapping to convert CSV row to field dict."""
     result = {}
     for mapping in mappings:
@@ -108,7 +119,9 @@ def apply_column_mapping(row: dict[str, str], mappings: list[ColumnMapping]) -> 
     return result
 
 
-def convert_units(data: dict[str, Any], unit_mapping: dict[str, str], field_types: dict[str, str]) -> dict[str, Any]:
+def convert_units(
+    data: dict[str, Any], unit_mapping: dict[str, str], field_types: dict[str, str]
+) -> dict[str, Any]:
     """Convert values to metric based on unit mapping.
 
     field_types maps field names to their type: 'distance', 'measurement', 'weight', 'water'
@@ -119,7 +132,11 @@ def convert_units(data: dict[str, Any], unit_mapping: dict[str, str], field_type
         if field not in result or result[field] is None:
             continue
 
-        value = parse_float(str(result[field])) if isinstance(result[field], str) else result[field]
+        value = (
+            parse_float(str(result[field]))
+            if isinstance(result[field], str)
+            else result[field]
+        )
         if value is None:
             continue
 
@@ -149,16 +166,23 @@ async def preview_csv(
         raise HTTPException(status_code=400, detail="File must be a CSV")
 
     # Validate content type (allow common CSV types)
-    valid_types = ["text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"]
+    valid_types = [
+        "text/csv",
+        "application/csv",
+        "text/plain",
+        "application/vnd.ms-excel",
+    ]
     if file.content_type and file.content_type not in valid_types:
-        raise HTTPException(status_code=400, detail=f"Invalid content type: {file.content_type}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid content type: {file.content_type}"
+        )
 
     # Read with size limit
     content = await file.read()
     if len(content) > settings.max_csv_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is {settings.max_csv_size // (1024*1024)}MB"
+            detail=f"File too large. Maximum size is {settings.max_csv_size // (1024 * 1024)}MB",
         )
 
     try:
@@ -283,10 +307,11 @@ def import_daily_logs(
                 raise ValueError("Date is required")
 
             # Check for existing log on this date
-            existing = db.query(DailyLog).filter(
-                DailyLog.user_id == current_user.id,
-                DailyLog.date == log_date
-            ).first()
+            existing = (
+                db.query(DailyLog)
+                .filter(DailyLog.user_id == current_user.id, DailyLog.date == log_date)
+                .first()
+            )
 
             if existing:
                 # Update existing log
@@ -340,9 +365,20 @@ def import_measurements(
     """Import body measurements from mapped CSV data."""
     # All measurement fields use measurement unit conversion
     measurement_fields = [
-        "neck", "shoulders", "chest", "bicep_left", "bicep_right",
-        "forearm_left", "forearm_right", "waist", "abdomen", "hips",
-        "thigh_left", "thigh_right", "calf_left", "calf_right",
+        "neck",
+        "shoulders",
+        "chest",
+        "bicep_left",
+        "bicep_right",
+        "forearm_left",
+        "forearm_right",
+        "waist",
+        "abdomen",
+        "hips",
+        "thigh_left",
+        "thigh_right",
+        "calf_left",
+        "calf_right",
     ]
     field_types = {f: "measurement" for f in measurement_fields}
 
@@ -359,10 +395,14 @@ def import_measurements(
                 raise ValueError("Date is required")
 
             # Check for existing measurement on this date
-            existing = db.query(BodyMeasurement).filter(
-                BodyMeasurement.user_id == current_user.id,
-                BodyMeasurement.date == measurement_date
-            ).first()
+            existing = (
+                db.query(BodyMeasurement)
+                .filter(
+                    BodyMeasurement.user_id == current_user.id,
+                    BodyMeasurement.date == measurement_date,
+                )
+                .first()
+            )
 
             measurement_data = {}
             for field in measurement_fields:

@@ -3,7 +3,6 @@
 
 import random
 from datetime import date, timedelta
-from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine
 from app.models import Base, User, DailyLog, Meal, Activity, ActivityType, Exercise
 
@@ -40,10 +39,34 @@ def seed_demo_data():
 
         meal_labels = ["Breakfast", "Lunch", "Dinner", "Snack"]
         meal_descriptions = {
-            "Breakfast": ["Oatmeal with berries", "Eggs and toast", "Smoothie bowl", "Greek yogurt with granola", "Avocado toast"],
-            "Lunch": ["Chicken salad", "Grilled salmon with veggies", "Buddha bowl", "Turkey sandwich", "Quinoa bowl"],
-            "Dinner": ["Pasta with marinara", "Stir fry with tofu", "Grilled chicken with rice", "Fish tacos", "Vegetable curry"],
-            "Snack": ["Apple with peanut butter", "Protein bar", "Mixed nuts", "Hummus and veggies", "Greek yogurt"],
+            "Breakfast": [
+                "Oatmeal with berries",
+                "Eggs and toast",
+                "Smoothie bowl",
+                "Greek yogurt with granola",
+                "Avocado toast",
+            ],
+            "Lunch": [
+                "Chicken salad",
+                "Grilled salmon with veggies",
+                "Buddha bowl",
+                "Turkey sandwich",
+                "Quinoa bowl",
+            ],
+            "Dinner": [
+                "Pasta with marinara",
+                "Stir fry with tofu",
+                "Grilled chicken with rice",
+                "Fish tacos",
+                "Vegetable curry",
+            ],
+            "Snack": [
+                "Apple with peanut butter",
+                "Protein bar",
+                "Mixed nuts",
+                "Hummus and veggies",
+                "Greek yogurt",
+            ],
         }
 
         cardio_activities = [
@@ -82,10 +105,11 @@ def seed_demo_data():
             current_date = today - timedelta(days=day_offset)
 
             # Check if daily log already exists
-            existing_log = db.query(DailyLog).filter(
-                DailyLog.user_id == user.id,
-                DailyLog.date == current_date
-            ).first()
+            existing_log = (
+                db.query(DailyLog)
+                .filter(DailyLog.user_id == user.id, DailyLog.date == current_date)
+                .first()
+            )
 
             if not existing_log:
                 # Create daily log
@@ -99,14 +123,16 @@ def seed_demo_data():
                     feelings=",".join(random.choice(feelings_options)),
                     caffeine_mg=random.choice([0, 80, 160, 240, 320]),
                     ate_outside=random.random() > 0.7,
-                    notes=random.choice([
-                        None,
-                        "Good day overall",
-                        "Felt a bit tired in the afternoon",
-                        "Great workout session!",
-                        "Need more sleep",
-                        "Productive day",
-                    ]),
+                    notes=random.choice(
+                        [
+                            None,
+                            "Good day overall",
+                            "Felt a bit tired in the afternoon",
+                            "Great workout session!",
+                            "Need more sleep",
+                            "Productive day",
+                        ]
+                    ),
                 )
                 db.add(log)
 
@@ -115,18 +141,27 @@ def seed_demo_data():
             selected_meals = random.sample(meal_labels, num_meals)
 
             for meal_label in selected_meals:
-                existing_meal = db.query(Meal).filter(
-                    Meal.user_id == user.id,
-                    Meal.date == current_date,
-                    Meal.label == meal_label
-                ).first()
+                existing_meal = (
+                    db.query(Meal)
+                    .filter(
+                        Meal.user_id == user.id,
+                        Meal.date == current_date,
+                        Meal.label == meal_label,
+                    )
+                    .first()
+                )
 
                 if not existing_meal:
                     meal = Meal(
                         user_id=user.id,
                         date=current_date,
                         label=meal_label,
-                        time={"Breakfast": "08:00", "Lunch": "12:30", "Dinner": "19:00", "Snack": "15:00"}[meal_label],
+                        time={
+                            "Breakfast": "08:00",
+                            "Lunch": "12:30",
+                            "Dinner": "19:00",
+                            "Snack": "15:00",
+                        }[meal_label],
                         calories=random.randint(200, 800),
                         description=random.choice(meal_descriptions[meal_label]),
                     )
@@ -134,16 +169,19 @@ def seed_demo_data():
 
             # Add activities (50% chance per day)
             if random.random() > 0.5:
-                existing_activity = db.query(Activity).filter(
-                    Activity.user_id == user.id,
-                    Activity.date == current_date
-                ).first()
+                existing_activity = (
+                    db.query(Activity)
+                    .filter(Activity.user_id == user.id, Activity.date == current_date)
+                    .first()
+                )
 
                 if not existing_activity:
                     # Decide cardio or strength
                     if random.random() > 0.4:
                         # Cardio
-                        name, duration, calories, distance, tags = random.choice(cardio_activities)
+                        name, duration, calories, distance, tags = random.choice(
+                            cardio_activities
+                        )
                         activity = Activity(
                             user_id=user.id,
                             date=current_date,
@@ -171,7 +209,9 @@ def seed_demo_data():
                         db.flush()  # Get the activity ID
 
                         # Add exercises
-                        for ex_name, sets, reps, weight in strength_exercises[workout_name]:
+                        for ex_name, sets, reps, weight in strength_exercises[
+                            workout_name
+                        ]:
                             exercise = Exercise(
                                 activity_id=activity.id,
                                 name=ex_name,
@@ -189,7 +229,7 @@ def seed_demo_data():
         meal_count = db.query(Meal).filter(Meal.user_id == user.id).count()
         activity_count = db.query(Activity).filter(Activity.user_id == user.id).count()
 
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Daily logs: {log_count}")
         print(f"  Meals: {meal_count}")
         print(f"  Activities: {activity_count}")

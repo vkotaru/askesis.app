@@ -1,6 +1,6 @@
 """Google Drive storage service for progress photos."""
+
 import io
-from typing import BinaryIO
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -36,7 +36,11 @@ def get_or_create_app_folder(service) -> str:
     query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     if parent_id:
         query += f" and '{parent_id}' in parents"
-    results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
+    results = (
+        service.files()
+        .list(q=query, spaces="drive", fields="files(id, name)")
+        .execute()
+    )
     files = results.get("files", [])
 
     if files:
@@ -85,11 +89,15 @@ def upload_photo(
         resumable=True,
     )
 
-    file = service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields="id",
-    ).execute()
+    file = (
+        service.files()
+        .create(
+            body=file_metadata,
+            media_body=media,
+            fields="id",
+        )
+        .execute()
+    )
 
     return file["id"]
 

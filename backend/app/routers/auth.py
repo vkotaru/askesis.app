@@ -15,6 +15,7 @@ settings = get_settings()
 # Only set up OAuth if not in dev mode
 if not settings.dev_mode:
     from authlib.integrations.starlette_client import OAuth
+
     oauth = OAuth()
     oauth.register(
         name="google",
@@ -100,10 +101,14 @@ def check_view_permission(
         return current_user
 
     # Check if a share exists
-    share = db.query(DataShare).filter(
-        DataShare.owner_id == user_id,
-        DataShare.shared_with_id == current_user.id,
-    ).first()
+    share = (
+        db.query(DataShare)
+        .filter(
+            DataShare.owner_id == user_id,
+            DataShare.shared_with_id == current_user.id,
+        )
+        .first()
+    )
 
     if not share:
         raise HTTPException(status_code=403, detail="Access denied")

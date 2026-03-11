@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from datetime import date
 
 from app.database import get_db
-from app.models import User, Activity, Exercise, WorkoutTemplate, ActivityType, TimeOfDay
+from app.models import User, Activity, Exercise, ActivityType, TimeOfDay
 from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
@@ -36,7 +36,9 @@ class ActivityCreate(BaseModel):
     duration_mins: int | None = Field(None, ge=1, le=1440)  # Max 24 hours
     calories: int | None = Field(None, ge=0, le=10000)
     distance_km: float | None = Field(None, ge=0, le=500)
-    url: str | None = Field(None, max_length=500)  # External link (Strava, Hevy, Garmin)
+    url: str | None = Field(
+        None, max_length=500
+    )  # External link (Strava, Hevy, Garmin)
     notes: str | None = Field(None, max_length=2000)
     tags: str | None = Field(None, max_length=255)
     exercises: list[ExerciseCreate] = Field(default_factory=list, max_length=50)
@@ -93,10 +95,11 @@ def get_activity(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "activities", db, current_user)
-    activity = db.query(Activity).filter(
-        Activity.id == activity_id,
-        Activity.user_id == target_user.id
-    ).first()
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.user_id == target_user.id)
+        .first()
+    )
 
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -133,10 +136,11 @@ def update_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    activity = db.query(Activity).filter(
-        Activity.id == activity_id,
-        Activity.user_id == current_user.id
-    ).first()
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.user_id == current_user.id)
+        .first()
+    )
 
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -162,10 +166,11 @@ def delete_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    activity = db.query(Activity).filter(
-        Activity.id == activity_id,
-        Activity.user_id == current_user.id
-    ).first()
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.user_id == current_user.id)
+        .first()
+    )
 
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -190,11 +195,15 @@ def get_calendar(
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
 
-    activities = db.query(Activity).filter(
-        Activity.user_id == target_user.id,
-        Activity.date >= start,
-        Activity.date <= end
-    ).all()
+    activities = (
+        db.query(Activity)
+        .filter(
+            Activity.user_id == target_user.id,
+            Activity.date >= start,
+            Activity.date <= end,
+        )
+        .all()
+    )
 
     # Group by date
     calendar = {}
@@ -202,11 +211,13 @@ def get_calendar(
         date_str = a.date.isoformat()
         if date_str not in calendar:
             calendar[date_str] = []
-        calendar[date_str].append({
-            "id": a.id,
-            "name": a.name,
-            "type": a.activity_type.value,
-            "duration_mins": a.duration_mins,
-        })
+        calendar[date_str].append(
+            {
+                "id": a.id,
+                "name": a.name,
+                "type": a.activity_type.value,
+                "duration_mins": a.duration_mins,
+            }
+        )
 
     return calendar

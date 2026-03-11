@@ -11,7 +11,7 @@ is_sqlite = settings.database_url.startswith("sqlite")
 if is_sqlite:
     engine = create_engine(
         settings.database_url,
-        connect_args={"check_same_thread": False}  # SQLite specific
+        connect_args={"check_same_thread": False},  # SQLite specific
     )
 
     # Enable WAL mode for better concurrent access (SQLite only)

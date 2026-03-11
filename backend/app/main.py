@@ -7,7 +7,18 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
-from app.routers import auth, daily_log, nutrition, activities, settings, measurements, photos, sharing, import_router, export
+from app.routers import (
+    auth,
+    daily_log,
+    nutrition,
+    activities,
+    settings,
+    measurements,
+    photos,
+    sharing,
+    import_router,
+    export,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -62,7 +73,9 @@ app.include_router(daily_log.router, prefix="/api/daily-log", tags=["daily-log"]
 app.include_router(nutrition.router, prefix="/api/nutrition", tags=["nutrition"])
 app.include_router(activities.router, prefix="/api/activities", tags=["activities"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
-app.include_router(measurements.router, prefix="/api/measurements", tags=["measurements"])
+app.include_router(
+    measurements.router, prefix="/api/measurements", tags=["measurements"]
+)
 app.include_router(photos.router, prefix="/api/photos", tags=["photos"])
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 app.include_router(import_router.router, prefix="/api/import", tags=["import"])
