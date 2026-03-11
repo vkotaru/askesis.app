@@ -14,9 +14,9 @@ const ML_TO_CUPS = 0.00422675;
 export function formatDistance(km: number | undefined | null, unit: DistanceUnit): string {
   if (km == null) return '—';
   if (unit === 'mi') {
-    return `${(km * KM_TO_MI).toFixed(1)} mi`;
+    return `${(km * KM_TO_MI).toFixed(2)} mi`;
   }
-  return `${km.toFixed(1)} km`;
+  return `${km.toFixed(2)} km`;
 }
 
 export function distanceToMetric(value: number, unit: DistanceUnit): number {
@@ -37,9 +37,9 @@ export function distanceFromMetric(km: number, unit: DistanceUnit): number {
 export function formatMeasurement(cm: number | undefined | null, unit: MeasurementUnit): string {
   if (cm == null) return '—';
   if (unit === 'in') {
-    return `${(cm * CM_TO_IN).toFixed(1)} in`;
+    return `${(cm * CM_TO_IN).toFixed(2)} in`;
   }
-  return `${cm.toFixed(1)} cm`;
+  return `${cm.toFixed(2)} cm`;
 }
 
 export function measurementToMetric(value: number, unit: MeasurementUnit): number {
@@ -60,9 +60,9 @@ export function measurementFromMetric(cm: number, unit: MeasurementUnit): number
 export function formatWeight(kg: number | undefined | null, unit: WeightUnit): string {
   if (kg == null) return '—';
   if (unit === 'lb') {
-    return `${(kg * KG_TO_LB).toFixed(1)} lb`;
+    return `${(kg * KG_TO_LB).toFixed(2)} lb`;
   }
-  return `${kg.toFixed(1)} kg`;
+  return `${kg.toFixed(2)} kg`;
 }
 
 export function weightToMetric(value: number, unit: WeightUnit): number {

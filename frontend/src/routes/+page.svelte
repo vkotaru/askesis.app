@@ -148,7 +148,7 @@
           <div>
             <p class="text-sm text-gray-500 mb-1">Weight</p>
             <p class="text-2xl font-bold">
-              {latestWeightLog?.weight ? weightFromMetric(latestWeightLog.weight, $settings.weight_unit).toFixed(1) : '—'}
+              {latestWeightLog?.weight ? weightFromMetric(latestWeightLog.weight, $settings.weight_unit).toFixed(2) : '—'}
               {#if latestWeightLog?.weight}
                 <span class="text-sm font-normal text-gray-400 ml-1">{getWeightLabel($settings.weight_unit)}</span>
               {/if}
@@ -251,7 +251,7 @@
               {:else if weightChange > 0}
                 <TrendingUp size={16} />
               {/if}
-              {weightChange > 0 ? '+' : ''}{weightFromMetric(weightChange, $settings.weight_unit).toFixed(1)} {getWeightLabel($settings.weight_unit)}
+              {weightChange > 0 ? '+' : ''}{weightFromMetric(weightChange, $settings.weight_unit).toFixed(2)} {getWeightLabel($settings.weight_unit)}
             </span>
           </div>
         {/if}
