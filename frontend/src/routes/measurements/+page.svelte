@@ -230,7 +230,7 @@
           <div>
             <label for="bicep_left" class="label">Bicep (L)</label>
             <div class="relative">
-              <input id="bicep_left" type="number" step="0.1" bind:value={bicep_left} placeholder="--" class="input pr-10" />
+              <input id="bicep_left" type="number" step="0.01" bind:value={bicep_left} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -238,7 +238,7 @@
           <div>
             <label for="forearm_left" class="label">Forearm (L)</label>
             <div class="relative">
-              <input id="forearm_left" type="number" step="0.1" bind:value={forearm_left} placeholder="--" class="input pr-10" />
+              <input id="forearm_left" type="number" step="0.01" bind:value={forearm_left} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -246,7 +246,7 @@
           <div>
             <label for="thigh_left" class="label">Thigh (L)</label>
             <div class="relative">
-              <input id="thigh_left" type="number" step="0.1" bind:value={thigh_left} placeholder="--" class="input pr-10" />
+              <input id="thigh_left" type="number" step="0.01" bind:value={thigh_left} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -254,7 +254,7 @@
           <div>
             <label for="calf_left" class="label">Calf (L)</label>
             <div class="relative">
-              <input id="calf_left" type="number" step="0.1" bind:value={calf_left} placeholder="--" class="input pr-10" />
+              <input id="calf_left" type="number" step="0.01" bind:value={calf_left} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -317,14 +317,14 @@
               <div>
                 <label for="neck" class="label text-xs">Neck</label>
                 <div class="relative">
-                  <input id="neck" type="number" step="0.1" bind:value={neck} placeholder="--" class="input pr-8 text-sm" />
+                  <input id="neck" type="number" step="0.01" bind:value={neck} placeholder="--" class="input pr-8 text-sm" />
                   <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
                 </div>
               </div>
               <div>
                 <label for="shoulders" class="label text-xs">Shoulders</label>
                 <div class="relative">
-                  <input id="shoulders" type="number" step="0.1" bind:value={shoulders} placeholder="--" class="input pr-8 text-sm" />
+                  <input id="shoulders" type="number" step="0.01" bind:value={shoulders} placeholder="--" class="input pr-8 text-sm" />
                   <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
                 </div>
               </div>
@@ -333,14 +333,14 @@
               <div>
                 <label for="chest" class="label text-xs">Chest</label>
                 <div class="relative">
-                  <input id="chest" type="number" step="0.1" bind:value={chest} placeholder="--" class="input pr-8 text-sm" />
+                  <input id="chest" type="number" step="0.01" bind:value={chest} placeholder="--" class="input pr-8 text-sm" />
                   <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
                 </div>
               </div>
               <div>
                 <label for="waist" class="label text-xs">Waist</label>
                 <div class="relative">
-                  <input id="waist" type="number" step="0.1" bind:value={waist} placeholder="--" class="input pr-8 text-sm" />
+                  <input id="waist" type="number" step="0.01" bind:value={waist} placeholder="--" class="input pr-8 text-sm" />
                   <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
                 </div>
               </div>
@@ -349,14 +349,14 @@
               <div>
                 <label for="abdomen" class="label text-xs">Abdomen</label>
                 <div class="relative">
-                  <input id="abdomen" type="number" step="0.1" bind:value={abdomen} placeholder="--" class="input pr-8 text-sm" />
+                  <input id="abdomen" type="number" step="0.01" bind:value={abdomen} placeholder="--" class="input pr-8 text-sm" />
                   <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
                 </div>
               </div>
               <div>
                 <label for="hips" class="label text-xs">Hips</label>
                 <div class="relative">
-                  <input id="hips" type="number" step="0.1" bind:value={hips} placeholder="--" class="input pr-8 text-sm" />
+                  <input id="hips" type="number" step="0.01" bind:value={hips} placeholder="--" class="input pr-8 text-sm" />
                   <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
                 </div>
               </div>
@@ -374,7 +374,7 @@
           <div>
             <label for="bicep_right" class="label">Bicep (R)</label>
             <div class="relative">
-              <input id="bicep_right" type="number" step="0.1" bind:value={bicep_right} placeholder="--" class="input pr-10" />
+              <input id="bicep_right" type="number" step="0.01" bind:value={bicep_right} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -382,7 +382,7 @@
           <div>
             <label for="forearm_right" class="label">Forearm (R)</label>
             <div class="relative">
-              <input id="forearm_right" type="number" step="0.1" bind:value={forearm_right} placeholder="--" class="input pr-10" />
+              <input id="forearm_right" type="number" step="0.01" bind:value={forearm_right} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -390,7 +390,7 @@
           <div>
             <label for="thigh_right" class="label">Thigh (R)</label>
             <div class="relative">
-              <input id="thigh_right" type="number" step="0.1" bind:value={thigh_right} placeholder="--" class="input pr-10" />
+              <input id="thigh_right" type="number" step="0.01" bind:value={thigh_right} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>
@@ -398,7 +398,7 @@
           <div>
             <label for="calf_right" class="label">Calf (R)</label>
             <div class="relative">
-              <input id="calf_right" type="number" step="0.1" bind:value={calf_right} placeholder="--" class="input pr-10" />
+              <input id="calf_right" type="number" step="0.01" bind:value={calf_right} placeholder="--" class="input pr-10" />
               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
             </div>
           </div>

@@ -245,7 +245,7 @@
         </div>
         <div>
           <label for="distance" class="label">Distance ({getDistanceLabel($settings.distance_unit)})</label>
-          <input id="distance" type="number" name="distance" step="0.1" placeholder="5.0" class="input" />
+          <input id="distance" type="number" name="distance" step="0.01" placeholder="5.00" class="input" />
         </div>
         <div class="md:col-span-3">
           <label for="url" class="label">External Link (Strava, Hevy, Garmin)</label>
