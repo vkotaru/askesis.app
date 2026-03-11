@@ -6,6 +6,8 @@
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+  import { settings } from '$lib/stores/settings';
+  import { getMeasurementLabel, formatMeasurement, measurementToMetric, measurementFromMetric } from '$lib/utils/units';
 
   let recentMeasurements: BodyMeasurement[] = [];
 
@@ -32,24 +34,30 @@
   let calf_right: number | undefined;
   let notes = '';
 
+  // Helper to convert from metric (API stores cm, convert to user's unit for display)
+  function fromMetric(value: number | undefined | null): number | undefined {
+    if (value == null) return undefined;
+    return measurementFromMetric(value, $settings.measurement_unit);
+  }
+
   async function loadMeasurement() {
     loading = true;
     try {
       const measurement = await api.getMeasurement(selectedDate, $viewingUserId ?? undefined);
-      neck = measurement.neck;
-      shoulders = measurement.shoulders;
-      chest = measurement.chest;
-      bicep_left = measurement.bicep_left;
-      bicep_right = measurement.bicep_right;
-      forearm_left = measurement.forearm_left;
-      forearm_right = measurement.forearm_right;
-      waist = measurement.waist;
-      abdomen = measurement.abdomen;
-      hips = measurement.hips;
-      thigh_left = measurement.thigh_left;
-      thigh_right = measurement.thigh_right;
-      calf_left = measurement.calf_left;
-      calf_right = measurement.calf_right;
+      neck = fromMetric(measurement.neck);
+      shoulders = fromMetric(measurement.shoulders);
+      chest = fromMetric(measurement.chest);
+      bicep_left = fromMetric(measurement.bicep_left);
+      bicep_right = fromMetric(measurement.bicep_right);
+      forearm_left = fromMetric(measurement.forearm_left);
+      forearm_right = fromMetric(measurement.forearm_right);
+      waist = fromMetric(measurement.waist);
+      abdomen = fromMetric(measurement.abdomen);
+      hips = fromMetric(measurement.hips);
+      thigh_left = fromMetric(measurement.thigh_left);
+      thigh_right = fromMetric(measurement.thigh_right);
+      calf_left = fromMetric(measurement.calf_left);
+      calf_right = fromMetric(measurement.calf_right);
       notes = measurement.notes ?? '';
     } catch {
       // No measurement for this date, try to load latest as reference
@@ -57,20 +65,20 @@
         const latest = await api.getLatestMeasurement($viewingUserId ?? undefined);
         if (latest) {
           // Pre-fill with latest values for convenience
-          neck = latest.neck;
-          shoulders = latest.shoulders;
-          chest = latest.chest;
-          bicep_left = latest.bicep_left;
-          bicep_right = latest.bicep_right;
-          forearm_left = latest.forearm_left;
-          forearm_right = latest.forearm_right;
-          waist = latest.waist;
-          abdomen = latest.abdomen;
-          hips = latest.hips;
-          thigh_left = latest.thigh_left;
-          thigh_right = latest.thigh_right;
-          calf_left = latest.calf_left;
-          calf_right = latest.calf_right;
+          neck = fromMetric(latest.neck);
+          shoulders = fromMetric(latest.shoulders);
+          chest = fromMetric(latest.chest);
+          bicep_left = fromMetric(latest.bicep_left);
+          bicep_right = fromMetric(latest.bicep_right);
+          forearm_left = fromMetric(latest.forearm_left);
+          forearm_right = fromMetric(latest.forearm_right);
+          waist = fromMetric(latest.waist);
+          abdomen = fromMetric(latest.abdomen);
+          hips = fromMetric(latest.hips);
+          thigh_left = fromMetric(latest.thigh_left);
+          thigh_right = fromMetric(latest.thigh_right);
+          calf_left = fromMetric(latest.calf_left);
+          calf_right = fromMetric(latest.calf_right);
           notes = '';
         } else {
           resetForm();
@@ -127,26 +135,32 @@
     loadMeasurement();
   }
 
+  // Helper to convert to metric (user enters in their unit, convert to cm for API)
+  function toMetric(value: number | undefined): number | undefined {
+    if (value == null) return undefined;
+    return measurementToMetric(value, $settings.measurement_unit);
+  }
+
   async function handleSubmit() {
     saving = true;
     saved = false;
     try {
       await api.saveMeasurement({
         date: selectedDate,
-        neck,
-        shoulders,
-        chest,
-        bicep_left,
-        bicep_right,
-        forearm_left,
-        forearm_right,
-        waist,
-        abdomen,
-        hips,
-        thigh_left,
-        thigh_right,
-        calf_left,
-        calf_right,
+        neck: toMetric(neck),
+        shoulders: toMetric(shoulders),
+        chest: toMetric(chest),
+        bicep_left: toMetric(bicep_left),
+        bicep_right: toMetric(bicep_right),
+        forearm_left: toMetric(forearm_left),
+        forearm_right: toMetric(forearm_right),
+        waist: toMetric(waist),
+        abdomen: toMetric(abdomen),
+        hips: toMetric(hips),
+        thigh_left: toMetric(thigh_left),
+        thigh_right: toMetric(thigh_right),
+        calf_left: toMetric(calf_left),
+        calf_right: toMetric(calf_right),
         notes: notes || undefined,
       });
       saved = true;
@@ -186,7 +200,7 @@
       <Ruler size={24} class="text-strength-500" />
       Body Measurements
     </h1>
-    <p class="text-gray-500 text-sm mt-1">Track your body measurements in cm</p>
+    <p class="text-gray-500 text-sm mt-1">Track your body measurements in {getMeasurementLabel($settings.measurement_unit)}</p>
 
     <!-- Date Navigation -->
     <div class="flex items-center justify-center gap-2 mt-4">
@@ -231,7 +245,7 @@
             <label for="bicep_left" class="label">Bicep (L)</label>
             <div class="relative">
               <input id="bicep_left" type="number" step="0.01" bind:value={bicep_left} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
 
@@ -239,7 +253,7 @@
             <label for="forearm_left" class="label">Forearm (L)</label>
             <div class="relative">
               <input id="forearm_left" type="number" step="0.01" bind:value={forearm_left} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
 
@@ -247,7 +261,7 @@
             <label for="thigh_left" class="label">Thigh (L)</label>
             <div class="relative">
               <input id="thigh_left" type="number" step="0.01" bind:value={thigh_left} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
 
@@ -255,7 +269,7 @@
             <label for="calf_left" class="label">Calf (L)</label>
             <div class="relative">
               <input id="calf_left" type="number" step="0.01" bind:value={calf_left} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
         </div>
@@ -318,14 +332,14 @@
                 <label for="neck" class="label text-xs">Neck</label>
                 <div class="relative">
                   <input id="neck" type="number" step="0.01" bind:value={neck} placeholder="--" class="input pr-8 text-sm" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{getMeasurementLabel($settings.measurement_unit)}</span>
                 </div>
               </div>
               <div>
                 <label for="shoulders" class="label text-xs">Shoulders</label>
                 <div class="relative">
                   <input id="shoulders" type="number" step="0.01" bind:value={shoulders} placeholder="--" class="input pr-8 text-sm" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{getMeasurementLabel($settings.measurement_unit)}</span>
                 </div>
               </div>
             </div>
@@ -334,14 +348,14 @@
                 <label for="chest" class="label text-xs">Chest</label>
                 <div class="relative">
                   <input id="chest" type="number" step="0.01" bind:value={chest} placeholder="--" class="input pr-8 text-sm" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{getMeasurementLabel($settings.measurement_unit)}</span>
                 </div>
               </div>
               <div>
                 <label for="waist" class="label text-xs">Waist</label>
                 <div class="relative">
                   <input id="waist" type="number" step="0.01" bind:value={waist} placeholder="--" class="input pr-8 text-sm" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{getMeasurementLabel($settings.measurement_unit)}</span>
                 </div>
               </div>
             </div>
@@ -350,14 +364,14 @@
                 <label for="abdomen" class="label text-xs">Abdomen</label>
                 <div class="relative">
                   <input id="abdomen" type="number" step="0.01" bind:value={abdomen} placeholder="--" class="input pr-8 text-sm" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{getMeasurementLabel($settings.measurement_unit)}</span>
                 </div>
               </div>
               <div>
                 <label for="hips" class="label text-xs">Hips</label>
                 <div class="relative">
                   <input id="hips" type="number" step="0.01" bind:value={hips} placeholder="--" class="input pr-8 text-sm" />
-                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">cm</span>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{getMeasurementLabel($settings.measurement_unit)}</span>
                 </div>
               </div>
             </div>
@@ -375,7 +389,7 @@
             <label for="bicep_right" class="label">Bicep (R)</label>
             <div class="relative">
               <input id="bicep_right" type="number" step="0.01" bind:value={bicep_right} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
 
@@ -383,7 +397,7 @@
             <label for="forearm_right" class="label">Forearm (R)</label>
             <div class="relative">
               <input id="forearm_right" type="number" step="0.01" bind:value={forearm_right} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
 
@@ -391,7 +405,7 @@
             <label for="thigh_right" class="label">Thigh (R)</label>
             <div class="relative">
               <input id="thigh_right" type="number" step="0.01" bind:value={thigh_right} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
 
@@ -399,7 +413,7 @@
             <label for="calf_right" class="label">Calf (R)</label>
             <div class="relative">
               <input id="calf_right" type="number" step="0.01" bind:value={calf_right} placeholder="--" class="input pr-10" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">cm</span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{getMeasurementLabel($settings.measurement_unit)}</span>
             </div>
           </div>
         </div>
@@ -492,35 +506,35 @@
                 </td>
                 <td class="py-3">
                   {#if measurement.chest}
-                    {measurement.chest} cm
+                    {formatMeasurement(measurement.chest, $settings.measurement_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
                 </td>
                 <td class="py-3">
                   {#if measurement.waist}
-                    {measurement.waist} cm
+                    {formatMeasurement(measurement.waist, $settings.measurement_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
                 </td>
                 <td class="py-3">
                   {#if measurement.hips}
-                    {measurement.hips} cm
+                    {formatMeasurement(measurement.hips, $settings.measurement_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
                 </td>
                 <td class="py-3">
                   {#if measurement.bicep_left || measurement.bicep_right}
-                    {measurement.bicep_left ?? '—'} / {measurement.bicep_right ?? '—'}
+                    {formatMeasurement(measurement.bicep_left, $settings.measurement_unit)} / {formatMeasurement(measurement.bicep_right, $settings.measurement_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
                 </td>
                 <td class="py-3">
                   {#if measurement.thigh_left || measurement.thigh_right}
-                    {measurement.thigh_left ?? '—'} / {measurement.thigh_right ?? '—'}
+                    {formatMeasurement(measurement.thigh_left, $settings.measurement_unit)} / {formatMeasurement(measurement.thigh_right, $settings.measurement_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
