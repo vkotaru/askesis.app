@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { format } from 'date-fns';
+  import { format, subDays, subMonths } from 'date-fns';
   import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog, type Activity as ActivityType } from '$lib/api/client';
@@ -10,13 +10,24 @@
   let loading = true;
   let hoveredPoint: { x: number; y: number; weight: number; date: string } | null = null;
 
+  // Weight trend time range
+  type TimeRange = '1w' | '2w' | '1m' | '6m' | 'all';
+  let selectedRange: TimeRange = '1m';
+  const TIME_RANGES: { value: TimeRange; label: string }[] = [
+    { value: '1w', label: '1W' },
+    { value: '2w', label: '2W' },
+    { value: '1m', label: '1M' },
+    { value: '6m', label: '6M' },
+    { value: 'all', label: 'All' },
+  ];
+
   const today = format(new Date(), 'yyyy-MM-dd');
 
   onMount(async () => {
     try {
-      // Fetch recent data (limit to 30 entries for dashboard)
+      // Fetch data - use higher limit for weight chart
       [logs, activities] = await Promise.all([
-        api.getDailyLogs(undefined, undefined, undefined, 30),
+        api.getDailyLogs(undefined, undefined, undefined, 365),
         api.getActivities(undefined, undefined, undefined, 10),
       ]);
     } catch (err) {
@@ -26,14 +37,29 @@
     }
   });
 
+  // Get cutoff date for selected range
+  function getRangeCutoff(range: TimeRange): Date | null {
+    const now = new Date();
+    switch (range) {
+      case '1w': return subDays(now, 7);
+      case '2w': return subDays(now, 14);
+      case '1m': return subMonths(now, 1);
+      case '6m': return subMonths(now, 6);
+      case 'all': return null;
+    }
+  }
+
   // Get most recent log for each metric (logs are sorted newest first from API)
   $: latestWeightLog = logs.find((l) => l.weight);
   $: latestSleepLog = logs.find((l) => l.sleep_hours);
   $: latestStepsLog = logs.find((l) => l.steps);
   $: latestWaterLog = logs.find((l) => l.water_ml);
 
-  // Sort oldest to newest for chart display
-  $: weightData = logs.filter((l) => l.weight).reverse();
+  // Filter and sort weight data based on selected range
+  $: rangeCutoff = getRangeCutoff(selectedRange);
+  $: weightData = logs
+    .filter((l) => l.weight && (!rangeCutoff || new Date(l.date) >= rangeCutoff))
+    .reverse();
 
   // Calculate weight change (first to last)
   $: weightChange = weightData.length >= 2
@@ -197,7 +223,21 @@
         <div class="flex items-center gap-2 mb-4">
           <TrendingUp size={20} class="text-primary-500" />
           <h2 class="text-lg font-semibold">Weight Trend</h2>
-          <span class="text-sm text-gray-400 ml-auto">{weightData.length} entries</span>
+          <div class="flex items-center gap-1 ml-auto">
+            {#each TIME_RANGES as { value, label }}
+              <button
+                on:click={() => selectedRange = value}
+                class={clsx(
+                  'px-2 py-1 text-xs rounded-md font-medium transition-colors',
+                  selectedRange === value
+                    ? 'bg-primary-500 text-white'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                )}
+              >
+                {label}
+              </button>
+            {/each}
+          </div>
         </div>
 
         {#if weightChange !== null}
