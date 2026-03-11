@@ -79,6 +79,10 @@ class UserSettings(Base):
     measurement_unit: Mapped[str] = mapped_column(String(10), default="cm")  # cm, in
     weight_unit: Mapped[str] = mapped_column(String(10), default="kg")  # kg, lb
     water_unit: Mapped[str] = mapped_column(String(10), default="ml")  # ml, L, oz, cups
+    # Google Drive settings
+    drive_parent_folder_id: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # Optional: parent folder ID in user's Drive
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )

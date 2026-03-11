@@ -97,6 +97,7 @@ export interface UserSettings {
   measurement_unit: MeasurementUnit;
   weight_unit: WeightUnit;
   water_unit: WaterUnit;
+  drive_parent_folder_id?: string | null;
 }
 
 export interface BodyMeasurement {

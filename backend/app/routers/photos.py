@@ -18,7 +18,7 @@ except ImportError:
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, ProgressPhoto, PhotoView
+from app.models import User, UserSettings, ProgressPhoto, PhotoView
 from app.routers.auth import get_current_user, check_view_permission
 from app import google_drive
 
@@ -219,12 +219,19 @@ async def upload_photo(
     # Generate unique filename for Drive
     filename = f"askesis_{current_user.id}_{photo_date.isoformat()}_{view.value}_{uuid.uuid4().hex[:8]}.jpg"
 
+    # Get user's Drive folder setting
+    user_settings = (
+        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    )
+    parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
+
     # Upload to Google Drive
     try:
         drive_file_id = google_drive.upload_photo(
             current_user.google_refresh_token,
             processed_content,
             filename,
+            parent_folder_id=parent_folder_id,
         )
     except Exception as e:
         raise HTTPException(
