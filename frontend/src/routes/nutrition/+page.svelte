@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet } from 'lucide-svelte';
+  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet, Pencil, Check } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis, type DailyLog } from '$lib/api/client';
@@ -25,6 +25,14 @@
   let mealPhotoInputs: Record<number, HTMLInputElement | null> = {};
   let newMealPhotoInput: HTMLInputElement | null = null;
 
+  // Editable macro fields
+  let editingMacros = false;
+  let macroCalories: number | undefined;
+  let macroProtein: number | undefined;
+  let macroCarbs: number | undefined;
+  let macroFat: number | undefined;
+  let savingMacros = false;
+
   async function loadMeals() {
     loading = true;
     try {
@@ -39,8 +47,36 @@
   async function loadDailyLog() {
     try {
       dailyLog = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
+      // Populate macro fields from daily log
+      macroCalories = dailyLog.total_calories ?? undefined;
+      macroProtein = dailyLog.protein_g ?? undefined;
+      macroCarbs = dailyLog.carbs_g ?? undefined;
+      macroFat = dailyLog.fat_g ?? undefined;
     } catch {
       dailyLog = null;
+      macroCalories = undefined;
+      macroProtein = undefined;
+      macroCarbs = undefined;
+      macroFat = undefined;
+    }
+  }
+
+  async function saveMacros() {
+    savingMacros = true;
+    try {
+      await api.saveDailyLog({
+        date: selectedDate,
+        total_calories: macroCalories,
+        protein_g: macroProtein,
+        carbs_g: macroCarbs,
+        fat_g: macroFat,
+      });
+      editingMacros = false;
+      await loadDailyLog();
+    } catch (err) {
+      console.error('Failed to save macros:', err);
+    } finally {
+      savingMacros = false;
     }
   }
 
@@ -212,42 +248,131 @@
 
   <!-- Daily Nutrition Summary -->
   <div class="card p-4 mb-6">
-    {#if dailyLog?.total_calories || dailyLog?.protein_g || dailyLog?.carbs_g || dailyLog?.fat_g}
-      <!-- Imported daily totals -->
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-medium text-gray-500">Daily Totals</h3>
+      {#if !$isViewingOther}
+        {#if editingMacros}
+          <button
+            on:click={saveMacros}
+            disabled={savingMacros}
+            class="p-1.5 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded"
+            title="Save"
+          >
+            <Check size={16} />
+          </button>
+        {:else}
+          <button
+            on:click={() => editingMacros = true}
+            class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+            title="Edit macros"
+          >
+            <Pencil size={16} />
+          </button>
+        {/if}
+      {/if}
+    </div>
+
+    {#if editingMacros}
+      <!-- Editable inputs -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
+            <Flame size={12} class="text-nutrition-500" />
+            Calories
+          </label>
+          <input
+            type="number"
+            bind:value={macroCalories}
+            placeholder="—"
+            class="input text-lg font-bold w-full"
+          />
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
+            <Beef size={12} class="text-strength-500" />
+            Protein (g)
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            bind:value={macroProtein}
+            placeholder="—"
+            class="input text-lg font-bold w-full"
+          />
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
+            <Wheat size={12} class="text-cardio-500" />
+            Carbs (g)
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            bind:value={macroCarbs}
+            placeholder="—"
+            class="input text-lg font-bold w-full"
+          />
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 flex items-center gap-1 mb-1">
+            <Droplet size={12} class="text-nutrition-600" />
+            Fat (g)
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            bind:value={macroFat}
+            placeholder="—"
+            class="input text-lg font-bold w-full"
+          />
+        </div>
+      </div>
+    {:else if macroCalories || macroProtein || macroCarbs || macroFat}
+      <!-- Display values -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <p class="text-sm text-gray-500 flex items-center gap-1">
             <Flame size={14} class="text-nutrition-500" />
             Calories
           </p>
-          <p class="text-2xl font-bold">{dailyLog.total_calories ?? '—'}</p>
+          <p class="text-2xl font-bold">{macroCalories ?? '—'}</p>
         </div>
         <div>
           <p class="text-sm text-gray-500 flex items-center gap-1">
             <Beef size={14} class="text-strength-500" />
             Protein
           </p>
-          <p class="text-2xl font-bold">{dailyLog.protein_g ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
+          <p class="text-2xl font-bold">{macroProtein ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
         </div>
         <div>
           <p class="text-sm text-gray-500 flex items-center gap-1">
             <Wheat size={14} class="text-cardio-500" />
             Carbs
           </p>
-          <p class="text-2xl font-bold">{dailyLog.carbs_g ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
+          <p class="text-2xl font-bold">{macroCarbs ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
         </div>
         <div>
           <p class="text-sm text-gray-500 flex items-center gap-1">
             <Droplet size={14} class="text-nutrition-600" />
             Fat
           </p>
-          <p class="text-2xl font-bold">{dailyLog.fat_g ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
+          <p class="text-2xl font-bold">{macroFat ?? '—'}<span class="text-sm font-normal text-gray-400">g</span></p>
         </div>
       </div>
     {:else}
-      <!-- Fallback: show meal total calories -->
-      <p class="text-sm text-gray-500">Total calories (from meals)</p>
-      <p class="text-3xl font-bold">{totalCalories}</p>
+      <!-- Fallback: show meal total calories or prompt to add -->
+      <div class="text-center py-2">
+        <p class="text-sm text-gray-500">Total calories (from meals)</p>
+        <p class="text-3xl font-bold">{totalCalories}</p>
+        {#if !$isViewingOther}
+          <button
+            on:click={() => editingMacros = true}
+            class="mt-2 text-sm text-primary-600 hover:text-primary-700"
+          >
+            + Add daily macros
+          </button>
+        {/if}
+      </div>
     {/if}
   </div>
 
