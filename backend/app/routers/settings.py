@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 
@@ -11,6 +12,8 @@ from app.models import User, UserSettings
 from app.routers.auth import get_current_user
 from app.config import get_settings as get_app_settings
 from app.google_drive import upload_backup
+
+logger = logging.getLogger("askesis.settings")
 
 router = APIRouter()
 
@@ -140,6 +143,9 @@ def backup_database(
     current_user: User = Depends(get_current_user),
 ):
     """Backup the database to Google Drive, overwriting any existing backup."""
+    logger.info(f"Backup requested by user {current_user.email}")
+    logger.info(f"Refresh token present: {bool(current_user.google_refresh_token)}")
+
     # Check if user has refresh token for Drive access
     if not current_user.google_refresh_token:
         raise HTTPException(

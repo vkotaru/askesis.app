@@ -213,7 +213,14 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
     if (res.status === 401) {
       throw new Error('Unauthorized');
     }
-    throw new Error(`HTTP ${res.status}`);
+    // Try to get error detail from response body
+    try {
+      const errorData = await res.json();
+      throw new Error(errorData.detail || `HTTP ${res.status}`);
+    } catch (e) {
+      if (e instanceof Error && e.message !== `HTTP ${res.status}`) throw e;
+      throw new Error(`HTTP ${res.status}`);
+    }
   }
 
   return res.json();
