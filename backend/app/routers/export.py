@@ -1,4 +1,5 @@
 """Export user data to SQLite database file."""
+
 import sqlite3
 import tempfile
 from datetime import datetime
@@ -10,8 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    User, DailyLog, Meal, Activity, Exercise,
-    BodyMeasurement, ProgressPhoto, UserSettings
+    User,
+    DailyLog,
+    Meal,
+    Activity,
+    Exercise,
+    BodyMeasurement,
+    ProgressPhoto,
+    UserSettings,
 )
 from app.routers.auth import get_current_user
 
@@ -25,9 +32,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
     """Create a SQLite database with all user data."""
     # Create temp file
     temp_file = tempfile.NamedTemporaryFile(
-        suffix=".db",
-        prefix=f"askesis-{user.id}-",
-        delete=False
+        suffix=".db", prefix=f"askesis-{user.id}-", delete=False
     )
     temp_path = Path(temp_file.name)
     temp_file.close()
@@ -51,7 +56,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
             ("user_id", str(user.id)),
             ("user_email", user.email),
             ("user_name", user.name),
-        ]
+        ],
     )
 
     # Export daily_logs
@@ -75,13 +80,20 @@ def create_sqlite_export(db: Session, user: User) -> Path:
         """INSERT INTO daily_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
-                log.id, str(log.date), log.weight, log.sleep_hours,
-                log.steps, log.water_ml, log.feelings, log.caffeine_mg,
-                1 if log.ate_outside else 0, log.notes,
-                log.created_at.isoformat() if log.created_at else None
+                log.id,
+                str(log.date),
+                log.weight,
+                log.sleep_hours,
+                log.steps,
+                log.water_ml,
+                log.feelings,
+                log.caffeine_mg,
+                1 if log.ate_outside else 0,
+                log.notes,
+                log.created_at.isoformat() if log.created_at else None,
             )
             for log in logs
-        ]
+        ],
     )
 
     # Export meals
@@ -103,13 +115,18 @@ def create_sqlite_export(db: Session, user: User) -> Path:
         """INSERT INTO meals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
-                meal.id, str(meal.date), meal.label, meal.time,
-                meal.calories, meal.description, meal.photo_path,
+                meal.id,
+                str(meal.date),
+                meal.label,
+                meal.time,
+                meal.calories,
+                meal.description,
+                meal.photo_path,
                 meal.ai_analysis,
-                meal.created_at.isoformat() if meal.created_at else None
+                meal.created_at.isoformat() if meal.created_at else None,
             )
             for meal in meals
-        ]
+        ],
     )
 
     # Export activities
@@ -134,15 +151,21 @@ def create_sqlite_export(db: Session, user: User) -> Path:
         """INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
-                act.id, str(act.date), act.name,
+                act.id,
+                str(act.date),
+                act.name,
                 act.activity_type.value if act.activity_type else None,
                 act.time_of_day.value if act.time_of_day else None,
-                act.duration_mins, act.calories, act.distance_km,
-                act.url, act.notes, act.tags,
-                act.created_at.isoformat() if act.created_at else None
+                act.duration_mins,
+                act.calories,
+                act.distance_km,
+                act.url,
+                act.notes,
+                act.tags,
+                act.created_at.isoformat() if act.created_at else None,
             )
             for act in activities
-        ]
+        ],
     )
 
     # Export exercises
@@ -161,13 +184,23 @@ def create_sqlite_export(db: Session, user: User) -> Path:
     # Get exercises for user's activities
     activity_ids = [a.id for a in activities]
     if activity_ids:
-        exercises = db.query(Exercise).filter(Exercise.activity_id.in_(activity_ids)).all()
+        exercises = (
+            db.query(Exercise).filter(Exercise.activity_id.in_(activity_ids)).all()
+        )
         cursor.executemany(
             """INSERT INTO exercises VALUES (?, ?, ?, ?, ?, ?, ?)""",
             [
-                (ex.id, ex.activity_id, ex.name, ex.sets, ex.reps, ex.weight_kg, ex.notes)
+                (
+                    ex.id,
+                    ex.activity_id,
+                    ex.name,
+                    ex.sets,
+                    ex.reps,
+                    ex.weight_kg,
+                    ex.notes,
+                )
                 for ex in exercises
-            ]
+            ],
         )
 
     # Export body_measurements
@@ -193,20 +226,34 @@ def create_sqlite_export(db: Session, user: User) -> Path:
             created_at TEXT
         )
     """)
-    measurements = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).all()
+    measurements = (
+        db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).all()
+    )
     cursor.executemany(
         """INSERT INTO body_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
-                m.id, str(m.date), m.neck, m.shoulders, m.chest,
-                m.bicep_left, m.bicep_right, m.forearm_left, m.forearm_right,
-                m.waist, m.abdomen, m.hips,
-                m.thigh_left, m.thigh_right, m.calf_left, m.calf_right,
+                m.id,
+                str(m.date),
+                m.neck,
+                m.shoulders,
+                m.chest,
+                m.bicep_left,
+                m.bicep_right,
+                m.forearm_left,
+                m.forearm_right,
+                m.waist,
+                m.abdomen,
+                m.hips,
+                m.thigh_left,
+                m.thigh_right,
+                m.calf_left,
+                m.calf_right,
                 m.notes,
-                m.created_at.isoformat() if m.created_at else None
+                m.created_at.isoformat() if m.created_at else None,
             )
             for m in measurements
-        ]
+        ],
     )
 
     # Export progress_photos (metadata only, not the actual files)
@@ -225,12 +272,15 @@ def create_sqlite_export(db: Session, user: User) -> Path:
         """INSERT INTO progress_photos VALUES (?, ?, ?, ?, ?, ?)""",
         [
             (
-                p.id, str(p.date), p.view.value if p.view else None,
-                p.file_path, p.notes,
-                p.created_at.isoformat() if p.created_at else None
+                p.id,
+                str(p.date),
+                p.view.value if p.view else None,
+                p.file_path,
+                p.notes,
+                p.created_at.isoformat() if p.created_at else None,
             )
             for p in photos
-        ]
+        ],
     )
 
     # Export user_settings
@@ -253,11 +303,17 @@ def create_sqlite_export(db: Session, user: User) -> Path:
         cursor.execute(
             """INSERT INTO user_settings VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                settings.id, settings.theme, settings.font_size, settings.font_family,
-                settings.content_width, settings.color_scheme,
-                settings.distance_unit, settings.measurement_unit,
-                settings.weight_unit, settings.water_unit
-            )
+                settings.id,
+                settings.theme,
+                settings.font_size,
+                settings.font_family,
+                settings.content_width,
+                settings.color_scheme,
+                settings.distance_unit,
+                settings.measurement_unit,
+                settings.weight_unit,
+                settings.water_unit,
+            ),
         )
 
     # Create indexes for common queries
@@ -301,7 +357,5 @@ def export_sqlite(
         path=str(db_path),
         filename=filename,
         media_type="application/x-sqlite3",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

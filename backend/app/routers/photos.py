@@ -11,6 +11,7 @@ from PIL import Image, ImageOps
 
 try:
     import pillow_heif
+
     pillow_heif.register_heif_opener()
 except ImportError:
     pass  # HEIC support optional
@@ -40,7 +41,9 @@ class PhotoResponse(BaseModel):
         from_attributes = True
 
 
-def process_image_bytes(content: bytes, max_size: int = 1200, quality: int = 85) -> bytes:
+def process_image_bytes(
+    content: bytes, max_size: int = 1200, quality: int = 85
+) -> bytes:
     """Process uploaded image: resize, optimize, convert to JPEG. Returns bytes."""
     img = Image.open(io.BytesIO(content))
 
@@ -67,7 +70,7 @@ def require_drive_access(user: User):
     if not user.google_refresh_token:
         raise HTTPException(
             status_code=403,
-            detail="Google Drive access not configured. Please log out and log in again to grant Drive permissions."
+            detail="Google Drive access not configured. Please log out and log in again to grant Drive permissions.",
         )
 
 
@@ -116,10 +119,13 @@ def get_photos_by_date(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "photos", db, current_user)
-    photos = db.query(ProgressPhoto).filter(
-        ProgressPhoto.user_id == target_user.id,
-        ProgressPhoto.date == photo_date
-    ).all()
+    photos = (
+        db.query(ProgressPhoto)
+        .filter(
+            ProgressPhoto.user_id == target_user.id, ProgressPhoto.date == photo_date
+        )
+        .all()
+    )
 
     return [
         PhotoResponse(
@@ -141,11 +147,21 @@ def get_drive_status(
 ):
     """Check if user has Google Drive configured and working."""
     if not current_user.google_refresh_token:
-        return {"configured": False, "working": False, "message": "Please log out and log in again to enable photo storage."}
+        return {
+            "configured": False,
+            "working": False,
+            "message": "Please log out and log in again to enable photo storage.",
+        }
 
     try:
         working = google_drive.check_drive_access(current_user.google_refresh_token)
-        return {"configured": True, "working": working, "message": "Google Drive connected" if working else "Drive access expired, please re-login"}
+        return {
+            "configured": True,
+            "working": working,
+            "message": "Google Drive connected"
+            if working
+            else "Drive access expired, please re-login",
+        }
     except Exception as e:
         return {"configured": True, "working": False, "message": str(e)}
 
@@ -163,24 +179,36 @@ async def upload_photo(
     require_drive_access(current_user)
 
     # Validate file type
-    allowed_types = {"image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+        "image/webp",
+    }
     if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Invalid file type. Use JPEG, PNG, HEIC, or WebP.")
+        raise HTTPException(
+            status_code=400, detail="Invalid file type. Use JPEG, PNG, HEIC, or WebP."
+        )
 
     # Read and check file size
     content = await file.read()
     if len(content) > settings.max_image_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is {settings.max_image_size // (1024*1024)}MB"
+            detail=f"File too large. Maximum size is {settings.max_image_size // (1024 * 1024)}MB",
         )
 
     # Check if photo already exists for this date/view
-    existing = db.query(ProgressPhoto).filter(
-        ProgressPhoto.user_id == current_user.id,
-        ProgressPhoto.date == photo_date,
-        ProgressPhoto.view == view
-    ).first()
+    existing = (
+        db.query(ProgressPhoto)
+        .filter(
+            ProgressPhoto.user_id == current_user.id,
+            ProgressPhoto.date == photo_date,
+            ProgressPhoto.view == view,
+        )
+        .first()
+    )
 
     # Process image (resize, optimize, convert to JPEG)
     try:
@@ -199,12 +227,16 @@ async def upload_photo(
             filename,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload to Google Drive: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to upload to Google Drive: {e}"
+        )
 
     # Delete old photo from Drive if replacing
     if existing and existing.drive_file_id:
         try:
-            google_drive.delete_photo(current_user.google_refresh_token, existing.drive_file_id)
+            google_drive.delete_photo(
+                current_user.google_refresh_token, existing.drive_file_id
+            )
         except Exception:
             pass  # Ignore errors deleting old file
 
@@ -263,13 +295,19 @@ def get_photo_file(
     # Download from Google Drive
     if photo.drive_file_id:
         if not owner.google_refresh_token:
-            raise HTTPException(status_code=500, detail="Photo owner's Drive access expired")
+            raise HTTPException(
+                status_code=500, detail="Photo owner's Drive access expired"
+            )
 
         try:
-            content = google_drive.download_photo(owner.google_refresh_token, photo.drive_file_id)
+            content = google_drive.download_photo(
+                owner.google_refresh_token, photo.drive_file_id
+            )
             return Response(content=content, media_type="image/jpeg")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to download from Google Drive: {e}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to download from Google Drive: {e}"
+            )
 
     # Legacy: file stored locally (should not happen for new photos)
     if photo.file_path:
@@ -286,10 +324,11 @@ def delete_photo(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    photo = db.query(ProgressPhoto).filter(
-        ProgressPhoto.id == photo_id,
-        ProgressPhoto.user_id == current_user.id
-    ).first()
+    photo = (
+        db.query(ProgressPhoto)
+        .filter(ProgressPhoto.id == photo_id, ProgressPhoto.user_id == current_user.id)
+        .first()
+    )
 
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
@@ -297,7 +336,9 @@ def delete_photo(
     # Delete from Google Drive
     if photo.drive_file_id and current_user.google_refresh_token:
         try:
-            google_drive.delete_photo(current_user.google_refresh_token, photo.drive_file_id)
+            google_drive.delete_photo(
+                current_user.google_refresh_token, photo.drive_file_id
+            )
         except Exception:
             pass  # Continue even if Drive delete fails
 

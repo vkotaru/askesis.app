@@ -12,12 +12,14 @@ from PIL import Image, ImageOps
 
 try:
     import pillow_heif
+
     pillow_heif.register_heif_opener()
 except ImportError:
     pass
 
 try:
     import google.generativeai as genai
+
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -154,7 +156,9 @@ def meal_to_response(meal: Meal) -> dict:
         "description": meal.description,
         "photo_path": meal.photo_path,
         "ai_analysis": meal.ai_analysis,
-        "photo_url": f"/api/nutrition/meals/{meal.id}/photo" if meal.photo_path else None,
+        "photo_url": f"/api/nutrition/meals/{meal.id}/photo"
+        if meal.photo_path
+        else None,
     }
 
 
@@ -187,7 +191,9 @@ def get_meals(
     if meal_date:
         query = query.filter(Meal.date == meal_date)
 
-    meals = query.order_by(Meal.date.desc(), Meal.time).offset(offset).limit(limit).all()
+    meals = (
+        query.order_by(Meal.date.desc(), Meal.time).offset(offset).limit(limit).all()
+    )
     return [meal_to_response(m) for m in meals]
 
 
@@ -211,10 +217,11 @@ def update_meal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    meal = db.query(Meal).filter(
-        Meal.id == meal_id,
-        Meal.user_id == current_user.id
-    ).first()
+    meal = (
+        db.query(Meal)
+        .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
+        .first()
+    )
 
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
@@ -238,16 +245,23 @@ async def upload_meal_photo(
     """Upload a photo for a meal and optionally analyze with Gemini."""
     settings = get_settings()
 
-    meal = db.query(Meal).filter(
-        Meal.id == meal_id,
-        Meal.user_id == current_user.id
-    ).first()
+    meal = (
+        db.query(Meal)
+        .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
+        .first()
+    )
 
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
 
     # Validate file type
-    allowed_types = {"image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+        "image/webp",
+    }
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
@@ -256,7 +270,7 @@ async def upload_meal_photo(
     if len(content) > settings.max_image_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is {settings.max_image_size // (1024*1024)}MB"
+            detail=f"File too large. Maximum size is {settings.max_image_size // (1024 * 1024)}MB",
         )
 
     # Generate unique filename
@@ -341,7 +355,13 @@ async def analyze_food_photo(
         raise HTTPException(status_code=503, detail="Gemini API not available")
 
     # Validate file type
-    allowed_types = {"image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+        "image/webp",
+    }
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
@@ -350,7 +370,7 @@ async def analyze_food_photo(
     if len(content) > settings.max_image_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is {settings.max_image_size // (1024*1024)}MB"
+            detail=f"File too large. Maximum size is {settings.max_image_size // (1024 * 1024)}MB",
         )
 
     # Save temporarily
@@ -380,10 +400,11 @@ def delete_meal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    meal = db.query(Meal).filter(
-        Meal.id == meal_id,
-        Meal.user_id == current_user.id
-    ).first()
+    meal = (
+        db.query(Meal)
+        .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
+        .first()
+    )
 
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
@@ -400,12 +421,14 @@ def copy_meals_from_yesterday(
     current_user: User = Depends(get_current_user),
 ):
     from datetime import timedelta
+
     yesterday = target_date - timedelta(days=1)
 
-    yesterday_meals = db.query(Meal).filter(
-        Meal.user_id == current_user.id,
-        Meal.date == yesterday
-    ).all()
+    yesterday_meals = (
+        db.query(Meal)
+        .filter(Meal.user_id == current_user.id, Meal.date == yesterday)
+        .all()
+    )
 
     new_meals = []
     for meal in yesterday_meals:
@@ -430,9 +453,7 @@ def get_templates(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(MealTemplate).filter(
-        MealTemplate.user_id == current_user.id
-    ).all()
+    return db.query(MealTemplate).filter(MealTemplate.user_id == current_user.id).all()
 
 
 @router.post("/templates", response_model=MealTemplateResponse)

@@ -152,10 +152,14 @@ def create_share(
         raise HTTPException(400, "Cannot share with yourself")
 
     # Check if share already exists
-    existing = db.query(DataShare).filter(
-        DataShare.owner_id == current_user.id,
-        DataShare.shared_with_id == target_user.id,
-    ).first()
+    existing = (
+        db.query(DataShare)
+        .filter(
+            DataShare.owner_id == current_user.id,
+            DataShare.shared_with_id == target_user.id,
+        )
+        .first()
+    )
 
     if existing:
         raise HTTPException(400, "Share already exists. Use PUT to update.")
@@ -180,10 +184,14 @@ def update_share(
     current_user: User = Depends(get_current_user),
 ):
     """Update categories for an existing share."""
-    share = db.query(DataShare).filter(
-        DataShare.id == share_id,
-        DataShare.owner_id == current_user.id,
-    ).first()
+    share = (
+        db.query(DataShare)
+        .filter(
+            DataShare.id == share_id,
+            DataShare.owner_id == current_user.id,
+        )
+        .first()
+    )
 
     if not share:
         raise HTTPException(404, "Share not found")
@@ -210,10 +218,14 @@ def delete_share(
     current_user: User = Depends(get_current_user),
 ):
     """Remove a share (revoke access)."""
-    share = db.query(DataShare).filter(
-        DataShare.id == share_id,
-        DataShare.owner_id == current_user.id,
-    ).first()
+    share = (
+        db.query(DataShare)
+        .filter(
+            DataShare.id == share_id,
+            DataShare.owner_id == current_user.id,
+        )
+        .first()
+    )
 
     if not share:
         raise HTTPException(404, "Share not found")

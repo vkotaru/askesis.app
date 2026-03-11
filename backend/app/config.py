@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     # Google Drive storage
     drive_folder_name: str = "Askesis Progress Photos"  # Folder name in user's Drive
-    drive_parent_folder_id: str = ""  # Optional: parent folder ID to create app folder inside
+    drive_parent_folder_id: str = (
+        ""  # Optional: parent folder ID to create app folder inside
+    )
 
     class Config:
         env_file = ".env"
@@ -30,11 +32,15 @@ class Settings(BaseSettings):
 
         # Check for placeholder secret key
         if self.secret_key == "change-me-in-production":
-            errors.append("SECRET_KEY is still the default placeholder - generate a secure key with: openssl rand -hex 32")
+            errors.append(
+                "SECRET_KEY is still the default placeholder - generate a secure key with: openssl rand -hex 32"
+            )
 
         # Warn about SQLite in production (but don't block - user might be testing)
         if not self.dev_mode and self.database_url.startswith("sqlite"):
-            errors.append("WARNING: Using SQLite in production. Data will be lost on redeploy. Set DATABASE_URL to PostgreSQL.")
+            errors.append(
+                "WARNING: Using SQLite in production. Data will be lost on redeploy. Set DATABASE_URL to PostgreSQL."
+            )
 
         return errors
 

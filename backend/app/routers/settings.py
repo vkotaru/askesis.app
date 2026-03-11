@@ -40,9 +40,7 @@ class UserSettingsUpdate(BaseModel):
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
     """Get existing settings or create with defaults."""
-    settings = db.query(UserSettings).filter(
-        UserSettings.user_id == user_id
-    ).first()
+    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
 
     if not settings:
         settings = UserSettings(
@@ -64,9 +62,9 @@ def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
         except IntegrityError:
             # Another request created it, rollback and fetch
             db.rollback()
-            settings = db.query(UserSettings).filter(
-                UserSettings.user_id == user_id
-            ).first()
+            settings = (
+                db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+            )
 
     return settings
 
@@ -76,9 +74,9 @@ def get_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    settings = db.query(UserSettings).filter(
-        UserSettings.user_id == current_user.id
-    ).first()
+    settings = (
+        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    )
 
     if not settings:
         return UserSettingsSchema()
