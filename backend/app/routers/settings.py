@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+import os
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
@@ -6,6 +9,8 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models import User, UserSettings
 from app.routers.auth import get_current_user
+from app.config import get_settings as get_app_settings
+from app.google_drive import upload_backup
 
 router = APIRouter()
 
@@ -121,3 +126,73 @@ def update_settings(
     db.commit()
     db.refresh(settings)
     return settings
+
+
+class BackupResponse(BaseModel):
+    success: bool
+    message: str
+    file_id: str | None = None
+
+
+@router.post("/backup", response_model=BackupResponse)
+def backup_database(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Backup the database to Google Drive, overwriting any existing backup."""
+    # Check if user has refresh token for Drive access
+    if not current_user.refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Google Drive access not configured. Please re-login to grant Drive access.",
+        )
+
+    # Get user's settings for parent folder
+    user_settings = (
+        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    )
+    parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
+
+    # Get database path from config
+    app_settings = get_app_settings()
+    db_url = app_settings.database_url
+
+    # Extract file path from sqlite URL (sqlite:///./askesis.db -> ./askesis.db)
+    if not db_url.startswith("sqlite"):
+        raise HTTPException(
+            status_code=400,
+            detail="Backup only supported for SQLite databases.",
+        )
+
+    db_path = db_url.replace("sqlite:///", "")
+
+    if not os.path.exists(db_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Database file not found: {db_path}",
+        )
+
+    try:
+        # Read the database file
+        with open(db_path, "rb") as f:
+            db_content = f.read()
+
+        # Upload to Google Drive (overwrites existing)
+        file_id = upload_backup(
+            refresh_token=current_user.refresh_token,
+            file_content=db_content,
+            filename="askesis_backup.db",
+            parent_folder_id=parent_folder_id,
+        )
+
+        return BackupResponse(
+            success=True,
+            message=f"Backup completed successfully at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            file_id=file_id,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Backup failed: {str(e)}",
+        )

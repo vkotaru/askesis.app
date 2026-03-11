@@ -88,6 +88,21 @@
   }
 
   let exporting = false;
+  let backingUp = false;
+  let backupMessage = '';
+
+  async function backupToCloud() {
+    backingUp = true;
+    backupMessage = '';
+    try {
+      const result = await api.backupDatabase();
+      backupMessage = result.message;
+    } catch (err) {
+      backupMessage = err instanceof Error ? err.message : 'Backup failed';
+    } finally {
+      backingUp = false;
+    }
+  }
 
   async function exportData() {
     exporting = true;
@@ -590,9 +605,9 @@
         <h2 class="text-lg font-semibold">Google Drive</h2>
       </div>
       <p class="text-sm text-gray-500 mb-4">
-        Progress photos are stored in your Google Drive. By default, they go to a folder called "Askesis Progress Photos" at the root of your Drive.
+        Progress photos and backups are stored in your Google Drive. By default, they go to folders at the root of your Drive.
       </p>
-      <div class="max-w-md">
+      <div class="max-w-md mb-6">
         <label for="drive-folder" class="label">Parent Folder ID (optional)</label>
         <input
           id="drive-folder"
@@ -605,6 +620,35 @@
         <p class="text-xs text-gray-500 mt-2">
           To store photos inside a specific folder, paste its ID here. You can find the folder ID in the URL when viewing the folder in Google Drive.
         </p>
+      </div>
+
+      <!-- Database Backup -->
+      <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h3 class="font-medium mb-2">Database Backup</h3>
+        <p class="text-sm text-gray-500 mb-3">
+          Backup your database to Google Drive. This will overwrite any existing backup.
+        </p>
+        <button
+          on:click={backupToCloud}
+          disabled={backingUp}
+          class="btn-secondary flex items-center gap-2"
+        >
+          {#if backingUp}
+            <span class="animate-spin">⏳</span>
+            Backing up...
+          {:else}
+            <Cloud size={18} />
+            Backup to Drive
+          {/if}
+        </button>
+        {#if backupMessage}
+          <p class={clsx(
+            'text-sm mt-2',
+            backupMessage.includes('success') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          )}>
+            {backupMessage}
+          </p>
+        {/if}
       </div>
     </div>
 

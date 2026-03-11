@@ -326,6 +326,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+  backupDatabase: () =>
+    fetchJSON<{ success: boolean; message: string; file_id?: string }>('/api/settings/backup', {
+      method: 'POST',
+    }),
 
   // Body Measurements
   getMeasurements: (startDate?: string, endDate?: string, userId?: number) => {
