@@ -196,7 +196,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
-@router.post("/logout")
+@router.get("/logout")
 async def logout():
     response = RedirectResponse(url="/")
     response.delete_cookie("access_token")
