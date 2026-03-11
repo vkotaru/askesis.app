@@ -434,10 +434,28 @@
                   {formatWater(log.water_ml, $settings.water_unit)}
                 </span>
               {/if}
-              {#if !log.weight && !log.sleep_hours && !log.steps && !log.water_ml}
+              {#if log.caffeine_mg}
+                <span class="flex items-center gap-1">
+                  <Coffee size={12} class="text-nutrition-600" />
+                  {log.caffeine_mg}mg
+                </span>
+              {/if}
+              {#if log.ate_outside}
+                <span class="flex items-center gap-1">
+                  <Utensils size={12} class="text-nutrition-500" />
+                  Ate out
+                </span>
+              {/if}
+              {#if !log.weight && !log.sleep_hours && !log.steps && !log.water_ml && !log.caffeine_mg}
                 <span class="text-gray-400 text-xs">No data recorded</span>
               {/if}
             </div>
+            {#if log.notes}
+              <div class="mt-2 text-xs text-gray-500 truncate flex items-center gap-1">
+                <FileText size={12} class="text-gray-400" />
+                {log.notes}
+              </div>
+            {/if}
           </button>
         {/each}
       </div>
@@ -452,7 +470,10 @@
               <th class="pb-3 font-medium text-gray-500">Sleep</th>
               <th class="pb-3 font-medium text-gray-500">Steps</th>
               <th class="pb-3 font-medium text-gray-500">Water</th>
+              <th class="pb-3 font-medium text-gray-500">Caffeine</th>
+              <th class="pb-3 font-medium text-gray-500">Ate Out</th>
               <th class="pb-3 font-medium text-gray-500">Feelings</th>
+              <th class="pb-3 font-medium text-gray-500">Notes</th>
             </tr>
           </thead>
           <tbody>
@@ -512,6 +533,26 @@
                   {/if}
                 </td>
                 <td class="py-3">
+                  {#if log.caffeine_mg}
+                    <span class="flex items-center gap-1">
+                      <Coffee size={14} class="text-nutrition-600" />
+                      {log.caffeine_mg}mg
+                    </span>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if log.ate_outside}
+                    <span class="flex items-center gap-1">
+                      <Utensils size={14} class="text-nutrition-500" />
+                      Yes
+                    </span>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
                   {#if log.feelings && log.feelings.length > 0}
                     <div class="flex gap-1 flex-wrap">
                       {#each log.feelings.slice(0, 3) as feeling}
@@ -524,6 +565,16 @@
                         <span class="text-xs text-gray-400">+{log.feelings.length - 3}</span>
                       {/if}
                     </div>
+                  {:else}
+                    <span class="text-gray-400">—</span>
+                  {/if}
+                </td>
+                <td class="py-3">
+                  {#if log.notes}
+                    <span class="flex items-center gap-1" title={log.notes}>
+                      <FileText size={14} class="text-gray-400" />
+                      <span class="text-xs text-gray-500 truncate max-w-[100px]">{log.notes}</span>
+                    </span>
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
