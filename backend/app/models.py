@@ -50,6 +50,7 @@ class User(Base):
     # Relationships
     daily_logs: Mapped[list["DailyLog"]] = relationship(back_populates="user")
     meals: Mapped[list["Meal"]] = relationship(back_populates="user")
+    daily_nutrition: Mapped[list["DailyNutrition"]] = relationship(back_populates="user")
     activities: Mapped[list["Activity"]] = relationship(back_populates="user")
     settings: Mapped["UserSettings | None"] = relationship(
         back_populates="user", uselist=False
@@ -106,11 +107,6 @@ class DailyLog(Base):
     caffeine_mg: Mapped[int | None] = mapped_column(Integer)
     ate_outside: Mapped[bool | None] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
-    # Daily nutrition totals (optional, for tracking without individual meals)
-    total_calories: Mapped[int | None] = mapped_column(Integer)
-    protein_g: Mapped[float | None] = mapped_column(Float)
-    carbs_g: Mapped[float | None] = mapped_column(Float)
-    fat_g: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="daily_logs")
@@ -132,6 +128,30 @@ class Meal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="meals")
+
+
+class DailyNutrition(Base):
+    """Daily nutrition totals - separate from meals for manual entry or import."""
+
+    __tablename__ = "daily_nutrition"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped["User"] = relationship(back_populates="daily_nutrition")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="unique_user_nutrition_date"),
+    )
 
 
 class Activity(Base):

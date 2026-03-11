@@ -26,7 +26,7 @@ except ImportError:
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, Meal, MealTemplate, UserSettings
+from app.models import User, Meal, MealTemplate, UserSettings, DailyNutrition
 from app.routers.auth import get_current_user, check_view_permission
 from app import google_drive
 
@@ -183,6 +183,88 @@ class MealTemplateResponse(MealTemplateCreate):
 
     class Config:
         from_attributes = True
+
+
+# Daily Nutrition models
+class DailyNutritionCreate(BaseModel):
+    date: date
+    protein_g: float | None = Field(None, ge=0, le=1000)
+    carbs_g: float | None = Field(None, ge=0, le=2000)
+    fat_g: float | None = Field(None, ge=0, le=1000)
+    notes: str | None = Field(None, max_length=2000)
+
+
+class DailyNutritionResponse(BaseModel):
+    id: int
+    user_id: int
+    date: date
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    notes: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# Daily Nutrition endpoints
+@router.get("/daily/{nutrition_date}", response_model=DailyNutritionResponse)
+def get_daily_nutrition(
+    nutrition_date: date,
+    user_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get daily nutrition totals for a specific date."""
+    target_user = check_view_permission(user_id, "nutrition", db, current_user)
+    nutrition = (
+        db.query(DailyNutrition)
+        .filter(
+            DailyNutrition.user_id == target_user.id,
+            DailyNutrition.date == nutrition_date,
+        )
+        .first()
+    )
+
+    if not nutrition:
+        raise HTTPException(status_code=404, detail="Daily nutrition not found")
+
+    return nutrition
+
+
+@router.post("/daily", response_model=DailyNutritionResponse)
+def save_daily_nutrition(
+    data: DailyNutritionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create or update daily nutrition totals."""
+    # Check if nutrition exists for this date
+    existing = (
+        db.query(DailyNutrition)
+        .filter(
+            DailyNutrition.user_id == current_user.id,
+            DailyNutrition.date == data.date,
+        )
+        .first()
+    )
+
+    if existing:
+        # Update only provided fields
+        update_data = data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            if key != "date":
+                setattr(existing, key, value)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    # Create new
+    nutrition = DailyNutrition(user_id=current_user.id, **data.model_dump())
+    db.add(nutrition)
+    db.commit()
+    db.refresh(nutrition)
+    return nutrition
 
 
 @router.get("/meals")
