@@ -6,6 +6,8 @@
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+  import { settings } from '$lib/stores/settings';
+  import { formatDistance, distanceToMetric, getDistanceLabel, formatWeight, getWeightLabel } from '$lib/utils/units';
 
   let recentActivities: ActivityType[] = [];
 
@@ -110,6 +112,7 @@
   async function handleSubmit(e: SubmitEvent) {
     const formData = new FormData(e.target as HTMLFormElement);
     const urlValue = (formData.get('url') as string)?.trim();
+    const distanceInput = parseFloat(formData.get('distance') as string);
     const data: ActivityInput = {
       date: formData.get('date') as string,
       name: formData.get('name') as string,
@@ -117,7 +120,7 @@
       time_of_day: selectedTimeOfDay || undefined,
       duration_mins: parseInt(formData.get('duration_mins') as string) || undefined,
       calories: parseInt(formData.get('calories') as string) || undefined,
-      distance_km: parseFloat(formData.get('distance_km') as string) || undefined,
+      distance_km: distanceInput ? distanceToMetric(distanceInput, $settings.distance_unit) : undefined,
       url: urlValue || undefined,
       notes: formData.get('notes') as string,
       tags: selectedTags.join(','),
@@ -241,8 +244,8 @@
           <input id="calories" type="number" name="calories" placeholder="250" class="input" />
         </div>
         <div>
-          <label for="distance" class="label">Distance (km)</label>
-          <input id="distance" type="number" name="distance_km" step="0.1" placeholder="5.0" class="input" />
+          <label for="distance" class="label">Distance ({getDistanceLabel($settings.distance_unit)})</label>
+          <input id="distance" type="number" name="distance" step="0.1" placeholder="5.0" class="input" />
         </div>
         <div class="md:col-span-3">
           <label for="url" class="label">External Link (Strava, Hevy, Garmin)</label>
@@ -364,7 +367,7 @@
                   <p class="text-sm text-gray-500">
                     {format(new Date(activity.date), 'MMM d, yyyy')}
                     {#if activity.duration_mins} · {activity.duration_mins} min{/if}
-                    {#if activity.distance_km} · {activity.distance_km} km{/if}
+                    {#if activity.distance_km} · {formatDistance(activity.distance_km, $settings.distance_unit)}{/if}
                     {#if activity.calories} · {activity.calories} cal{/if}
                   </p>
                   {#if activity.tags}
@@ -537,7 +540,7 @@
                 </td>
                 <td class="py-3">
                   {#if activity.distance_km}
-                    {activity.distance_km} km
+                    {formatDistance(activity.distance_km, $settings.distance_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}

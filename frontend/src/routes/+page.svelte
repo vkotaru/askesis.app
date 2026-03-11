@@ -4,6 +4,8 @@
   import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog, type Activity as ActivityType } from '$lib/api/client';
+  import { settings } from '$lib/stores/settings';
+  import { formatWeight, weightFromMetric, formatWater, formatDistance, getWeightLabel } from '$lib/utils/units';
 
   let logs: DailyLog[] = [];
   let activities: ActivityType[] = [];
@@ -146,9 +148,9 @@
           <div>
             <p class="text-sm text-gray-500 mb-1">Weight</p>
             <p class="text-2xl font-bold">
-              {latestWeightLog?.weight ?? '—'}
+              {latestWeightLog?.weight ? weightFromMetric(latestWeightLog.weight, $settings.weight_unit).toFixed(1) : '—'}
               {#if latestWeightLog?.weight}
-                <span class="text-sm font-normal text-gray-400 ml-1">kg</span>
+                <span class="text-sm font-normal text-gray-400 ml-1">{getWeightLabel($settings.weight_unit)}</span>
               {/if}
             </p>
             {#if latestWeightLog && latestWeightLog.date !== today}
@@ -201,10 +203,7 @@
           <div>
             <p class="text-sm text-gray-500 mb-1">Water</p>
             <p class="text-2xl font-bold">
-              {latestWaterLog?.water_ml ?? '—'}
-              {#if latestWaterLog?.water_ml}
-                <span class="text-sm font-normal text-gray-400 ml-1">ml</span>
-              {/if}
+              {formatWater(latestWaterLog?.water_ml, $settings.water_unit)}
             </p>
             {#if latestWaterLog && latestWaterLog.date !== today}
               <p class="text-xs text-gray-400 mt-1">{format(new Date(latestWaterLog.date), 'MMM d')}</p>
@@ -252,7 +251,7 @@
               {:else if weightChange > 0}
                 <TrendingUp size={16} />
               {/if}
-              {weightChange > 0 ? '+' : ''}{weightChange.toFixed(1)} kg
+              {weightChange > 0 ? '+' : ''}{weightFromMetric(weightChange, $settings.weight_unit).toFixed(1)} {getWeightLabel($settings.weight_unit)}
             </span>
           </div>
         {/if}
@@ -282,7 +281,7 @@
                   dominant-baseline="middle"
                   class="fill-gray-400 text-[10px]"
                 >
-                  {tick.value}
+                  {weightFromMetric(tick.value, $settings.weight_unit).toFixed(0)}
                 </text>
               {/each}
 
@@ -295,7 +294,7 @@
                 transform="rotate(-90, 12, {chartHeight / 2})"
                 class="fill-gray-400 text-[10px]"
               >
-                kg
+                {getWeightLabel($settings.weight_unit)}
               </text>
 
               <!-- Moving average line (dashed) -->
@@ -371,7 +370,7 @@
                 class="absolute bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg pointer-events-none z-10"
                 style="left: {(hoveredPoint.x / chartWidth) * 100}%; top: {(hoveredPoint.y / chartHeight) * 100 - 15}%; transform: translateX(-50%);"
               >
-                <div class="font-medium">{hoveredPoint.weight} kg</div>
+                <div class="font-medium">{formatWeight(hoveredPoint.weight, $settings.weight_unit)}</div>
                 <div class="text-gray-300">{format(new Date(hoveredPoint.date), 'MMM d, yyyy')}</div>
               </div>
             {/if}
