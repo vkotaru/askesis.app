@@ -149,7 +149,7 @@
           <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
             {driveStatus.message}
           </p>
-          <a href="/api/auth/logout" class="inline-block mt-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline">
+          <a href="/auth/logout" class="inline-block mt-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline">
             Log out and reconnect
           </a>
         </div>
