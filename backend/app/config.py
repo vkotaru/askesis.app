@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)
     max_csv_size: int = 10 * 1024 * 1024  # 10MB
 
+    # Google Drive storage
+    drive_folder_name: str = "Askesis Progress Photos"  # Folder name in user's Drive
+
     class Config:
         env_file = ".env"
 
