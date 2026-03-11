@@ -6,6 +6,8 @@
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+  import { settings } from '$lib/stores/settings';
+  import { formatWater, formatWeight, waterToMetric, waterFromMetric, weightToMetric, weightFromMetric, getWaterLabel, getWeightLabel } from '$lib/utils/units';
 
   let recentLogs: DailyLog[] = [];
 
@@ -31,11 +33,11 @@
   let saved = false;
   let showImportModal = false;
 
-  // Form fields - directly bound
+  // Form fields - directly bound (water stored in user's preferred unit)
   let weight: number | undefined;
   let sleep_hours: number | undefined;
   let steps: number | undefined;
-  let water_ml: number | undefined;
+  let water: number | undefined;
   let feelings: string[] = [];
   let caffeine_mg: number | undefined;
   let ate_outside = false;
@@ -44,10 +46,10 @@
   async function loadLog() {
     try {
       const log = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
-      weight = log.weight;
+      weight = log.weight ? weightFromMetric(log.weight, $settings.weight_unit) : undefined;
       sleep_hours = log.sleep_hours;
       steps = log.steps;
-      water_ml = log.water_ml;
+      water = log.water_ml ? waterFromMetric(log.water_ml, $settings.water_unit) : undefined;
       feelings = log.feelings ?? [];
       caffeine_mg = log.caffeine_mg;
       ate_outside = log.ate_outside ?? false;
@@ -57,7 +59,7 @@
       weight = undefined;
       sleep_hours = undefined;
       steps = undefined;
-      water_ml = undefined;
+      water = undefined;
       feelings = [];
       caffeine_mg = undefined;
       ate_outside = false;
@@ -113,10 +115,10 @@
     try {
       await api.saveDailyLog({
         date: selectedDate,
-        weight,
+        weight: weight ? weightToMetric(weight, $settings.weight_unit) : undefined,
         sleep_hours,
         steps,
-        water_ml,
+        water_ml: water ? Math.round(waterToMetric(water, $settings.water_unit)) : undefined,
         feelings: feelings.length > 0 ? feelings : undefined,
         caffeine_mg,
         ate_outside,
@@ -139,7 +141,7 @@
 
   // Check if current date has any data
   $: hasData = weight !== undefined || sleep_hours !== undefined || steps !== undefined ||
-               water_ml !== undefined || feelings.length > 0 || caffeine_mg !== undefined || notes !== '';
+               water !== undefined || feelings.length > 0 || caffeine_mg !== undefined || notes !== '';
 
   // Check if selected date exists in recent logs
   $: dateHasEntry = recentLogs.some(log => log.date === selectedDate);
@@ -201,7 +203,7 @@
       <div class="space-y-2">
         <label for="weight" class="label flex items-center gap-2">
           <Scale size={16} class="text-rest-500" />
-          Weight <span class="text-gray-400 font-normal">(kg)</span>
+          Weight <span class="text-gray-400 font-normal">({getWeightLabel($settings.weight_unit)})</span>
         </label>
         <input
           id="weight"
@@ -245,13 +247,13 @@
       <div class="space-y-2">
         <label for="water" class="label flex items-center gap-2">
           <Droplets size={16} class="text-cardio-400" />
-          Water <span class="text-gray-400 font-normal">(ml)</span>
+          Water <span class="text-gray-400 font-normal">({getWaterLabel($settings.water_unit)})</span>
         </label>
         <input
           id="water"
           type="number"
-          step="100"
-          bind:value={water_ml}
+          step={$settings.water_unit === 'ml' ? '100' : '0.1'}
+          bind:value={water}
           placeholder="Enter water intake"
           class="input"
         />
@@ -411,7 +413,7 @@
               {#if log.weight}
                 <span class="flex items-center gap-1">
                   <Scale size={12} class="text-rest-500" />
-                  {log.weight}kg
+                  {formatWeight(log.weight, $settings.weight_unit)}
                 </span>
               {/if}
               {#if log.sleep_hours}
@@ -429,7 +431,7 @@
               {#if log.water_ml}
                 <span class="flex items-center gap-1">
                   <Droplets size={12} class="text-cardio-400" />
-                  {log.water_ml}ml
+                  {formatWater(log.water_ml, $settings.water_unit)}
                 </span>
               {/if}
               {#if !log.weight && !log.sleep_hours && !log.steps && !log.water_ml}
@@ -473,7 +475,7 @@
                   {#if log.weight}
                     <span class="flex items-center gap-1">
                       <Scale size={14} class="text-rest-500" />
-                      {log.weight} kg
+                      {formatWeight(log.weight, $settings.weight_unit)}
                     </span>
                   {:else}
                     <span class="text-gray-400">—</span>
@@ -503,7 +505,7 @@
                   {#if log.water_ml}
                     <span class="flex items-center gap-1">
                       <Droplets size={14} class="text-cardio-400" />
-                      {log.water_ml} ml
+                      {formatWater(log.water_ml, $settings.water_unit)}
                     </span>
                   {:else}
                     <span class="text-gray-400">—</span>
