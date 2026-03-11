@@ -208,7 +208,7 @@
         <input
           id="weight"
           type="number"
-          step="0.1"
+          step="any"
           bind:value={weight}
           placeholder="Enter weight"
           class="input"
@@ -223,7 +223,7 @@
         <input
           id="sleep"
           type="number"
-          step="0.5"
+          step="any"
           bind:value={sleep_hours}
           placeholder="Enter sleep hours"
           class="input"
@@ -252,7 +252,7 @@
         <input
           id="water"
           type="number"
-          step={$settings.water_unit === 'ml' ? '100' : '0.1'}
+          step="any"
           bind:value={water}
           placeholder="Enter water intake"
           class="input"
