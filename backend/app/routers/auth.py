@@ -21,7 +21,10 @@ if not settings.dev_mode:
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
+        client_kwargs={
+            # Request Drive scope for photo storage + offline access for refresh token
+            "scope": "openid email profile https://www.googleapis.com/auth/drive.file",
+        },
     )
 
 
@@ -137,7 +140,13 @@ async def login(request: Request, db: Session = Depends(get_db)):
     redirect_uri = request.url_for("auth_callback")
     # Force HTTPS in production (behind reverse proxy)
     redirect_uri = str(redirect_uri).replace("http://", "https://")
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # Request offline access to get refresh token for Drive API
+    return await oauth.google.authorize_redirect(
+        request,
+        redirect_uri,
+        access_type="offline",
+        prompt="consent",  # Force consent to always get refresh token
+    )
 
 
 @router.get("/callback")
@@ -163,7 +172,12 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             picture=user_info.get("picture"),
         )
         db.add(user)
-        db.commit()
+
+    # Store refresh token for Google Drive API access
+    refresh_token = token.get("refresh_token")
+    if refresh_token:
+        user.google_refresh_token = refresh_token
+    db.commit()
 
     # Create JWT and set cookie
     access_token = create_access_token({"sub": email})

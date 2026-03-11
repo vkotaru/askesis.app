@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image } from 'lucide-svelte';
+  import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image, AlertTriangle } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type ProgressPhoto, type PhotoView } from '$lib/api/client';
+  import { api, type ProgressPhoto, type PhotoView, type DriveStatus } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const VIEWS: { value: PhotoView; label: string; emoji: string }[] = [
@@ -16,11 +16,21 @@
   let photos: ProgressPhoto[] = [];
   let loading = true;
   let uploading: PhotoView | null = null;
+  let driveStatus: DriveStatus | null = null;
   let fileInputs: Record<PhotoView, HTMLInputElement | null> = {
     front: null,
     side: null,
     back: null,
   };
+
+  async function checkDriveStatus() {
+    try {
+      driveStatus = await api.getDriveStatus();
+    } catch (err) {
+      console.error('Failed to check Drive status:', err);
+      driveStatus = { configured: false, working: false, message: 'Unable to check Drive status' };
+    }
+  }
 
   async function loadPhotos() {
     loading = true;
@@ -34,7 +44,10 @@
     }
   }
 
-  onMount(loadPhotos);
+  onMount(() => {
+    checkDriveStatus();
+    loadPhotos();
+  });
 
   // Reload when viewing user changes
   $: $viewingUserId, loadPhotos();
@@ -127,6 +140,23 @@
     </div>
   </div>
 
+  {#if driveStatus && !driveStatus.working && !$isViewingOther}
+    <div class="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+      <div class="flex items-start gap-3">
+        <AlertTriangle size={20} class="text-amber-500 mt-0.5 flex-shrink-0" />
+        <div>
+          <p class="font-medium text-amber-800 dark:text-amber-200">Google Drive Not Connected</p>
+          <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+            {driveStatus.message}
+          </p>
+          <a href="/api/auth/logout" class="inline-block mt-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline">
+            Log out and reconnect
+          </a>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if loading}
     <div class="card p-12 flex items-center justify-center">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
@@ -213,7 +243,7 @@
         <li>Wear the same or similar clothing for accurate comparison</li>
         <li>Stand in the same position each time</li>
         <li>Take photos at the same time of day (morning is best)</li>
-        <li>Photos are automatically resized and optimized for storage</li>
+        <li>Photos are automatically resized, optimized, and stored in your Google Drive</li>
       </ul>
     </div>
   {/if}
