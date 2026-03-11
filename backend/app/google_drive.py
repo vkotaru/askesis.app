@@ -9,9 +9,6 @@ from googleapiclient.errors import HttpError
 
 from app.config import get_settings
 
-# Folder name in user's Google Drive for app photos
-DRIVE_FOLDER_NAME = "Askesis Progress Photos"
-
 
 def get_drive_service(refresh_token: str):
     """Build Google Drive service using refresh token."""
@@ -31,8 +28,11 @@ def get_drive_service(refresh_token: str):
 
 def get_or_create_app_folder(service) -> str:
     """Get or create the app folder in user's Drive. Returns folder ID."""
+    settings = get_settings()
+    folder_name = settings.drive_folder_name
+
     # Search for existing folder
-    query = f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
     files = results.get("files", [])
 
@@ -41,7 +41,7 @@ def get_or_create_app_folder(service) -> str:
 
     # Create folder
     folder_metadata = {
-        "name": DRIVE_FOLDER_NAME,
+        "name": folder_name,
         "mimeType": "application/vnd.google-apps.folder",
     }
     folder = service.files().create(body=folder_metadata, fields="id").execute()
