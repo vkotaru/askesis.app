@@ -1,4 +1,11 @@
-"""Google Drive storage service for progress photos."""
+"""Google Drive storage service for progress photos, meal photos, and backups.
+
+All files are organized under a main "Askesis" folder with subfolders:
+- Askesis/
+  ├── Progress Photos/
+  ├── Meal Photos/
+  └── Backups/
+"""
 
 import io
 import logging
@@ -11,6 +18,12 @@ from googleapiclient.errors import HttpError
 from app.config import get_settings
 
 logger = logging.getLogger("askesis.google_drive")
+
+# Folder names
+ASKESIS_FOLDER_NAME = "Askesis"
+PROGRESS_PHOTOS_FOLDER = "Progress Photos"
+MEAL_PHOTOS_FOLDER = "Meal Photos"
+BACKUPS_FOLDER = "Backups"
 
 
 def get_drive_service(refresh_token: str):
@@ -37,20 +50,14 @@ def get_drive_service(refresh_token: str):
         raise
 
 
-def get_or_create_app_folder(service, parent_folder_id: str | None = None) -> str:
-    """Get or create the app folder in user's Drive. Returns folder ID.
-
-    Args:
-        service: Google Drive service instance
-        parent_folder_id: Optional parent folder ID from user's settings
-    """
-    settings = get_settings()
-    folder_name = settings.drive_folder_name
-
-    # Search for existing folder (optionally within a specific parent)
+def _get_or_create_folder(
+    service, folder_name: str, parent_folder_id: str | None = None
+) -> str:
+    """Get or create a folder in Google Drive. Returns folder ID."""
     query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     if parent_folder_id:
         query += f" and '{parent_folder_id}' in parents"
+
     results = (
         service.files()
         .list(q=query, spaces="drive", fields="files(id, name)")
@@ -68,8 +75,32 @@ def get_or_create_app_folder(service, parent_folder_id: str | None = None) -> st
     }
     if parent_folder_id:
         folder_metadata["parents"] = [parent_folder_id]
+
     folder = service.files().create(body=folder_metadata, fields="id").execute()
     return folder["id"]
+
+
+def get_or_create_askesis_folder(service, parent_folder_id: str | None = None) -> str:
+    """Get or create the main Askesis folder. Returns folder ID.
+
+    Args:
+        service: Google Drive service instance
+        parent_folder_id: Optional parent folder ID from user's settings
+    """
+    return _get_or_create_folder(service, ASKESIS_FOLDER_NAME, parent_folder_id)
+
+
+def get_or_create_app_folder(service, parent_folder_id: str | None = None) -> str:
+    """Get or create the Progress Photos folder inside Askesis. Returns folder ID.
+
+    Args:
+        service: Google Drive service instance
+        parent_folder_id: Optional parent folder ID from user's settings
+    """
+    # First get/create the main Askesis folder
+    askesis_folder_id = get_or_create_askesis_folder(service, parent_folder_id)
+    # Then get/create the Progress Photos subfolder
+    return _get_or_create_folder(service, PROGRESS_PHOTOS_FOLDER, askesis_folder_id)
 
 
 def upload_photo(
@@ -175,61 +206,19 @@ def check_drive_access(refresh_token: str) -> bool:
 
 
 def get_or_create_backup_folder(service, parent_folder_id: str | None = None) -> str:
-    """Get or create the backup folder in user's Drive. Returns folder ID."""
-    folder_name = "Askesis Backups"
-
-    # Search for existing folder
-    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    if parent_folder_id:
-        query += f" and '{parent_folder_id}' in parents"
-    results = (
-        service.files()
-        .list(q=query, spaces="drive", fields="files(id, name)")
-        .execute()
-    )
-    files = results.get("files", [])
-
-    if files:
-        return files[0]["id"]
-
-    # Create folder
-    folder_metadata = {
-        "name": folder_name,
-        "mimeType": "application/vnd.google-apps.folder",
-    }
-    if parent_folder_id:
-        folder_metadata["parents"] = [parent_folder_id]
-    folder = service.files().create(body=folder_metadata, fields="id").execute()
-    return folder["id"]
+    """Get or create the Backups folder inside Askesis. Returns folder ID."""
+    # First get/create the main Askesis folder
+    askesis_folder_id = get_or_create_askesis_folder(service, parent_folder_id)
+    # Then get/create the Backups subfolder
+    return _get_or_create_folder(service, BACKUPS_FOLDER, askesis_folder_id)
 
 
 def get_or_create_meals_folder(service, parent_folder_id: str | None = None) -> str:
-    """Get or create the meal photos folder in user's Drive. Returns folder ID."""
-    folder_name = "Askesis Meal Photos"
-
-    # Search for existing folder
-    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    if parent_folder_id:
-        query += f" and '{parent_folder_id}' in parents"
-    results = (
-        service.files()
-        .list(q=query, spaces="drive", fields="files(id, name)")
-        .execute()
-    )
-    files = results.get("files", [])
-
-    if files:
-        return files[0]["id"]
-
-    # Create folder
-    folder_metadata = {
-        "name": folder_name,
-        "mimeType": "application/vnd.google-apps.folder",
-    }
-    if parent_folder_id:
-        folder_metadata["parents"] = [parent_folder_id]
-    folder = service.files().create(body=folder_metadata, fields="id").execute()
-    return folder["id"]
+    """Get or create the Meal Photos folder inside Askesis. Returns folder ID."""
+    # First get/create the main Askesis folder
+    askesis_folder_id = get_or_create_askesis_folder(service, parent_folder_id)
+    # Then get/create the Meal Photos subfolder
+    return _get_or_create_folder(service, MEAL_PHOTOS_FOLDER, askesis_folder_id)
 
 
 def upload_meal_photo(
