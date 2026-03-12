@@ -1,0 +1,374 @@
+"""Google Sheets sync service for exporting app data.
+
+Syncs data to user's Google Sheet with tabs:
+- Daily_Log: weight, meals, water, steps, macros
+- Activities: workouts with duration, distance, calories
+- Measurements: body measurements
+- Photos: progress photos as embedded images
+"""
+
+import logging
+from datetime import date
+from collections import defaultdict
+
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.models import (
+    User,
+    DailyLog,
+    Meal,
+    DailyNutrition,
+    Activity,
+    BodyMeasurement,
+    ProgressPhoto,
+)
+
+logger = logging.getLogger("askesis.google_sheets")
+
+# Sheet tab names
+DAILY_LOG_TAB = "Daily_Log"
+ACTIVITIES_TAB = "Activities"
+MEASUREMENTS_TAB = "Measurements"
+PHOTOS_TAB = "Photos"
+
+
+def get_sheets_service(refresh_token: str):
+    """Build Google Sheets service using refresh token."""
+    settings = get_settings()
+
+    logger.info("Building Sheets service with refresh token")
+
+    credentials = Credentials(
+        token=None,  # Will be refreshed
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"],
+    )
+
+    try:
+        service = build("sheets", "v4", credentials=credentials)
+        logger.info("Sheets service built successfully")
+        return service
+    except Exception as e:
+        logger.error(f"Failed to build Sheets service: {e}")
+        raise
+
+
+def _ensure_worksheet(service, spreadsheet_id: str, tab_name: str) -> int:
+    """Ensure a worksheet tab exists. Returns the sheet ID."""
+    try:
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheets = spreadsheet.get("sheets", [])
+
+        for sheet in sheets:
+            if sheet["properties"]["title"] == tab_name:
+                return sheet["properties"]["sheetId"]
+
+        # Create the tab
+        request = {
+            "requests": [
+                {
+                    "addSheet": {
+                        "properties": {"title": tab_name}
+                    }
+                }
+            ]
+        }
+        response = service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body=request
+        ).execute()
+        return response["replies"][0]["addSheet"]["properties"]["sheetId"]
+
+    except HttpError as e:
+        logger.error(f"Failed to ensure worksheet {tab_name}: {e}")
+        raise
+
+
+def _clear_and_write(service, spreadsheet_id: str, tab_name: str, data: list[list]):
+    """Clear a tab and write new data."""
+    range_name = f"{tab_name}!A1"
+
+    # Clear existing content
+    service.spreadsheets().values().clear(
+        spreadsheetId=spreadsheet_id,
+        range=f"{tab_name}!A:ZZ",
+    ).execute()
+
+    # Write new data
+    if data:
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=range_name,
+            valueInputOption="USER_ENTERED",
+            body={"values": data},
+        ).execute()
+
+    logger.info(f"Wrote {len(data)} rows to {tab_name}")
+
+
+def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session):
+    """Sync Daily_Log tab with columns matching user's format."""
+    _ensure_worksheet(service, spreadsheet_id, DAILY_LOG_TAB)
+
+    # Header row
+    headers = [
+        "date",
+        "Weight (kg)",
+        "Meal 1",
+        "Meal 2",
+        "Meal 3",
+        "Snacks",
+        "Water (L)",
+        "Total Cals",
+        "Protein (g)",
+        "Steps",
+        "Carbs (g)",
+        "Fat (g)",
+        "Active Cals",
+        "Missed Out",
+    ]
+
+    # Get all daily logs
+    daily_logs = (
+        db.query(DailyLog)
+        .filter(DailyLog.user_id == user_id)
+        .order_by(DailyLog.date.desc())
+        .all()
+    )
+
+    # Get all meals grouped by date
+    meals = db.query(Meal).filter(Meal.user_id == user_id).all()
+    meals_by_date: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    total_cals_by_date: dict[date, int] = defaultdict(int)
+
+    for meal in meals:
+        if meal.calories:
+            # Map meal labels to columns
+            label = meal.label.lower()
+            if "breakfast" in label or "meal 1" in label:
+                col = "Meal 1"
+            elif "lunch" in label or "meal 2" in label:
+                col = "Meal 2"
+            elif "dinner" in label or "meal 3" in label:
+                col = "Meal 3"
+            else:
+                col = "Snacks"
+            meals_by_date[meal.date][col] += meal.calories
+            total_cals_by_date[meal.date] += meal.calories
+
+    # Get nutrition (macros) by date
+    nutrition = db.query(DailyNutrition).filter(DailyNutrition.user_id == user_id).all()
+    nutrition_by_date: dict[date, DailyNutrition] = {n.date: n for n in nutrition}
+
+    # Get activities for active calories
+    activities = db.query(Activity).filter(Activity.user_id == user_id).all()
+    active_cals_by_date: dict[date, int] = defaultdict(int)
+    for activity in activities:
+        if activity.calories:
+            active_cals_by_date[activity.date] += activity.calories
+
+    # Collect all dates
+    all_dates = set()
+    for log in daily_logs:
+        all_dates.add(log.date)
+    for meal in meals:
+        all_dates.add(meal.date)
+    for n in nutrition:
+        all_dates.add(n.date)
+    for a in activities:
+        all_dates.add(a.date)
+
+    # Build data rows
+    data = [headers]
+    logs_by_date = {log.date: log for log in daily_logs}
+
+    for d in sorted(all_dates, reverse=True):
+        log = logs_by_date.get(d)
+        nutr = nutrition_by_date.get(d)
+        meal_data = meals_by_date.get(d, {})
+
+        row = [
+            d.isoformat(),
+            log.weight if log and log.weight else "",
+            meal_data.get("Meal 1", "") or "",
+            meal_data.get("Meal 2", "") or "",
+            meal_data.get("Meal 3", "") or "",
+            meal_data.get("Snacks", "") or "",
+            round(log.water_ml / 1000, 2) if log and log.water_ml else "",
+            total_cals_by_date.get(d, "") or "",
+            nutr.protein_g if nutr and nutr.protein_g else "",
+            log.steps if log and log.steps else "",
+            nutr.carbs_g if nutr and nutr.carbs_g else "",
+            nutr.fat_g if nutr and nutr.fat_g else "",
+            active_cals_by_date.get(d, "") or "",
+            log.notes if log and log.notes else "",
+        ]
+        data.append(row)
+
+    _clear_and_write(service, spreadsheet_id, DAILY_LOG_TAB, data)
+
+
+def _sync_activities(service, spreadsheet_id: str, user_id: int, db: Session):
+    """Sync Activities tab."""
+    _ensure_worksheet(service, spreadsheet_id, ACTIVITIES_TAB)
+
+    headers = [
+        "date",
+        "activity_name",
+        "form_type",
+        "duration_seconds",
+        "distance_miles",
+        "calories_kcal",
+        "notes",
+        "tags",
+    ]
+
+    activities = (
+        db.query(Activity)
+        .filter(Activity.user_id == user_id)
+        .order_by(Activity.date.desc())
+        .all()
+    )
+
+    data = [headers]
+    for a in activities:
+        # Convert km to miles
+        distance_miles = round(a.distance_km * 0.621371, 2) if a.distance_km else ""
+        # Convert mins to seconds
+        duration_secs = a.duration_mins * 60 if a.duration_mins else ""
+
+        row = [
+            a.date.isoformat(),
+            a.name,
+            a.activity_type.value if a.activity_type else "",
+            duration_secs,
+            distance_miles,
+            a.calories or "",
+            a.notes or "",
+            a.tags or "",
+        ]
+        data.append(row)
+
+    _clear_and_write(service, spreadsheet_id, ACTIVITIES_TAB, data)
+
+
+def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session):
+    """Sync Measurements tab with inches conversion."""
+    _ensure_worksheet(service, spreadsheet_id, MEASUREMENTS_TAB)
+
+    headers = [
+        "date",
+        "Waist (in)",
+        "Chest (in)",
+        "Right Bicep (in)",
+        "Left Bicep (in)",
+        "Right Thigh (in)",
+        "Left Thigh (in)",
+    ]
+
+    measurements = (
+        db.query(BodyMeasurement)
+        .filter(BodyMeasurement.user_id == user_id)
+        .order_by(BodyMeasurement.date.desc())
+        .all()
+    )
+
+    def cm_to_in(val):
+        """Convert cm to inches."""
+        return round(val / 2.54, 2) if val else ""
+
+    data = [headers]
+    for m in measurements:
+        row = [
+            m.date.isoformat(),
+            cm_to_in(m.waist),
+            cm_to_in(m.chest),
+            cm_to_in(m.bicep_right),
+            cm_to_in(m.bicep_left),
+            cm_to_in(m.thigh_right),
+            cm_to_in(m.thigh_left),
+        ]
+        data.append(row)
+
+    _clear_and_write(service, spreadsheet_id, MEASUREMENTS_TAB, data)
+
+
+def _sync_photos(service, spreadsheet_id: str, user_id: int, db: Session):
+    """Sync Photos tab with embedded IMAGE formulas."""
+    _ensure_worksheet(service, spreadsheet_id, PHOTOS_TAB)
+
+    headers = ["date", "Front", "Side", "Back"]
+
+    photos = (
+        db.query(ProgressPhoto)
+        .filter(ProgressPhoto.user_id == user_id)
+        .order_by(ProgressPhoto.date.desc())
+        .all()
+    )
+
+    # Group photos by date
+    photos_by_date: dict[date, dict[str, str]] = defaultdict(dict)
+    for photo in photos:
+        if photo.drive_file_id:
+            view = photo.view.value.capitalize()  # front -> Front
+            image_formula = (
+                f'=IMAGE("https://drive.google.com/uc?export=view&id={photo.drive_file_id}")'
+            )
+            photos_by_date[photo.date][view] = image_formula
+
+    data = [headers]
+    for d in sorted(photos_by_date.keys(), reverse=True):
+        photo_data = photos_by_date[d]
+        row = [
+            d.isoformat(),
+            photo_data.get("Front", ""),
+            photo_data.get("Side", ""),
+            photo_data.get("Back", ""),
+        ]
+        data.append(row)
+
+    _clear_and_write(service, spreadsheet_id, PHOTOS_TAB, data)
+
+
+def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
+    """
+    Sync all user data to a Google Sheet.
+
+    Args:
+        sheet_id: The Google Spreadsheet ID
+        user: The user whose data to sync
+        db: Database session
+
+    Returns:
+        Dict with sync results
+    """
+    if not user.google_refresh_token:
+        raise ValueError("User has no Google refresh token")
+
+    service = get_sheets_service(user.google_refresh_token)
+
+    try:
+        # Sync each tab
+        _sync_daily_log(service, sheet_id, user.id, db)
+        _sync_activities(service, sheet_id, user.id, db)
+        _sync_measurements(service, sheet_id, user.id, db)
+        _sync_photos(service, sheet_id, user.id, db)
+
+        return {
+            "success": True,
+            "message": "Synced all data to Google Sheet",
+            "tabs": [DAILY_LOG_TAB, ACTIVITIES_TAB, MEASUREMENTS_TAB, PHOTOS_TAB],
+        }
+
+    except HttpError as e:
+        logger.error(f"Google Sheets API error: {e.status_code} - {e.reason}")
+        raise
+    except Exception as e:
+        logger.error(f"Sync failed: {type(e).__name__}: {e}")
+        raise

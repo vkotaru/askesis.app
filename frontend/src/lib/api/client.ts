@@ -111,6 +111,15 @@ export interface UserSettings {
   weight_unit: WeightUnit;
   water_unit: WaterUnit;
   drive_parent_folder_id?: string | null;
+  google_sheet_id?: string | null;
+  last_gsheet_sync?: string | null;
+}
+
+export interface GSheetSyncResponse {
+  success: boolean;
+  message: string;
+  last_sync?: string | null;
+  tabs: string[];
 }
 
 export interface BodyMeasurement {
@@ -444,5 +453,11 @@ export const api = {
     fetchJSON<ImportResult>('/api/import/measurements', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  // Google Sheets Export
+  syncToGoogleSheet: () =>
+    fetchJSON<GSheetSyncResponse>('/api/export/gsheet/sync', {
+      method: 'POST',
     }),
 };
