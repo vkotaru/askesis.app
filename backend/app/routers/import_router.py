@@ -17,6 +17,7 @@ from app.models import (
     DailyLog,
     DailyNutrition,
     BodyMeasurement,
+    Meal,
     ActivityType,
     TimeOfDay,
 )
@@ -474,6 +475,93 @@ def import_measurements(
                 db.add(measurement)
 
             success_count += 1
+
+        except Exception as e:
+            errors.append(f"Row {i + 1}: {str(e)}")
+
+    if success_count > 0:
+        db.commit()
+
+    return ImportResult(
+        success_count=success_count,
+        error_count=len(errors),
+        errors=errors[:20],
+    )
+
+
+# Meal label mapping for import
+MEAL_LABEL_MAP = {
+    "meal_1": "Breakfast",
+    "meal_2": "Lunch",
+    "meal_3": "Dinner",
+    "snacks": "Snack",
+}
+
+
+@router.post("/meals", response_model=ImportResult)
+def import_meals(
+    request: ImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import meals from mapped CSV data.
+
+    Supports mapping columns like 'Meal 1', 'Meal 2', 'Meal 3', 'Snacks' to create
+    individual meal entries. Each non-empty calorie value creates a meal record.
+
+    Expected field mappings:
+    - date: The date column (required)
+    - meal_1: Breakfast calories
+    - meal_2: Lunch calories
+    - meal_3: Dinner calories
+    - snacks: Snack calories
+    """
+    success_count = 0
+    errors = []
+
+    for i, row in enumerate(request.data):
+        try:
+            mapped = apply_column_mapping(row, request.column_mapping)
+
+            log_date = parse_date(mapped.get("date", ""))
+            if not log_date:
+                raise ValueError("Date is required")
+
+            # Process each meal type
+            meals_created = 0
+            for field, label in MEAL_LABEL_MAP.items():
+                calories_str = mapped.get(field, "")
+                calories = parse_int(str(calories_str)) if calories_str else None
+
+                if calories is not None and calories > 0:
+                    # Check if this meal already exists for this date/label
+                    existing = (
+                        db.query(Meal)
+                        .filter(
+                            Meal.user_id == current_user.id,
+                            Meal.date == log_date,
+                            Meal.label == label,
+                        )
+                        .first()
+                    )
+
+                    if existing:
+                        # Update existing meal's calories
+                        existing.calories = calories
+                    else:
+                        # Create new meal
+                        meal = Meal(
+                            user_id=current_user.id,
+                            date=log_date,
+                            label=label,
+                            calories=calories,
+                        )
+                        db.add(meal)
+
+                    meals_created += 1
+
+            if meals_created > 0:
+                success_count += 1
 
         except Exception as e:
             errors.append(f"Row {i + 1}: {str(e)}")
