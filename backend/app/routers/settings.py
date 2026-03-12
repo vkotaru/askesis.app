@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
@@ -257,4 +257,119 @@ def backup_database(
         raise HTTPException(
             status_code=500,
             detail=f"Backup failed: {str(e)}",
+        )
+
+
+class RestoreResponse(BaseModel):
+    success: bool
+    message: str
+    tables_restored: list[str] = []
+    rows_restored: int = 0
+
+
+@router.post("/restore", response_model=RestoreResponse)
+async def restore_database(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore database from a JSON backup file.
+
+    WARNING: This will insert data into the database.
+    Existing records with matching IDs will be skipped.
+    """
+    import json
+    from datetime import date as date_type
+    from sqlalchemy import text
+
+    logger.info(f"Restore requested by user {current_user.email}")
+
+    if not file.filename or not file.filename.endswith(".json"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a JSON backup file.",
+        )
+
+    try:
+        content = await file.read()
+        backup_data = json.loads(content.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid JSON file: {str(e)}",
+        )
+
+    if "tables" not in backup_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid backup format: missing 'tables' key.",
+        )
+
+    tables_restored = []
+    total_rows = 0
+
+    def parse_value(value, col_name: str):
+        """Convert JSON values back to Python types."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            # Try datetime first
+            if "T" in value and len(value) >= 19:
+                try:
+                    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+            # Try date
+            if len(value) == 10 and value.count("-") == 2:
+                try:
+                    return date_type.fromisoformat(value)
+                except ValueError:
+                    pass
+        return value
+
+    try:
+        for table_name, table_data in backup_data["tables"].items():
+            columns = table_data.get("columns", [])
+            rows = table_data.get("rows", [])
+
+            if not rows:
+                continue
+
+            col_list = ", ".join(f'"{c}"' for c in columns)
+            placeholders = ", ".join(f":{c}" for c in columns)
+            insert_sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders})'
+
+            inserted = 0
+            for row in rows:
+                parsed_row = {col: parse_value(row.get(col), col) for col in columns}
+                try:
+                    db.execute(text(insert_sql), parsed_row)
+                    inserted += 1
+                except Exception as e:
+                    # Skip duplicates and constraint violations
+                    if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+                        db.rollback()
+                    else:
+                        logger.warning(f"Skipping row in {table_name}: {e}")
+                        db.rollback()
+
+            if inserted > 0:
+                db.commit()
+                tables_restored.append(f"{table_name} ({inserted} rows)")
+                total_rows += inserted
+                logger.info(f"Restored {inserted} rows to {table_name}")
+
+        return RestoreResponse(
+            success=True,
+            message=f"Restore completed. {total_rows} total rows restored.",
+            tables_restored=tables_restored,
+            rows_restored=total_rows,
+        )
+
+    except Exception as e:
+        db.rollback()
+        logger.exception("Restore failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Restore failed: {str(e)}",
         )
