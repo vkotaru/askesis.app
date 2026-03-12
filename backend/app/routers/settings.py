@@ -164,8 +164,8 @@ def _backup_postgres(db_url: str) -> tuple[bytes, str]:
     if parsed.password:
         env["PGPASSWORD"] = parsed.password
 
-    # Build pg_dump command
-    cmd = ["pg_dump", "--format=custom", "--no-owner", "--no-acl"]
+    # Build pg_dump command - use plain SQL format for version compatibility
+    cmd = ["pg_dump", "--format=plain", "--no-owner", "--no-acl"]
 
     if parsed.hostname:
         cmd.extend(["--host", parsed.hostname])
@@ -194,7 +194,7 @@ def _backup_postgres(db_url: str) -> tuple[bytes, str]:
                 detail=f"pg_dump failed: {error_msg}",
             )
 
-        return result.stdout, "askesis_backup.dump"
+        return result.stdout, "askesis_backup.sql"
 
     except FileNotFoundError:
         raise HTTPException(
