@@ -24,7 +24,6 @@ After Login, (user specific info below)
 - Dashboard showing summary of all metrics
 - Another dashboard showing Mine & My spouse's metrics
 - Training Calendar
-  - /home/prasanth/Pictures/Screenshots/Screenshot from 2026-02-28 10-44-37.png
 - Entry Page
   - Daily Log
     - Weight
