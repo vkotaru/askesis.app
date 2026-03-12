@@ -1,7 +1,7 @@
 # Nixpacks configuration for multi-language project (Node.js + Python)
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "python311", "python311Packages.pip", "python311Packages.virtualenv", "postgresql_16"]
+nixPkgs = ["nodejs_20", "python311", "python311Packages.pip", "python311Packages.virtualenv"]
 
 [phases.install]
 cmds = [
