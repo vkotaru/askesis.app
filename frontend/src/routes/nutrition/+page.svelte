@@ -25,6 +25,11 @@
   let mealPhotoInputs: Record<number, HTMLInputElement | null> = {};
   let newMealPhotoInput: HTMLInputElement | null = null;
 
+  // Edit meal state
+  let editingMealId: number | null = null;
+  let editMealData: MealInput = { date: '', label: '' };
+  let savingMeal = false;
+
   // Editable macro fields (protein, carbs, fat - calories come from meals)
   let editingMacros = false;
   let macroProtein: number | undefined;
@@ -120,6 +125,37 @@
       loadMeals();
     } catch (err) {
       console.error('Failed to delete meal:', err);
+    }
+  }
+
+  function startEditMeal(meal: Meal) {
+    editingMealId = meal.id;
+    editMealData = {
+      date: meal.date,
+      label: meal.label,
+      time: meal.time || undefined,
+      calories: meal.calories || undefined,
+      description: meal.description || undefined,
+    };
+  }
+
+  function cancelEditMeal() {
+    editingMealId = null;
+    editMealData = { date: '', label: '' };
+  }
+
+  async function saveEditMeal() {
+    if (!editingMealId) return;
+    savingMeal = true;
+    try {
+      await api.updateMeal(editingMealId, editMealData);
+      editingMealId = null;
+      editMealData = { date: '', label: '' };
+      loadMeals();
+    } catch (err) {
+      console.error('Failed to update meal:', err);
+    } finally {
+      savingMeal = false;
     }
   }
 
@@ -354,74 +390,121 @@
     {:else if meals.length > 0}
       <ul class="space-y-4">
         {#each meals as meal}
-          <li class="flex items-start gap-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-0">
-            <!-- Photo thumbnail -->
-            {#if meal.photo_url}
-              <img
-                src={api.getMealPhotoUrl(meal.id)}
-                alt={meal.label}
-                class="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-              />
-            {:else if !$isViewingOther}
-              <button
-                on:click={() => triggerMealPhotoUpload(meal.id)}
-                disabled={uploadingMealId === meal.id}
-                class="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                title="Add photo"
-              >
-                {#if uploadingMealId === meal.id}
-                  <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-500"></div>
-                {:else}
-                  <Camera size={20} class="text-gray-400" />
-                {/if}
-              </button>
+          <li class="py-3 border-b border-gray-100 dark:border-gray-700 last:border-0">
+            {#if editingMealId === meal.id}
+              <!-- Edit mode -->
+              <div class="space-y-3">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label class="label text-xs">Label</label>
+                    <select bind:value={editMealData.label} class="input text-sm">
+                      {#each MEAL_LABELS as label}
+                        <option value={label}>{label}</option>
+                      {/each}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="label text-xs">Time</label>
+                    <input type="time" bind:value={editMealData.time} class="input text-sm" />
+                  </div>
+                  <div>
+                    <label class="label text-xs">Calories</label>
+                    <input type="number" bind:value={editMealData.calories} class="input text-sm" />
+                  </div>
+                  <div>
+                    <label class="label text-xs">Description</label>
+                    <input type="text" bind:value={editMealData.description} class="input text-sm" />
+                  </div>
+                </div>
+                <div class="flex justify-end gap-2">
+                  <button on:click={cancelEditMeal} class="btn-secondary text-sm px-3 py-1">
+                    Cancel
+                  </button>
+                  <button on:click={saveEditMeal} disabled={savingMeal} class="btn-primary text-sm px-3 py-1">
+                    {savingMeal ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
             {:else}
-              <div class="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                <Camera size={20} class="text-gray-400" />
+              <!-- View mode -->
+              <div class="flex items-start gap-4">
+                <!-- Photo thumbnail -->
+                {#if meal.photo_url}
+                  <img
+                    src={api.getMealPhotoUrl(meal.id)}
+                    alt={meal.label}
+                    class="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                  />
+                {:else if !$isViewingOther}
+                  <button
+                    on:click={() => triggerMealPhotoUpload(meal.id)}
+                    disabled={uploadingMealId === meal.id}
+                    class="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    title="Add photo"
+                  >
+                    {#if uploadingMealId === meal.id}
+                      <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-500"></div>
+                    {:else}
+                      <Camera size={20} class="text-gray-400" />
+                    {/if}
+                  </button>
+                {:else}
+                  <div class="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                    <Camera size={20} class="text-gray-400" />
+                  </div>
+                {/if}
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="hidden"
+                  bind:this={mealPhotoInputs[meal.id]}
+                  on:change={(e) => handleMealPhotoUpload(meal.id, e)}
+                />
+
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs px-2 py-1 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">
+                      {meal.label}
+                    </span>
+                    {#if meal.time}
+                      <span class="text-sm text-gray-500">{meal.time}</span>
+                    {/if}
+                    {#if meal.ai_analysis}
+                      <span class="text-xs px-1.5 py-0.5 rounded bg-accent-100 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 flex items-center gap-1">
+                        <Sparkles size={10} />
+                        AI
+                      </span>
+                    {/if}
+                  </div>
+                  {#if meal.description}
+                    <p class="mt-1 text-gray-600 dark:text-gray-400 truncate">{meal.description}</p>
+                  {/if}
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  {#if meal.calories}
+                    <span class="font-medium">{meal.calories} cal</span>
+                  {/if}
+                  {#if !$isViewingOther}
+                    <button
+                      on:click={() => startEditMeal(meal)}
+                      class="text-gray-400 hover:text-primary-500"
+                      title="Edit meal"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      on:click={() => deleteMeal(meal.id)}
+                      class="text-gray-400 hover:text-red-500"
+                      title="Delete meal"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  {/if}
+                </div>
               </div>
             {/if}
-
-            <input
-              type="file"
-              accept="image/*"
-              class="hidden"
-              bind:this={mealPhotoInputs[meal.id]}
-              on:change={(e) => handleMealPhotoUpload(meal.id, e)}
-            />
-
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-xs px-2 py-1 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">
-                  {meal.label}
-                </span>
-                {#if meal.time}
-                  <span class="text-sm text-gray-500">{meal.time}</span>
-                {/if}
-                {#if meal.ai_analysis}
-                  <span class="text-xs px-1.5 py-0.5 rounded bg-accent-100 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 flex items-center gap-1">
-                    <Sparkles size={10} />
-                    AI
-                  </span>
-                {/if}
-              </div>
-              {#if meal.description}
-                <p class="mt-1 text-gray-600 dark:text-gray-400 truncate">{meal.description}</p>
-              {/if}
-            </div>
-
-            <div class="flex items-center gap-4 flex-shrink-0">
-              {#if meal.calories}
-                <span class="font-medium">{meal.calories} cal</span>
-              {/if}
-              {#if !$isViewingOther}
-                <button
-                  on:click={() => deleteMeal(meal.id)}
-                  class="text-gray-400 hover:text-red-500"
-                >
-                  <Trash2 size={18} />
-                </button>
-              {/if}
-            </div>
           </li>
         {/each}
       </ul>
