@@ -31,6 +31,9 @@ class UserSettingsSchema(BaseModel):
     water_unit: str = "ml"
     # Google Drive settings
     drive_parent_folder_id: str | None = None
+    # Google Sheets sync settings
+    google_sheet_id: str | None = None
+    last_gsheet_sync: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -47,6 +50,7 @@ class UserSettingsUpdate(BaseModel):
     weight_unit: str | None = None
     water_unit: str | None = None
     drive_parent_folder_id: str | None = None
+    google_sheet_id: str | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -125,6 +129,8 @@ def update_settings(
         settings.water_unit = settings_data.water_unit
     if settings_data.drive_parent_folder_id is not None:
         settings.drive_parent_folder_id = settings_data.drive_parent_folder_id
+    if settings_data.google_sheet_id is not None:
+        settings.google_sheet_id = settings_data.google_sheet_id
 
     db.commit()
     db.refresh(settings)

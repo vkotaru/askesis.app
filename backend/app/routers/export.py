@@ -1,12 +1,14 @@
-"""Export user data to SQLite database file."""
+"""Export user data to SQLite database file or Google Sheets."""
 
+import logging
 import sqlite3
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,6 +23,10 @@ from app.models import (
     UserSettings,
 )
 from app.routers.auth import get_current_user
+from app.routers.settings import get_or_create_settings
+from app.google_sheets import sync_to_sheet
+
+logger = logging.getLogger("askesis.export")
 
 router = APIRouter()
 
@@ -359,3 +365,53 @@ def export_sqlite(
         media_type="application/x-sqlite3",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class GSheetSyncResponse(BaseModel):
+    success: bool
+    message: str
+    last_sync: str | None = None
+    tabs: list[str] = []
+
+
+@router.post("/gsheet/sync", response_model=GSheetSyncResponse)
+def sync_to_gsheet(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sync all user data to their configured Google Sheet."""
+    # Get user settings
+    settings = get_or_create_settings(db, current_user.id)
+
+    if not settings.google_sheet_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No Google Sheet ID configured. Please set a Sheet ID in settings.",
+        )
+
+    if not current_user.google_refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Google account not connected. Please re-login to grant access.",
+        )
+
+    try:
+        result = sync_to_sheet(settings.google_sheet_id, current_user, db)
+
+        # Update last sync timestamp
+        settings.last_gsheet_sync = datetime.utcnow()
+        db.commit()
+
+        return GSheetSyncResponse(
+            success=True,
+            message=result["message"],
+            last_sync=settings.last_gsheet_sync.isoformat(),
+            tabs=result["tabs"],
+        )
+
+    except Exception as e:
+        logger.exception("Google Sheets sync failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Sync failed: {str(e)}",
+        )

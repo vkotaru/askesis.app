@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload, FileSpreadsheet, RefreshCw } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
@@ -93,6 +93,45 @@
   let restoring = false;
   let restoreMessage = '';
   let restoreFile: FileList | null = null;
+
+  // Google Sheets sync
+  let syncing = false;
+  let syncMessage = '';
+  let sheetIdInput = '';
+
+  // Initialize sheet ID from settings
+  $: if ($settings.google_sheet_id && !sheetIdInput) {
+    sheetIdInput = $settings.google_sheet_id;
+  }
+
+  async function saveSheetId() {
+    if (sheetIdInput !== $settings.google_sheet_id) {
+      await settings.updateSetting('google_sheet_id', sheetIdInput || null);
+    }
+  }
+
+  async function syncToGoogleSheet() {
+    // Save sheet ID first if changed
+    await saveSheetId();
+
+    if (!sheetIdInput) {
+      syncMessage = 'Please enter a Google Sheet ID first';
+      return;
+    }
+
+    syncing = true;
+    syncMessage = '';
+    try {
+      const result = await api.syncToGoogleSheet();
+      syncMessage = result.success
+        ? `Synced successfully! Tabs: ${result.tabs.join(', ')}`
+        : 'Sync failed';
+    } catch (err) {
+      syncMessage = err instanceof Error ? err.message : 'Sync failed';
+    } finally {
+      syncing = false;
+    }
+  }
 
   async function backupToCloud() {
     backingUp = true;
@@ -730,6 +769,63 @@
           </p>
         {/if}
       </div>
+    </div>
+
+    <!-- Google Sheets Sync -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <FileSpreadsheet size={20} class="text-green-600" />
+        <h2 class="text-lg font-semibold">Google Sheets Sync</h2>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">
+        Sync your data to a Google Sheet. Creates tabs for Daily_Log, Activities, Measurements, and Photos.
+      </p>
+
+      <div class="max-w-md mb-4">
+        <label for="sheet-id" class="label">Google Sheet ID</label>
+        <input
+          id="sheet-id"
+          type="text"
+          class="input"
+          placeholder="e.g. 1BxiM... (from the sheet URL)"
+          bind:value={sheetIdInput}
+          on:blur={saveSheetId}
+        />
+        <p class="text-xs text-gray-500 mt-2">
+          Find this in your Google Sheet URL: docs.google.com/spreadsheets/d/<strong>[SHEET_ID]</strong>/edit
+        </p>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <button
+          on:click={syncToGoogleSheet}
+          disabled={syncing || !sheetIdInput}
+          class="btn-primary flex items-center gap-2"
+        >
+          {#if syncing}
+            <RefreshCw size={18} class="animate-spin" />
+            Syncing...
+          {:else}
+            <RefreshCw size={18} />
+            Sync Now
+          {/if}
+        </button>
+
+        {#if $settings.last_gsheet_sync}
+          <span class="text-sm text-gray-500">
+            Last sync: {new Date($settings.last_gsheet_sync).toLocaleString()}
+          </span>
+        {/if}
+      </div>
+
+      {#if syncMessage}
+        <p class={clsx(
+          'text-sm mt-3',
+          syncMessage.includes('success') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+        )}>
+          {syncMessage}
+        </p>
+      {/if}
     </div>
 
     <!-- Data Export -->

@@ -26,8 +26,8 @@ if not settings.dev_mode:
         client_secret=settings.google_client_secret,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
         client_kwargs={
-            # Request Drive scope for photo storage + offline access for refresh token
-            "scope": "openid email profile https://www.googleapis.com/auth/drive.file",
+            # Request Drive + Sheets scopes for photo storage and export
+            "scope": "openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets",
         },
     )
 
