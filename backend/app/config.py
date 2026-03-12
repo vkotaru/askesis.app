@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     allowed_emails: list[str] = []
     dev_mode: bool = False  # Must explicitly enable in .env for development
     cors_origins: list[str] = ["http://localhost:5173"]  # Override in production
-    token_expire_hours: int = 2  # Short-lived tokens
+    token_expire_hours: int = 720  # 30 days - stay logged in longer
 
     # File upload limits (in bytes)
     max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)

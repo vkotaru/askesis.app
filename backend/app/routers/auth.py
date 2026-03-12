@@ -148,12 +148,20 @@ async def login(request: Request, db: Session = Depends(get_db)):
     redirect_uri = request.url_for("auth_callback")
     # Force HTTPS in production (behind reverse proxy)
     redirect_uri = str(redirect_uri).replace("http://", "https://")
+
+    # Check if user needs refresh token (force_consent param)
+    force_consent = request.query_params.get("force_consent") == "true"
+
     # Request offline access to get refresh token for Drive API
+    # Only force consent if explicitly requested (e.g., when user needs Drive access)
+    oauth_params = {"access_type": "offline"}
+    if force_consent:
+        oauth_params["prompt"] = "consent"
+
     return await oauth.google.authorize_redirect(
         request,
         redirect_uri,
-        access_type="offline",
-        prompt="consent",  # Force consent to always get refresh token
+        **oauth_params,
     )
 
 
