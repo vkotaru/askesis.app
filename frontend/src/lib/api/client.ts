@@ -454,6 +454,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  importMeals: (data: ImportRequest) =>
+    fetchJSON<ImportResult>('/api/import/meals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Google Sheets Export
   syncToGoogleSheet: () =>

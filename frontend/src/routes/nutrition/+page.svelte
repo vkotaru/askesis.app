@@ -662,7 +662,7 @@
 
 <ImportModal
   bind:show={showImportModal}
-  dataType="daily-logs"
-  title="Import Nutrition Data"
+  dataType="meals"
+  title="Import Meals"
   on:success={() => loadData()}
 />

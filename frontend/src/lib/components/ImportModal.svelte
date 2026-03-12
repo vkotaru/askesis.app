@@ -5,7 +5,7 @@
   import { api, type ImportPreview, type ColumnMapping, type ImportRequest, type ImportResult } from '$lib/api/client';
 
   export let show = false;
-  export let dataType: 'activities' | 'daily-logs' | 'measurements' | 'nutrition' = 'activities';
+  export let dataType: 'activities' | 'daily-logs' | 'measurements' | 'nutrition' | 'meals' = 'activities';
   export let title = 'Import CSV';
 
   const dispatch = createEventDispatcher<{ close: void; success: ImportResult }>();
@@ -65,6 +65,13 @@
       { value: 'fat', label: 'Fat (g)' },
       { value: 'fiber', label: 'Fiber (g)' },
       { value: 'notes', label: 'Notes' },
+    ],
+    'meals': [
+      { value: 'date', label: 'Date' },
+      { value: 'meal_1', label: 'Meal 1 / Breakfast (calories)' },
+      { value: 'meal_2', label: 'Meal 2 / Lunch (calories)' },
+      { value: 'meal_3', label: 'Meal 3 / Dinner (calories)' },
+      { value: 'snacks', label: 'Snacks (calories)' },
     ],
   };
 
@@ -241,6 +248,8 @@
         result = await api.importDailyLogs(request);
       } else if (dataType === 'measurements') {
         result = await api.importMeasurements(request);
+      } else if (dataType === 'meals') {
+        result = await api.importMeals(request);
       } else if (dataType === 'nutrition') {
         throw new Error('Nutrition import is not yet supported');
       }
