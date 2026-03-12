@@ -1,8 +1,6 @@
 import logging
 import os
-import subprocess
 from datetime import datetime
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -153,59 +151,51 @@ def _backup_sqlite(db_url: str) -> tuple[bytes, str]:
         return f.read(), "askesis_backup.db"
 
 
-def _backup_postgres(db_url: str) -> tuple[bytes, str]:
-    """Backup PostgreSQL database using pg_dump. Returns (content, filename)."""
-    # Parse the database URL
-    # Format: postgresql://user:password@host:port/dbname
-    parsed = urlparse(db_url)
+def _backup_postgres(db: Session) -> tuple[bytes, str]:
+    """Backup PostgreSQL database using pure Python. Returns (content, filename).
 
-    # Build pg_dump environment with password
-    env = os.environ.copy()
-    if parsed.password:
-        env["PGPASSWORD"] = parsed.password
+    Exports all tables as JSON for portability - no pg_dump version issues.
+    """
+    import json
+    from sqlalchemy import inspect, text
 
-    # Build pg_dump command - use plain SQL format for version compatibility
-    cmd = ["pg_dump", "--format=plain", "--no-owner", "--no-acl"]
+    inspector = inspect(db.bind)
+    tables = inspector.get_table_names()
 
-    if parsed.hostname:
-        cmd.extend(["--host", parsed.hostname])
-    if parsed.port:
-        cmd.extend(["--port", str(parsed.port)])
-    if parsed.username:
-        cmd.extend(["--username", parsed.username])
+    backup_data = {
+        "version": 1,
+        "created_at": datetime.now().isoformat(),
+        "tables": {}
+    }
 
-    # Database name is the path without leading slash
-    db_name = parsed.path.lstrip("/")
-    cmd.append(db_name)
+    for table_name in tables:
+        # Skip alembic version table
+        if table_name == "alembic_version":
+            continue
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            env=env,
-            timeout=300,  # 5 minute timeout
-        )
+        result = db.execute(text(f'SELECT * FROM "{table_name}"'))
+        columns = result.keys()
+        rows = []
+        for row in result.fetchall():
+            row_dict = {}
+            for i, col in enumerate(columns):
+                value = row[i]
+                # Convert non-JSON-serializable types
+                if hasattr(value, 'isoformat'):
+                    value = value.isoformat()
+                elif isinstance(value, bytes):
+                    value = value.hex()
+                row_dict[col] = value
+            rows.append(row_dict)
 
-        if result.returncode != 0:
-            error_msg = result.stderr.decode("utf-8", errors="replace")
-            logger.error(f"pg_dump failed: {error_msg}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"pg_dump failed: {error_msg}",
-            )
+        backup_data["tables"][table_name] = {
+            "columns": list(columns),
+            "rows": rows
+        }
+        logger.info(f"Backed up {len(rows)} rows from {table_name}")
 
-        return result.stdout, "askesis_backup.sql"
-
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=500,
-            detail="pg_dump not found. Please install PostgreSQL client tools.",
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(
-            status_code=500,
-            detail="Backup timed out after 5 minutes.",
-        )
+    json_content = json.dumps(backup_data, indent=2, default=str)
+    return json_content.encode('utf-8'), "askesis_backup.json"
 
 
 @router.post("/backup", response_model=BackupResponse)
@@ -239,7 +229,7 @@ def backup_database(
         if db_url.startswith("sqlite"):
             db_content, filename = _backup_sqlite(db_url)
         elif db_url.startswith("postgresql") or db_url.startswith("postgres"):
-            db_content, filename = _backup_postgres(db_url)
+            db_content, filename = _backup_postgres(db)
         else:
             raise HTTPException(
                 status_code=400,
