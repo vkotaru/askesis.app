@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
@@ -90,6 +90,9 @@
   let exporting = false;
   let backingUp = false;
   let backupMessage = '';
+  let restoring = false;
+  let restoreMessage = '';
+  let restoreFile: FileList | null = null;
 
   async function backupToCloud() {
     backingUp = true;
@@ -101,6 +104,46 @@
       backupMessage = err instanceof Error ? err.message : 'Backup failed';
     } finally {
       backingUp = false;
+    }
+  }
+
+  async function restoreFromBackup() {
+    if (!restoreFile || restoreFile.length === 0) return;
+
+    const file = restoreFile[0];
+    if (!file.name.endsWith('.json')) {
+      restoreMessage = 'Please select a JSON backup file';
+      return;
+    }
+
+    if (!confirm('This will restore data from the backup. Existing records with the same ID will be skipped. Continue?')) {
+      return;
+    }
+
+    restoring = true;
+    restoreMessage = '';
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/settings/restore', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Restore failed');
+      }
+
+      const result = await response.json();
+      restoreMessage = `${result.message} Tables: ${result.tables_restored.join(', ')}`;
+      restoreFile = null;
+    } catch (err) {
+      restoreMessage = err instanceof Error ? err.message : 'Restore failed';
+    } finally {
+      restoring = false;
     }
   }
 
@@ -647,6 +690,43 @@
             backupMessage.includes('success') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
           )}>
             {backupMessage}
+          </p>
+        {/if}
+      </div>
+
+      <!-- Database Restore -->
+      <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h3 class="font-medium mb-2">Restore from Backup</h3>
+        <p class="text-sm text-gray-500 mb-3">
+          Restore data from a JSON backup file. Records with existing IDs will be skipped.
+        </p>
+        <div class="flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept=".json"
+            bind:files={restoreFile}
+            class="text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-100 dark:file:bg-gray-700 file:text-gray-700 dark:file:text-gray-300 hover:file:bg-gray-200 dark:hover:file:bg-gray-600"
+          />
+          <button
+            on:click={restoreFromBackup}
+            disabled={restoring || !restoreFile || restoreFile.length === 0}
+            class="btn-secondary flex items-center gap-2"
+          >
+            {#if restoring}
+              <span class="animate-spin">⏳</span>
+              Restoring...
+            {:else}
+              <Upload size={18} />
+              Restore
+            {/if}
+          </button>
+        </div>
+        {#if restoreMessage}
+          <p class={clsx(
+            'text-sm mt-2',
+            restoreMessage.includes('completed') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          )}>
+            {restoreMessage}
           </p>
         {/if}
       </div>
