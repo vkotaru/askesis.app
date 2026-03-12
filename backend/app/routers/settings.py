@@ -1,6 +1,8 @@
 import logging
 import os
+import subprocess
 from datetime import datetime
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -137,6 +139,75 @@ class BackupResponse(BaseModel):
     file_id: str | None = None
 
 
+def _backup_sqlite(db_url: str) -> tuple[bytes, str]:
+    """Backup SQLite database. Returns (content, filename)."""
+    db_path = db_url.replace("sqlite:///", "")
+
+    if not os.path.exists(db_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Database file not found: {db_path}",
+        )
+
+    with open(db_path, "rb") as f:
+        return f.read(), "askesis_backup.db"
+
+
+def _backup_postgres(db_url: str) -> tuple[bytes, str]:
+    """Backup PostgreSQL database using pg_dump. Returns (content, filename)."""
+    # Parse the database URL
+    # Format: postgresql://user:password@host:port/dbname
+    parsed = urlparse(db_url)
+
+    # Build pg_dump environment with password
+    env = os.environ.copy()
+    if parsed.password:
+        env["PGPASSWORD"] = parsed.password
+
+    # Build pg_dump command
+    cmd = ["pg_dump", "--format=custom", "--no-owner", "--no-acl"]
+
+    if parsed.hostname:
+        cmd.extend(["--host", parsed.hostname])
+    if parsed.port:
+        cmd.extend(["--port", str(parsed.port)])
+    if parsed.username:
+        cmd.extend(["--username", parsed.username])
+
+    # Database name is the path without leading slash
+    db_name = parsed.path.lstrip("/")
+    cmd.append(db_name)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            env=env,
+            timeout=300,  # 5 minute timeout
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr.decode("utf-8", errors="replace")
+            logger.error(f"pg_dump failed: {error_msg}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"pg_dump failed: {error_msg}",
+            )
+
+        return result.stdout, "askesis_backup.dump"
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail="pg_dump not found. Please install PostgreSQL client tools.",
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=500,
+            detail="Backup timed out after 5 minutes.",
+        )
+
+
 @router.post("/backup", response_model=BackupResponse)
 def backup_database(
     db: Session = Depends(get_db),
@@ -159,35 +230,27 @@ def backup_database(
     )
     parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
 
-    # Get database path from config
+    # Get database URL from config
     app_settings = get_app_settings()
     db_url = app_settings.database_url
 
-    # Extract file path from sqlite URL (sqlite:///./askesis.db -> ./askesis.db)
-    if not db_url.startswith("sqlite"):
-        raise HTTPException(
-            status_code=400,
-            detail="Backup only supported for SQLite databases.",
-        )
-
-    db_path = db_url.replace("sqlite:///", "")
-
-    if not os.path.exists(db_path):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Database file not found: {db_path}",
-        )
-
     try:
-        # Read the database file
-        with open(db_path, "rb") as f:
-            db_content = f.read()
+        # Determine database type and backup accordingly
+        if db_url.startswith("sqlite"):
+            db_content, filename = _backup_sqlite(db_url)
+        elif db_url.startswith("postgresql") or db_url.startswith("postgres"):
+            db_content, filename = _backup_postgres(db_url)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Backup only supported for SQLite and PostgreSQL databases.",
+            )
 
         # Upload to Google Drive (overwrites existing)
         file_id = upload_backup(
             refresh_token=current_user.google_refresh_token,
             file_content=db_content,
-            filename="askesis_backup.db",
+            filename=filename,
             parent_folder_id=parent_folder_id,
         )
 
@@ -197,7 +260,10 @@ def backup_database(
             file_id=file_id,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception("Backup failed")
         raise HTTPException(
             status_code=500,
             detail=f"Backup failed: {str(e)}",
