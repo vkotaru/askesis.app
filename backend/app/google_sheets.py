@@ -331,11 +331,27 @@ def _upload_local_photo_to_drive(
 
         file_id = file.get("id")
         logger.info(f"Uploaded {filename} to Drive: {file_id}")
+
+        # Set permissions to "anyone with link can view" for IMAGE formula to work
+        _make_file_public(drive_service, file_id)
+
         return file_id
 
     except Exception as e:
         logger.error(f"Failed to upload photo {file_path}: {e}")
         return None
+
+
+def _make_file_public(drive_service, file_id: str):
+    """Set file permissions so anyone with link can view (required for =IMAGE())."""
+    try:
+        drive_service.permissions().create(
+            fileId=file_id,
+            body={"type": "anyone", "role": "reader"},
+        ).execute()
+        logger.info(f"Set public permissions for file {file_id}")
+    except Exception as e:
+        logger.warning(f"Failed to set public permissions for {file_id}: {e}")
 
 
 def _sync_photos(
@@ -378,6 +394,13 @@ def _sync_photos(
                 logger.info(f"Saved drive_file_id {drive_file_id} for photo {photo.id}")
 
         if drive_file_id:
+            # Ensure the file is publicly viewable for =IMAGE() to work
+            try:
+                drive_service = get_drive_service(refresh_token)
+                _make_file_public(drive_service, drive_file_id)
+            except Exception as e:
+                logger.warning(f"Could not set public permissions for {drive_file_id}: {e}")
+
             # Normalize view to capitalized form (front -> Front)
             view_value = photo.view.value if hasattr(photo.view, 'value') else str(photo.view)
             view = view_value.lower().capitalize()  # Ensure "Front", "Side", "Back"
