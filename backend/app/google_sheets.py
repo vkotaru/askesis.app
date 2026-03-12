@@ -312,15 +312,22 @@ def _sync_photos(service, spreadsheet_id: str, user_id: int, db: Session):
         .all()
     )
 
+    logger.info(f"Found {len(photos)} photos for user {user_id}")
+
     # Group photos by date
     photos_by_date: dict[date, dict[str, str]] = defaultdict(dict)
     for photo in photos:
         if photo.drive_file_id:
-            view = photo.view.value.capitalize()  # front -> Front
+            # Normalize view to capitalized form (front -> Front)
+            view_value = photo.view.value if hasattr(photo.view, 'value') else str(photo.view)
+            view = view_value.lower().capitalize()  # Ensure "Front", "Side", "Back"
             image_formula = (
                 f'=IMAGE("https://drive.google.com/uc?export=view&id={photo.drive_file_id}")'
             )
             photos_by_date[photo.date][view] = image_formula
+            logger.info(f"Photo {photo.id}: date={photo.date}, view={view}, drive_id={photo.drive_file_id}")
+        else:
+            logger.warning(f"Photo {photo.id} has no drive_file_id, skipping")
 
     data = [headers]
     for d in sorted(photos_by_date.keys(), reverse=True):
@@ -333,6 +340,7 @@ def _sync_photos(service, spreadsheet_id: str, user_id: int, db: Session):
         ]
         data.append(row)
 
+    logger.info(f"Writing {len(data) - 1} photo rows to sheet")
     _clear_and_write(service, spreadsheet_id, PHOTOS_TAB, data)
 
 
