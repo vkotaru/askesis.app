@@ -8,12 +8,14 @@ Syncs data to user's Google Sheet with tabs:
 """
 
 import logging
+import os
 from datetime import date
 from collections import defaultdict
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -26,6 +28,7 @@ from app.models import (
     BodyMeasurement,
     ProgressPhoto,
 )
+from app.google_drive import get_drive_service, get_or_create_app_folder
 
 logger = logging.getLogger("askesis.google_sheets")
 
@@ -299,7 +302,50 @@ def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session):
     _clear_and_write(service, spreadsheet_id, MEASUREMENTS_TAB, data)
 
 
-def _sync_photos(service, spreadsheet_id: str, user_id: int, db: Session):
+def _upload_local_photo_to_drive(
+    refresh_token: str,
+    file_path: str,
+    parent_folder_id: str | None = None,
+) -> str | None:
+    """Upload a local photo to Drive and return the file_id."""
+    if not os.path.exists(file_path):
+        logger.warning(f"Local photo file not found: {file_path}")
+        return None
+
+    try:
+        drive_service = get_drive_service(refresh_token)
+        folder_id = get_or_create_app_folder(drive_service, parent_folder_id)
+
+        filename = os.path.basename(file_path)
+        file_metadata = {
+            "name": filename,
+            "parents": [folder_id],
+        }
+
+        media = MediaFileUpload(file_path, mimetype="image/jpeg", resumable=True)
+        file = (
+            drive_service.files()
+            .create(body=file_metadata, media_body=media, fields="id")
+            .execute()
+        )
+
+        file_id = file.get("id")
+        logger.info(f"Uploaded {filename} to Drive: {file_id}")
+        return file_id
+
+    except Exception as e:
+        logger.error(f"Failed to upload photo {file_path}: {e}")
+        return None
+
+
+def _sync_photos(
+    service,
+    spreadsheet_id: str,
+    user_id: int,
+    db: Session,
+    refresh_token: str,
+    parent_folder_id: str | None = None,
+):
     """Sync Photos tab with embedded IMAGE formulas."""
     _ensure_worksheet(service, spreadsheet_id, PHOTOS_TAB)
 
@@ -317,17 +363,31 @@ def _sync_photos(service, spreadsheet_id: str, user_id: int, db: Session):
     # Group photos by date
     photos_by_date: dict[date, dict[str, str]] = defaultdict(dict)
     for photo in photos:
-        if photo.drive_file_id:
+        drive_file_id = photo.drive_file_id
+
+        # If no drive_file_id but has local file_path, upload to Drive
+        if not drive_file_id and photo.file_path:
+            logger.info(f"Photo {photo.id} has local path, uploading to Drive...")
+            drive_file_id = _upload_local_photo_to_drive(
+                refresh_token, photo.file_path, parent_folder_id
+            )
+            if drive_file_id:
+                # Save the drive_file_id to the database
+                photo.drive_file_id = drive_file_id
+                db.commit()
+                logger.info(f"Saved drive_file_id {drive_file_id} for photo {photo.id}")
+
+        if drive_file_id:
             # Normalize view to capitalized form (front -> Front)
             view_value = photo.view.value if hasattr(photo.view, 'value') else str(photo.view)
             view = view_value.lower().capitalize()  # Ensure "Front", "Side", "Back"
             image_formula = (
-                f'=IMAGE("https://drive.google.com/uc?export=view&id={photo.drive_file_id}")'
+                f'=IMAGE("https://drive.google.com/uc?export=view&id={drive_file_id}")'
             )
             photos_by_date[photo.date][view] = image_formula
-            logger.info(f"Photo {photo.id}: date={photo.date}, view={view}, drive_id={photo.drive_file_id}")
+            logger.info(f"Photo {photo.id}: date={photo.date}, view={view}, drive_id={drive_file_id}")
         else:
-            logger.warning(f"Photo {photo.id} has no drive_file_id, skipping")
+            logger.warning(f"Photo {photo.id} has no drive_file_id and no local file, skipping")
 
     data = [headers]
     for d in sorted(photos_by_date.keys(), reverse=True):
@@ -356,8 +416,14 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
     Returns:
         Dict with sync results
     """
+    from app.models import UserSettings
+
     if not user.google_refresh_token:
         raise ValueError("User has no Google refresh token")
+
+    # Get user settings for Drive parent folder
+    settings = db.query(UserSettings).filter(UserSettings.user_id == user.id).first()
+    parent_folder_id = settings.drive_parent_folder_id if settings else None
 
     service = get_sheets_service(user.google_refresh_token)
 
@@ -366,7 +432,14 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
         _sync_daily_log(service, sheet_id, user.id, db)
         _sync_activities(service, sheet_id, user.id, db)
         _sync_measurements(service, sheet_id, user.id, db)
-        _sync_photos(service, sheet_id, user.id, db)
+        _sync_photos(
+            service,
+            sheet_id,
+            user.id,
+            db,
+            user.google_refresh_token,
+            parent_folder_id,
+        )
 
         return {
             "success": True,
