@@ -781,7 +781,7 @@
                   y={padding.top + innerHeight - roadHeight}
                   width={barWidth}
                   height={roadHeight}
-                  class="fill-primary-400"
+                  class="fill-rest-400"
                   rx="2"
                 />
 
@@ -819,13 +819,13 @@
               </text>
 
               <!-- Right Y-axis labels (Run/Walk) -->
-              <text x={chartWidth - padding.right + 8} y={padding.top} text-anchor="start" dominant-baseline="middle" class="fill-primary-500 text-[9px] font-medium">
+              <text x={chartWidth - padding.right + 8} y={padding.top} text-anchor="start" dominant-baseline="middle" class="fill-rest-500 text-[9px] font-medium">
                 {Math.round(maxRoadMiles)}
               </text>
-              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight / 2} text-anchor="start" dominant-baseline="middle" class="fill-primary-500 text-[9px]">
+              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight / 2} text-anchor="start" dominant-baseline="middle" class="fill-rest-500 text-[9px]">
                 {Math.round(maxRoadMiles / 2)}
               </text>
-              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight} text-anchor="start" dominant-baseline="middle" class="fill-primary-500 text-[9px]">
+              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight} text-anchor="start" dominant-baseline="middle" class="fill-rest-500 text-[9px]">
                 0
               </text>
             </svg>
@@ -838,7 +838,7 @@
               <span>Bike (left)</span>
             </div>
             <div class="flex items-center gap-1">
-              <PersonStanding size={12} class="text-primary-400" />
+              <PersonStanding size={12} class="text-rest-400" />
               <span>Run/Walk (right)</span>
             </div>
             <div class="flex items-center gap-1">
@@ -856,7 +856,7 @@
               <p class="text-xs text-gray-400">Total bike {$settings.distance_unit}</p>
             </div>
             <div class="text-center">
-              <p class="text-lg font-bold text-primary-500">
+              <p class="text-lg font-bold text-rest-500">
                 {weeklyTrainingData.reduce((sum, w) => sum + w.roadMiles, 0).toFixed(0)}
               </p>
               <p class="text-xs text-gray-400">Total run {$settings.distance_unit}</p>

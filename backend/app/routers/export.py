@@ -372,6 +372,7 @@ class GSheetSyncResponse(BaseModel):
     message: str
     last_sync: str | None = None
     tabs: list[str] = []
+    sheet_id: str | None = None
 
 
 @router.post("/gsheet/sync", response_model=GSheetSyncResponse)
@@ -396,6 +397,7 @@ def sync_to_gsheet(
         )
 
     try:
+        logger.info(f"Starting sync to sheet: {settings.google_sheet_id}")
         result = sync_to_sheet(settings.google_sheet_id, current_user, db)
 
         # Update last sync timestamp
@@ -407,6 +409,7 @@ def sync_to_gsheet(
             message=result["message"],
             last_sync=settings.last_gsheet_sync.isoformat(),
             tabs=result["tabs"],
+            sheet_id=settings.google_sheet_id,
         )
 
     except Exception as e:

@@ -104,7 +104,25 @@
     sheetIdInput = $settings.google_sheet_id;
   }
 
+  function extractSheetId(input: string): string {
+    // If it's a Google Sheets URL, extract the ID
+    // Format: https://docs.google.com/spreadsheets/d/SHEET_ID/edit...
+    const urlMatch = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (urlMatch) {
+      return urlMatch[1];
+    }
+    // Otherwise return as-is (assume it's already just the ID)
+    return input.trim();
+  }
+
   async function saveSheetId() {
+    // Extract ID from URL if needed
+    if (sheetIdInput) {
+      const extractedId = extractSheetId(sheetIdInput);
+      if (extractedId !== sheetIdInput) {
+        sheetIdInput = extractedId;
+      }
+    }
     if (sheetIdInput !== $settings.google_sheet_id) {
       await settings.updateSetting('google_sheet_id', sheetIdInput || null);
     }
@@ -123,9 +141,12 @@
     syncMessage = '';
     try {
       const result = await api.syncToGoogleSheet();
-      syncMessage = result.success
-        ? `Synced successfully! Tabs: ${result.tabs.join(', ')}`
-        : 'Sync failed';
+      if (result.success) {
+        const shortId = result.sheet_id ? `...${result.sheet_id.slice(-8)}` : '';
+        syncMessage = `✓ ${result.message} [Sheet: ${shortId}]`;
+      } else {
+        syncMessage = 'Sync failed';
+      }
     } catch (err) {
       syncMessage = err instanceof Error ? err.message : 'Sync failed';
     } finally {
