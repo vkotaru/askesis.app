@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar, Bike, Footprints, Heart, Flame, Timer, Mountain, Waves, Trophy } from 'lucide-svelte';
+  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
   import { settings } from '$lib/stores/settings';
   import { formatDistance, distanceToMetric, getDistanceLabel, formatWeight, getWeightLabel } from '$lib/utils/units';
+  import { ACTIVITY_ICONS, getActivityIcon } from '$lib/utils/activityIcons';
 
   let recentActivities: ActivityType[] = [];
 
@@ -29,33 +30,11 @@
     { value: 'night', label: 'Night', icon: Moon },
   ];
 
-  const ACTIVITY_ICONS: { value: string; label: string; icon: typeof Activity }[] = [
-    { value: 'activity', label: 'Activity', icon: Activity },
-    { value: 'dumbbell', label: 'Weights', icon: Dumbbell },
-    { value: 'bike', label: 'Bike', icon: Bike },
-    { value: 'footprints', label: 'Run/Walk', icon: Footprints },
-    { value: 'heart', label: 'Heart', icon: Heart },
-    { value: 'flame', label: 'Burn', icon: Flame },
-    { value: 'timer', label: 'Timer', icon: Timer },
-    { value: 'mountain', label: 'Hike', icon: Mountain },
-    { value: 'waves', label: 'Swim', icon: Waves },
-    { value: 'trophy', label: 'Sports', icon: Trophy },
-  ];
-
   function getPlatformFromUrl(url: string): { name: string; color: string } | null {
     if (url.includes('strava.com')) return { name: 'Strava', color: 'text-orange-500' };
     if (url.includes('hevy.com')) return { name: 'Hevy', color: 'text-blue-500' };
     if (url.includes('garmin.com')) return { name: 'Garmin', color: 'text-cyan-600' };
     return null;
-  }
-
-  function getActivityIcon(iconName: string | undefined, activityType: 'cardio' | 'strength'): typeof Activity {
-    if (iconName) {
-      const found = ACTIVITY_ICONS.find(i => i.value === iconName);
-      if (found) return found.icon;
-    }
-    // Default based on activity type
-    return activityType === 'strength' ? Dumbbell : Activity;
   }
 
   let activities: ActivityType[] = [];

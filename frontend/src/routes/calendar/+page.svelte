@@ -1,32 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, startOfWeek, endOfWeek } from 'date-fns';
-  import { ChevronLeft, ChevronRight, Activity, Dumbbell, Bike, Footprints, Heart, Flame, Timer, Mountain, Waves, Trophy } from 'lucide-svelte';
+  import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type CalendarEvent } from '$lib/api/client';
+  import { ICON_MAP, LEGEND_ICONS } from '$lib/utils/activityIcons';
 
-  // Icon name to component mapping
-  const ICON_MAP: Record<string, typeof Activity> = {
-    'activity': Activity,
-    'dumbbell': Dumbbell,
-    'bike': Bike,
-    'footprints': Footprints,
-    'heart': Heart,
-    'flame': Flame,
-    'timer': Timer,
-    'mountain': Mountain,
-    'waves': Waves,
-    'trophy': Trophy,
-  };
-
-  function getIconComponent(iconName: string | undefined): typeof Activity | null {
+  function getIconComponent(iconName: string | undefined) {
     if (iconName && ICON_MAP[iconName]) {
       return ICON_MAP[iconName];
     }
     return null;
   }
 
-  // Activity name to emoji mapping
+  // Activity name to emoji mapping (fallback when no icon set)
   const ACTIVITY_EMOJIS: Record<string, string> = {
     // Cardio
     'run': '🏃',
@@ -221,48 +208,18 @@
 
   <!-- Legend -->
   <div class="mt-6 card p-4">
-    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Legend</h3>
+    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Activity Icons</h3>
+    <p class="text-xs text-gray-500 mb-3">Select icons when creating activities for consistent display</p>
     <div class="flex flex-wrap gap-4">
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🏃</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Running</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🚴</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Cycling</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🏊</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Swimming</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🥾</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Hiking</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🚶</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Walking</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🔥</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">HIIT</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">💪</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Upper Body</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🦵</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Lower Body</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🧘</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Core/Yoga</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🏋️</span>
-        <span class="text-sm text-gray-600 dark:text-gray-400">Weights</span>
-      </div>
+      {#each LEGEND_ICONS as { icon: IconComponent, label }}
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+          <svelte:component this={IconComponent} size={18} class="text-primary-500" />
+          <span class="text-sm text-gray-600 dark:text-gray-400">{label}</span>
+        </div>
+      {/each}
     </div>
+    <p class="text-xs text-gray-400 mt-3">
+      Activities without a selected icon will show an emoji based on the activity name
+    </p>
   </div>
 </div>
