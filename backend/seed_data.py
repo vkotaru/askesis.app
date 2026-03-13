@@ -8,7 +8,7 @@ Usage:
 """
 
 import random
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -31,10 +31,11 @@ def create_users(db: Session) -> tuple[User, User]:
     """Create two dummy users for testing."""
 
     # Check if users already exist
-    existing = db.query(User).filter(User.email.in_([
-        "dev@askesis.local",
-        "partner@askesis.local"
-    ])).all()
+    existing = (
+        db.query(User)
+        .filter(User.email.in_(["dev@askesis.local", "partner@askesis.local"]))
+        .all()
+    )
 
     if len(existing) == 2:
         print("Users already exist, skipping creation")
@@ -96,10 +97,11 @@ def create_users(db: Session) -> tuple[User, User]:
         db.add(settings2)
 
     # Create bidirectional data sharing between users (if not exists)
-    if not db.query(DataShare).filter(
-        DataShare.owner_id == user1.id,
-        DataShare.shared_with_id == user2.id
-    ).first():
+    if (
+        not db.query(DataShare)
+        .filter(DataShare.owner_id == user1.id, DataShare.shared_with_id == user2.id)
+        .first()
+    ):
         share1 = DataShare(
             owner_id=user1.id,
             shared_with_id=user2.id,
@@ -107,10 +109,11 @@ def create_users(db: Session) -> tuple[User, User]:
         )
         db.add(share1)
 
-    if not db.query(DataShare).filter(
-        DataShare.owner_id == user2.id,
-        DataShare.shared_with_id == user1.id
-    ).first():
+    if (
+        not db.query(DataShare)
+        .filter(DataShare.owner_id == user2.id, DataShare.shared_with_id == user1.id)
+        .first()
+    ):
         share2 = DataShare(
             owner_id=user2.id,
             shared_with_id=user1.id,
@@ -135,9 +138,21 @@ def seed_daily_logs(db: Session, user: User, days: int = 60):
         return
 
     today = date.today()
-    base_weight = random.uniform(150, 180) if user.email == "dev@askesis.local" else random.uniform(130, 150)
+    base_weight = (
+        random.uniform(150, 180)
+        if user.email == "dev@askesis.local"
+        else random.uniform(130, 150)
+    )
 
-    feelings_options = ["energetic", "tired", "focused", "stressed", "happy", "calm", "anxious"]
+    feelings_options = [
+        "energetic",
+        "tired",
+        "focused",
+        "stressed",
+        "happy",
+        "calm",
+        "anxious",
+    ]
 
     for i in range(days):
         log_date = today - timedelta(days=i)
@@ -158,9 +173,13 @@ def seed_daily_logs(db: Session, user: User, days: int = 60):
             steps=random.randint(3000, 15000) if random.random() > 0.3 else None,
             water_ml=random.randint(1500, 3500) if random.random() > 0.2 else None,
             feelings=",".join(random.sample(feelings_options, random.randint(1, 3))),
-            caffeine_mg=random.choice([0, 100, 200, 300]) if random.random() > 0.4 else None,
+            caffeine_mg=random.choice([0, 100, 200, 300])
+            if random.random() > 0.4
+            else None,
             ate_outside=random.random() > 0.7,
-            notes=random.choice([None, "Good day", "Felt tired", "Great workout", "Rest day"]),
+            notes=random.choice(
+                [None, "Good day", "Felt tired", "Great workout", "Rest day"]
+            ),
         )
         db.add(log)
 
@@ -217,7 +236,9 @@ def seed_meals(db: Session, user: User, days: int = 30):
 def seed_nutrition(db: Session, user: User, days: int = 30):
     """Create sample daily nutrition for the past N days."""
 
-    existing = db.query(DailyNutrition).filter(DailyNutrition.user_id == user.id).count()
+    existing = (
+        db.query(DailyNutrition).filter(DailyNutrition.user_id == user.id).count()
+    )
     if existing > 0:
         print(f"  Nutrition already exists for {user.name}, skipping")
         return
@@ -322,7 +343,9 @@ def seed_activities(db: Session, user: User, days: int = 60):
 def seed_measurements(db: Session, user: User, weeks: int = 8):
     """Create sample body measurements (weekly)."""
 
-    existing = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).count()
+    existing = (
+        db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).count()
+    )
     if existing > 0:
         print(f"  Measurements already exist for {user.name}, skipping")
         return
