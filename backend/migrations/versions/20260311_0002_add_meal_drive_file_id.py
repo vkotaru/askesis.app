@@ -21,9 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Add drive_file_id column to meals table for Google Drive storage
-    op.add_column(
-        "meals", sa.Column("drive_file_id", sa.String(100), nullable=True)
-    )
+    op.add_column("meals", sa.Column("drive_file_id", sa.String(100), nullable=True))
 
 
 def downgrade() -> None:

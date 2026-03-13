@@ -74,18 +74,12 @@ def _ensure_worksheet(service, spreadsheet_id: str, tab_name: str) -> int:
                 return sheet["properties"]["sheetId"]
 
         # Create the tab
-        request = {
-            "requests": [
-                {
-                    "addSheet": {
-                        "properties": {"title": tab_name}
-                    }
-                }
-            ]
-        }
-        response = service.spreadsheets().batchUpdate(
-            spreadsheetId=spreadsheet_id, body=request
-        ).execute()
+        request = {"requests": [{"addSheet": {"properties": {"title": tab_name}}}]}
+        response = (
+            service.spreadsheets()
+            .batchUpdate(spreadsheetId=spreadsheet_id, body=request)
+            .execute()
+        )
         return response["replies"][0]["addSheet"]["properties"]["sheetId"]
 
     except HttpError as e:
@@ -399,18 +393,26 @@ def _sync_photos(
                 drive_service = get_drive_service(refresh_token)
                 _make_file_public(drive_service, drive_file_id)
             except Exception as e:
-                logger.warning(f"Could not set public permissions for {drive_file_id}: {e}")
+                logger.warning(
+                    f"Could not set public permissions for {drive_file_id}: {e}"
+                )
 
             # Normalize view to capitalized form (front -> Front)
-            view_value = photo.view.value if hasattr(photo.view, 'value') else str(photo.view)
+            view_value = (
+                photo.view.value if hasattr(photo.view, "value") else str(photo.view)
+            )
             view = view_value.lower().capitalize()  # Ensure "Front", "Side", "Back"
             image_formula = (
                 f'=IMAGE("https://drive.google.com/uc?export=view&id={drive_file_id}")'
             )
             photos_by_date[photo.date][view] = image_formula
-            logger.info(f"Photo {photo.id}: date={photo.date}, view={view}, drive_id={drive_file_id}")
+            logger.info(
+                f"Photo {photo.id}: date={photo.date}, view={view}, drive_id={drive_file_id}"
+            )
         else:
-            logger.warning(f"Photo {photo.id} has no drive_file_id and no local file, skipping")
+            logger.warning(
+                f"Photo {photo.id} has no drive_file_id and no local file, skipping"
+            )
 
     data = [headers]
     for d in sorted(photos_by_date.keys(), reverse=True):
