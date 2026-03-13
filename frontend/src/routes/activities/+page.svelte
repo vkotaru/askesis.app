@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar, Bike, Footprints, Heart, Flame, Timer, Mountain, Waves, Volleyball } from 'lucide-svelte';
+  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar, Bike, Footprints, Heart, Flame, Timer, Mountain, Waves, Trophy } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
@@ -39,7 +39,7 @@
     { value: 'timer', label: 'Timer', icon: Timer },
     { value: 'mountain', label: 'Hike', icon: Mountain },
     { value: 'waves', label: 'Swim', icon: Waves },
-    { value: 'volleyball', label: 'Sports', icon: Volleyball },
+    { value: 'trophy', label: 'Sports', icon: Trophy },
   ];
 
   function getPlatformFromUrl(url: string): { name: string; color: string } | null {
