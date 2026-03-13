@@ -33,6 +33,9 @@
   let saved = false;
   let showImportModal = false;
 
+  // Track saved state per field for visual feedback
+  let fieldSaved: Record<string, boolean> = {};
+
   // Form fields - directly bound (water stored in user's preferred unit)
   let weight: number | undefined;
   let sleep_hours: number | undefined;
@@ -42,6 +45,38 @@
   let caffeine_mg: number | undefined;
   let ate_outside = false;
   let notes = '';
+
+  // Auto-save function - saves current form state
+  async function autoSave(fieldName: string) {
+    if ($isViewingOther) return;
+
+    saving = true;
+    try {
+      await api.saveDailyLog({
+        date: selectedDate,
+        weight: weight ? weightToMetric(weight, $settings.weight_unit) : undefined,
+        sleep_hours,
+        steps,
+        water_ml: water ? Math.round(waterToMetric(water, $settings.water_unit)) : undefined,
+        feelings: feelings.length > 0 ? feelings : undefined,
+        caffeine_mg,
+        ate_outside,
+        notes: notes || undefined,
+      });
+      // Show saved indicator for this field
+      fieldSaved[fieldName] = true;
+      fieldSaved = fieldSaved; // trigger reactivity
+      setTimeout(() => {
+        fieldSaved[fieldName] = false;
+        fieldSaved = fieldSaved;
+      }, 1500);
+      loadRecentLogs();
+    } catch (err) {
+      console.error('Failed to auto-save:', err);
+    } finally {
+      saving = false;
+    }
+  }
 
   async function loadLog() {
     try {
@@ -102,11 +137,13 @@
   }
 
   function toggleFeeling(feeling: string) {
+    if ($isViewingOther) return;
     if (feelings.includes(feeling)) {
       feelings = feelings.filter(f => f !== feeling);
     } else {
       feelings = [...feelings, feeling];
     }
+    autoSave('feelings');
   }
 
   async function handleSubmit() {
@@ -204,14 +241,19 @@
         <label for="weight" class="label flex items-center gap-2">
           <Scale size={16} class="text-rest-500" />
           Weight <span class="text-gray-400 font-normal">({getWeightLabel($settings.weight_unit)})</span>
+          {#if fieldSaved['weight']}
+            <Check size={14} class="text-primary-500 animate-pulse" />
+          {/if}
         </label>
         <input
           id="weight"
           type="number"
           step="any"
           bind:value={weight}
+          on:blur={() => autoSave('weight')}
           placeholder="Enter weight"
-          class="input"
+          class={clsx('input', fieldSaved['weight'] && 'ring-2 ring-primary-300')}
+          disabled={$isViewingOther}
         />
       </div>
 
@@ -219,14 +261,19 @@
         <label for="sleep" class="label flex items-center gap-2">
           <Moon size={16} class="text-strength-500" />
           Sleep <span class="text-gray-400 font-normal">(hours)</span>
+          {#if fieldSaved['sleep']}
+            <Check size={14} class="text-primary-500 animate-pulse" />
+          {/if}
         </label>
         <input
           id="sleep"
           type="number"
           step="any"
           bind:value={sleep_hours}
+          on:blur={() => autoSave('sleep')}
           placeholder="Enter sleep hours"
-          class="input"
+          class={clsx('input', fieldSaved['sleep'] && 'ring-2 ring-primary-300')}
+          disabled={$isViewingOther}
         />
       </div>
 
@@ -234,13 +281,18 @@
         <label for="steps" class="label flex items-center gap-2">
           <Footprints size={16} class="text-cardio-500" />
           Steps
+          {#if fieldSaved['steps']}
+            <Check size={14} class="text-primary-500 animate-pulse" />
+          {/if}
         </label>
         <input
           id="steps"
           type="number"
           bind:value={steps}
+          on:blur={() => autoSave('steps')}
           placeholder="Enter steps"
-          class="input"
+          class={clsx('input', fieldSaved['steps'] && 'ring-2 ring-primary-300')}
+          disabled={$isViewingOther}
         />
       </div>
 
@@ -248,14 +300,19 @@
         <label for="water" class="label flex items-center gap-2">
           <Droplets size={16} class="text-cardio-400" />
           Water <span class="text-gray-400 font-normal">({getWaterLabel($settings.water_unit)})</span>
+          {#if fieldSaved['water']}
+            <Check size={14} class="text-primary-500 animate-pulse" />
+          {/if}
         </label>
         <input
           id="water"
           type="number"
           step="any"
           bind:value={water}
+          on:blur={() => autoSave('water')}
           placeholder="Enter water intake"
-          class="input"
+          class={clsx('input', fieldSaved['water'] && 'ring-2 ring-primary-300')}
+          disabled={$isViewingOther}
         />
       </div>
 
@@ -263,13 +320,18 @@
         <label for="caffeine" class="label flex items-center gap-2">
           <Coffee size={16} class="text-nutrition-600" />
           Caffeine <span class="text-gray-400 font-normal">(mg)</span>
+          {#if fieldSaved['caffeine']}
+            <Check size={14} class="text-primary-500 animate-pulse" />
+          {/if}
         </label>
         <input
           id="caffeine"
           type="number"
           bind:value={caffeine_mg}
+          on:blur={() => autoSave('caffeine')}
           placeholder="Enter caffeine"
-          class="input"
+          class={clsx('input', fieldSaved['caffeine'] && 'ring-2 ring-primary-300')}
+          disabled={$isViewingOther}
         />
       </div>
 
@@ -277,15 +339,20 @@
         <span class="label flex items-center gap-2">
           <Utensils size={16} class="text-nutrition-500" />
           Ate Outside
+          {#if fieldSaved['ate_outside']}
+            <Check size={14} class="text-primary-500 animate-pulse" />
+          {/if}
         </span>
         <button
           type="button"
-          on:click={() => (ate_outside = !ate_outside)}
+          on:click={() => { ate_outside = !ate_outside; autoSave('ate_outside'); }}
+          disabled={$isViewingOther}
           class={clsx(
             'relative inline-flex h-10 w-20 items-center rounded-full transition-colors',
             ate_outside
               ? 'bg-nutrition-500'
-              : 'bg-gray-200 dark:bg-gray-600'
+              : 'bg-gray-200 dark:bg-gray-600',
+            fieldSaved['ate_outside'] && 'ring-2 ring-primary-300'
           )}
           role="switch"
           aria-checked={ate_outside}
@@ -305,6 +372,9 @@
       <span class="label flex items-center gap-2">
         <Heart size={16} class="text-accent-500" />
         How are you feeling? <span class="text-gray-400 font-normal">(select all that apply)</span>
+        {#if fieldSaved['feelings']}
+          <Check size={14} class="text-primary-500 animate-pulse" />
+        {/if}
       </span>
       <div class="flex gap-2 flex-wrap mt-2">
         {#each FEELINGS as { value, emoji, label, color }}
@@ -330,33 +400,26 @@
       <label for="notes" class="label flex items-center gap-2">
         <FileText size={16} class="text-gray-400" />
         Notes
+        {#if fieldSaved['notes']}
+          <Check size={14} class="text-primary-500 animate-pulse" />
+        {/if}
       </label>
       <textarea
         id="notes"
         bind:value={notes}
+        on:blur={() => autoSave('notes')}
         rows={3}
         placeholder="How was your day? Any observations..."
-        class="input resize-none"
+        class={clsx('input resize-none', fieldSaved['notes'] && 'ring-2 ring-primary-300')}
+        disabled={$isViewingOther}
       ></textarea>
     </div>
 
-    {#if !$isViewingOther}
-      <div class="mt-6 flex justify-end">
-        <button
-          type="submit"
-          disabled={saving}
-          class={clsx('btn-primary flex items-center gap-2', saved && 'bg-primary-600')}
-        >
-          {#if saving}
-            <span class="animate-spin">⏳</span>
-            Saving...
-          {:else if saved}
-            <Check size={18} />
-            Saved!
-          {:else}
-            Save Log
-          {/if}
-        </button>
+    <!-- Auto-save indicator -->
+    {#if saving}
+      <div class="mt-4 text-sm text-gray-500 flex items-center gap-2 justify-end">
+        <span class="animate-spin">⏳</span>
+        Saving...
       </div>
     {/if}
   </form>
