@@ -71,6 +71,18 @@ App runs at http://localhost:5173
 
 ## Production Deployment (Railway)
 
+[Railway](https://railway.app) is a platform that makes deploying apps easy - connect your GitHub repo and it handles the rest.
+
+### Quick Start
+
+1. **Create a Railway account** at [railway.app](https://railway.app)
+2. **New Project** → **Deploy from GitHub repo** → Select this repo
+3. **Add a PostgreSQL database**: Click **+ New** → **Database** → **PostgreSQL**
+4. **Set environment variables** (see table below) in the service settings
+5. Railway auto-deploys on every push to main
+
+The app uses `nixpacks.toml` and `railway.json` for build configuration - no Dockerfile needed.
+
 ### Environment Variables
 
 | Variable | Description |
