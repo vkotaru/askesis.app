@@ -493,7 +493,7 @@
               <tr
                 class={clsx(
                   'border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors',
-                  measurement.date === selectedDate && 'bg-primary-50 dark:bg-primary-900/20'
+                  measurement.date === selectedDate && 'bg-primary-50 dark:bg-gray-700'
                 )}
                 on:click={() => goToDate(measurement.date)}
               >

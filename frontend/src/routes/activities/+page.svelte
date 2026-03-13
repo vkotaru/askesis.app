@@ -292,7 +292,7 @@
                 class={clsx(
                   'flex-1 flex flex-col items-center gap-1 p-2 rounded-lg border transition-all',
                   isSelected
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-600'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-gray-700 text-primary-600 dark:text-primary-400'
                     : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                 )}
               >
@@ -352,7 +352,7 @@
               class={clsx(
                 'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all',
                 isSelected
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-600'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-gray-700 text-primary-600 dark:text-primary-400'
                   : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
               )}
             >
@@ -456,7 +456,7 @@
                     {/if}
                   </div>
                   <p class="text-sm text-gray-500">
-                    {format(new Date(activity.date), 'MMM d, yyyy')}
+                    {format(parseISO(activity.date), 'MMM d, yyyy')}
                     {#if activity.duration_mins} · {activity.duration_mins} min{/if}
                     {#if activity.distance_km} · {formatDistance(activity.distance_km, $settings.distance_unit)}{/if}
                     {#if activity.calories} · {activity.calories} cal{/if}
@@ -594,7 +594,7 @@
               <tr
                 class={clsx(
                   'border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors',
-                  activity.date === selectedDate && 'bg-primary-50 dark:bg-primary-900/20'
+                  activity.date === selectedDate && 'bg-primary-50 dark:bg-gray-700'
                 )}
                 on:click={() => goToDate(activity.date)}
               >

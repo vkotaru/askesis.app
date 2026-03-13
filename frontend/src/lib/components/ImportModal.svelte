@@ -333,7 +333,7 @@
                 <span class={clsx(
                   'px-2 py-1 rounded-lg',
                   mappedFieldCount > 0
-                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                    ? 'bg-primary-100 dark:bg-gray-700 text-primary-700 dark:text-primary-300'
                     : 'bg-gray-100 dark:bg-gray-700'
                 )}>
                   {mappedFieldCount} of {preview?.columns.length} mapped
@@ -356,7 +356,7 @@
                 <div class={clsx(
                   'p-3 rounded-xl border-2 transition-all',
                   isMapped
-                    ? 'border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/20'
+                    ? 'border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-gray-700/50'
                     : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
                 )}>
                   <!-- CSV Column Name -->

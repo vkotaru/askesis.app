@@ -333,7 +333,7 @@
             class={clsx(
               'flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all',
               $settings.theme === value
-                ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                ? 'border-primary-500 bg-primary-50 dark:bg-gray-700 text-primary-700 dark:text-white'
                 : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
             )}
           >
@@ -357,7 +357,7 @@
             class={clsx(
               'flex flex-col items-center gap-2 px-4 py-4 rounded-xl border-2 transition-all',
               $settings.color_scheme === value
-                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
+                ? 'border-primary-500 bg-primary-50 dark:bg-gray-700 text-primary-700 dark:text-white'
                 : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
             )}
           >
@@ -504,7 +504,7 @@
               class={clsx(
                 'px-3 py-2 rounded-xl border-2 transition-all text-center',
                 $settings.font_size === option.value
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-gray-700 text-primary-700 dark:text-white'
                   : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
               )}
             >
@@ -532,7 +532,7 @@
               class={clsx(
                 'text-left px-4 py-3 rounded-xl border-2 transition-all',
                 $settings.content_width === value
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-gray-700 text-primary-700 dark:text-white'
                   : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
               )}
             >
