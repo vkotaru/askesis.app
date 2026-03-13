@@ -1,9 +1,30 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, startOfWeek, endOfWeek } from 'date-fns';
-  import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+  import { ChevronLeft, ChevronRight, Activity, Dumbbell, Bike, Footprints, Heart, Flame, Timer, Mountain, Waves, Trophy } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type CalendarEvent } from '$lib/api/client';
+
+  // Icon name to component mapping
+  const ICON_MAP: Record<string, typeof Activity> = {
+    'activity': Activity,
+    'dumbbell': Dumbbell,
+    'bike': Bike,
+    'footprints': Footprints,
+    'heart': Heart,
+    'flame': Flame,
+    'timer': Timer,
+    'mountain': Mountain,
+    'waves': Waves,
+    'trophy': Trophy,
+  };
+
+  function getIconComponent(iconName: string | undefined): typeof Activity | null {
+    if (iconName && ICON_MAP[iconName]) {
+      return ICON_MAP[iconName];
+    }
+    return null;
+  }
 
   // Activity name to emoji mapping
   const ACTIVITY_EMOJIS: Record<string, string> = {
@@ -166,16 +187,29 @@
               {format(day, 'd')}
             </div>
 
-            <!-- Activity emojis -->
+            <!-- Activity icons/emojis -->
             {#if events.length > 0}
               <div class="flex flex-wrap gap-1 justify-center">
                 {#each events as event}
-                  <span
-                    class="text-xl cursor-default"
-                    title="{event.name}{event.duration_mins ? ` (${event.duration_mins} min)` : ''}"
-                  >
-                    {getActivityEmoji(event.name, event.type)}
-                  </span>
+                  {@const IconComponent = getIconComponent(event.icon)}
+                  {#if IconComponent}
+                    <span
+                      class={clsx(
+                        'p-1 rounded cursor-default',
+                        event.type === 'cardio' ? 'text-cardio-500' : 'text-strength-500'
+                      )}
+                      title="{event.name}{event.duration_mins ? ` (${event.duration_mins} min)` : ''}"
+                    >
+                      <svelte:component this={IconComponent} size={20} />
+                    </span>
+                  {:else}
+                    <span
+                      class="text-xl cursor-default"
+                      title="{event.name}{event.duration_mins ? ` (${event.duration_mins} min)` : ''}"
+                    >
+                      {getActivityEmoji(event.name, event.type)}
+                    </span>
+                  {/if}
                 {/each}
               </div>
             {/if}

@@ -219,6 +219,7 @@ def get_calendar(
                 "name": a.name,
                 "type": a.activity_type.value,
                 "duration_mins": a.duration_mins,
+                "icon": a.icon,
             }
         )
 
