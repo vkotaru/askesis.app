@@ -93,6 +93,7 @@ export interface CalendarEvent {
   name: string;
   type: string;
   duration_mins?: number;
+  icon?: string;
 }
 
 export type ColorScheme = 'forest' | 'ocean' | 'sunset' | 'lavender' | 'slate';
