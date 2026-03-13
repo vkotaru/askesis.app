@@ -22,7 +22,8 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Add drive_parent_folder_id to user_settings table
     op.add_column(
-        "user_settings", sa.Column("drive_parent_folder_id", sa.String(100), nullable=True)
+        "user_settings",
+        sa.Column("drive_parent_folder_id", sa.String(100), nullable=True),
     )
 
 

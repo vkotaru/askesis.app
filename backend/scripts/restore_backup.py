@@ -67,7 +67,9 @@ def restore_backup(backup_path: str, clear_existing: bool = False):
             # Build INSERT statement
             col_list = ", ".join(f'"{c}"' for c in columns)
             placeholders = ", ".join(f":{c}" for c in columns)
-            insert_sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders})'
+            insert_sql = (
+                f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders})'
+            )
 
             inserted = 0
             skipped = 0
@@ -106,7 +108,9 @@ if __name__ == "__main__":
     clear = "--clear" in sys.argv
 
     if clear:
-        confirm = input("This will DELETE existing data before restore. Continue? (yes/no): ")
+        confirm = input(
+            "This will DELETE existing data before restore. Continue? (yes/no): "
+        )
         if confirm.lower() != "yes":
             print("Aborted.")
             sys.exit(0)

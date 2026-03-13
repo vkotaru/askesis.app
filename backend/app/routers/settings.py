@@ -168,11 +168,7 @@ def _backup_postgres(db: Session) -> tuple[bytes, str]:
     inspector = inspect(db.bind)
     tables = inspector.get_table_names()
 
-    backup_data = {
-        "version": 1,
-        "created_at": datetime.now().isoformat(),
-        "tables": {}
-    }
+    backup_data = {"version": 1, "created_at": datetime.now().isoformat(), "tables": {}}
 
     for table_name in tables:
         # Skip alembic version table
@@ -187,21 +183,18 @@ def _backup_postgres(db: Session) -> tuple[bytes, str]:
             for i, col in enumerate(columns):
                 value = row[i]
                 # Convert non-JSON-serializable types
-                if hasattr(value, 'isoformat'):
+                if hasattr(value, "isoformat"):
                     value = value.isoformat()
                 elif isinstance(value, bytes):
                     value = value.hex()
                 row_dict[col] = value
             rows.append(row_dict)
 
-        backup_data["tables"][table_name] = {
-            "columns": list(columns),
-            "rows": rows
-        }
+        backup_data["tables"][table_name] = {"columns": list(columns), "rows": rows}
         logger.info(f"Backed up {len(rows)} rows from {table_name}")
 
     json_content = json.dumps(backup_data, indent=2, default=str)
-    return json_content.encode('utf-8'), "askesis_backup.json"
+    return json_content.encode("utf-8"), "askesis_backup.json"
 
 
 @router.post("/backup", response_model=BackupResponse)
@@ -343,7 +336,9 @@ async def restore_database(
 
             col_list = ", ".join(f'"{c}"' for c in columns)
             placeholders = ", ".join(f":{c}" for c in columns)
-            insert_sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders})'
+            insert_sql = (
+                f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders})'
+            )
 
             inserted = 0
             for row in rows:

@@ -50,7 +50,9 @@ class User(Base):
     # Relationships
     daily_logs: Mapped[list["DailyLog"]] = relationship(back_populates="user")
     meals: Mapped[list["Meal"]] = relationship(back_populates="user")
-    daily_nutrition: Mapped[list["DailyNutrition"]] = relationship(back_populates="user")
+    daily_nutrition: Mapped[list["DailyNutrition"]] = relationship(
+        back_populates="user"
+    )
     activities: Mapped[list["Activity"]] = relationship(back_populates="user")
     settings: Mapped["UserSettings | None"] = relationship(
         back_populates="user", uselist=False
@@ -130,7 +132,9 @@ class Meal(Base):
     calories: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
     photo_path: Mapped[str | None] = mapped_column(String(500))  # Legacy local path
-    drive_file_id: Mapped[str | None] = mapped_column(String(100))  # Google Drive file ID
+    drive_file_id: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # Google Drive file ID
     ai_analysis: Mapped[str | None] = mapped_column(Text)  # Gemini analysis result
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

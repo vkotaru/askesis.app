@@ -24,15 +24,9 @@ def upgrade() -> None:
     op.add_column(
         "daily_logs", sa.Column("total_calories", sa.Integer(), nullable=True)
     )
-    op.add_column(
-        "daily_logs", sa.Column("protein_g", sa.Float(), nullable=True)
-    )
-    op.add_column(
-        "daily_logs", sa.Column("carbs_g", sa.Float(), nullable=True)
-    )
-    op.add_column(
-        "daily_logs", sa.Column("fat_g", sa.Float(), nullable=True)
-    )
+    op.add_column("daily_logs", sa.Column("protein_g", sa.Float(), nullable=True))
+    op.add_column("daily_logs", sa.Column("carbs_g", sa.Float(), nullable=True))
+    op.add_column("daily_logs", sa.Column("fat_g", sa.Float(), nullable=True))
 
 
 def downgrade() -> None:

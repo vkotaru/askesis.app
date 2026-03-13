@@ -327,7 +327,9 @@ def import_daily_logs(
             if has_wellness_data:
                 existing_log = (
                     db.query(DailyLog)
-                    .filter(DailyLog.user_id == current_user.id, DailyLog.date == log_date)
+                    .filter(
+                        DailyLog.user_id == current_user.id, DailyLog.date == log_date
+                    )
                     .first()
                 )
 
@@ -336,7 +338,9 @@ def import_daily_logs(
                     if mapped.get("weight"):
                         existing_log.weight = parse_float(str(mapped["weight"]))
                     if mapped.get("sleep_hours"):
-                        existing_log.sleep_hours = parse_float(str(mapped["sleep_hours"]))
+                        existing_log.sleep_hours = parse_float(
+                            str(mapped["sleep_hours"])
+                        )
                     if mapped.get("steps"):
                         existing_log.steps = parse_int(str(mapped["steps"]))
                     if mapped.get("water_ml"):
@@ -373,7 +377,9 @@ def import_daily_logs(
                 if existing_nutrition:
                     # Update existing nutrition record
                     if mapped.get("protein_g"):
-                        existing_nutrition.protein_g = parse_float(str(mapped["protein_g"]))
+                        existing_nutrition.protein_g = parse_float(
+                            str(mapped["protein_g"])
+                        )
                     if mapped.get("carbs_g"):
                         existing_nutrition.carbs_g = parse_float(str(mapped["carbs_g"]))
                     if mapped.get("fat_g"):
