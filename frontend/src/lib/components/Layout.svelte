@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { Home, ClipboardList, Utensils, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Eye, X, MoreHorizontal, Menu } from 'lucide-svelte';
+  import { Home, ClipboardList, Utensils, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Eye, X, MoreHorizontal, Menu, Users } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import type { User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
@@ -12,6 +12,7 @@
   // All nav items
   const navItems = [
     { href: '/', icon: Home, label: 'Dashboard', color: 'text-primary-500' },
+    { href: '/shared', icon: Users, label: 'Shared', color: 'text-accent-500' },
     { href: '/daily-log', icon: ClipboardList, label: 'Daily Log', color: 'text-rest-500' },
     { href: '/nutrition', icon: Utensils, label: 'Nutrition', color: 'text-nutrition-500' },
     { href: '/activities', icon: Activity, label: 'Activities', color: 'text-cardio-500' },
