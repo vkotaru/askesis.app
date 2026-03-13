@@ -464,7 +464,7 @@
 
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
-                    <span class="text-xs px-2 py-1 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">
+                    <span class="text-xs px-2 py-1 rounded-full bg-primary-100 dark:bg-gray-700 text-primary-700 dark:text-primary-400">
                       {meal.label}
                     </span>
                     {#if meal.time}

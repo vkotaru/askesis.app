@@ -88,7 +88,7 @@
   // Filter and sort weight data based on selected range
   $: rangeCutoff = getRangeCutoff(selectedRange);
   $: weightData = logs
-    .filter((l) => l.weight && (!rangeCutoff || new Date(l.date) >= rangeCutoff))
+    .filter((l) => l.weight && (!rangeCutoff || parseISO(l.date) >= rangeCutoff))
     .reverse();
 
   // Calculate weight change (first to last)
@@ -568,7 +568,7 @@
                 <div>
                   <p class="font-medium">{activity.name}</p>
                   <p class="text-sm text-gray-500">
-                    {format(new Date(activity.date), 'MMM d')}
+                    {format(parseISO(activity.date), 'MMM d')}
                     {#if activity.duration_mins} · {activity.duration_mins} min{/if}
                     {#if activity.distance_km} · {formatDistance(activity.distance_km, $settings.distance_unit)}{/if}
                   </p>

@@ -111,7 +111,7 @@
               class={clsx(
                 'flex items-center gap-3 px-4 py-3 rounded-xl mb-1 transition-all',
                 isActive
-                  ? 'bg-primary-50 dark:bg-primary-900/20'
+                  ? 'bg-primary-50 dark:bg-gray-700'
                   : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
               )}
             >
@@ -155,7 +155,7 @@
           class={clsx(
             'flex items-center gap-3 px-4 py-3 rounded-xl mb-1 transition-all duration-200',
             isActive
-              ? 'bg-primary-50 dark:bg-primary-900/20 shadow-sm'
+              ? 'bg-primary-50 dark:bg-gray-700 shadow-sm'
               : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
           )}
         >
@@ -281,7 +281,7 @@
                 class={clsx(
                   'flex items-center gap-3 px-4 py-3 transition-all',
                   isActive
-                    ? 'bg-primary-50 dark:bg-primary-900/20'
+                    ? 'bg-primary-50 dark:bg-gray-700'
                     : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
                 )}
               >

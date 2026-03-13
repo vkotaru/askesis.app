@@ -455,7 +455,7 @@
             class={clsx(
               'w-full p-3 rounded-xl text-left transition-all',
               log.date === selectedDate
-                ? 'bg-primary-100 dark:bg-primary-900/30 border-2 border-primary-300 dark:border-primary-700'
+                ? 'bg-primary-100 dark:bg-gray-700 border-2 border-primary-300 dark:border-primary-500'
                 : 'bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:border-gray-200 dark:hover:border-gray-600'
             )}
           >
@@ -544,7 +544,7 @@
               <tr
                 class={clsx(
                   'border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors',
-                  log.date === selectedDate && 'bg-primary-50 dark:bg-primary-900/20'
+                  log.date === selectedDate && 'bg-primary-50 dark:bg-gray-700'
                 )}
                 on:click={() => goToDate(log.date)}
               >

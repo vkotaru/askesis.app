@@ -172,7 +172,7 @@
             class={clsx(
               'min-h-[100px] p-2 border-b border-r border-gray-100 dark:border-gray-700 transition-colors',
               !isCurrentMonth && 'bg-gray-50/50 dark:bg-gray-800/50',
-              isTodayDate && 'bg-primary-50 dark:bg-primary-900/20',
+              isTodayDate && 'bg-primary-50 dark:bg-gray-700/50',
               idx % 7 === 6 && 'border-r-0'
             )}
           >
