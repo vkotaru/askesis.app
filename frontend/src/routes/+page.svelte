@@ -190,7 +190,7 @@
 
   function isRunActivity(name: string): boolean {
     const lower = name.toLowerCase();
-    return lower.includes('run') || lower.includes('running') || lower.includes('walk') || lower.includes('jog');
+    return lower.includes('run') || lower.includes('running') || lower.includes('jog');
   }
 
   // Get weeks (Monday to Sunday) for the last 8 weeks
@@ -839,7 +839,7 @@
             </div>
             <div class="flex items-center gap-1">
               <PersonStanding size={12} class="text-rest-400" />
-              <span>Run/Walk (right)</span>
+              <span>Run (right)</span>
             </div>
             <div class="flex items-center gap-1">
               <Dumbbell size={12} class="text-strength-400" />
