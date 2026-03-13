@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
-from app.database import engine, SessionLocal
+from app.database import SessionLocal
 
 
 def parse_value(value, col_name: str):
