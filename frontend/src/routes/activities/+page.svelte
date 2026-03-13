@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
+  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar, Bike, Footprints, Heart, Flame, Timer, Mountain, Waves, Volleyball } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
@@ -29,11 +29,33 @@
     { value: 'night', label: 'Night', icon: Moon },
   ];
 
+  const ACTIVITY_ICONS: { value: string; label: string; icon: typeof Activity }[] = [
+    { value: 'activity', label: 'Activity', icon: Activity },
+    { value: 'dumbbell', label: 'Weights', icon: Dumbbell },
+    { value: 'bike', label: 'Bike', icon: Bike },
+    { value: 'footprints', label: 'Run/Walk', icon: Footprints },
+    { value: 'heart', label: 'Heart', icon: Heart },
+    { value: 'flame', label: 'Burn', icon: Flame },
+    { value: 'timer', label: 'Timer', icon: Timer },
+    { value: 'mountain', label: 'Hike', icon: Mountain },
+    { value: 'waves', label: 'Swim', icon: Waves },
+    { value: 'volleyball', label: 'Sports', icon: Volleyball },
+  ];
+
   function getPlatformFromUrl(url: string): { name: string; color: string } | null {
     if (url.includes('strava.com')) return { name: 'Strava', color: 'text-orange-500' };
     if (url.includes('hevy.com')) return { name: 'Hevy', color: 'text-blue-500' };
     if (url.includes('garmin.com')) return { name: 'Garmin', color: 'text-cyan-600' };
     return null;
+  }
+
+  function getActivityIcon(iconName: string | undefined, activityType: 'cardio' | 'strength'): typeof Activity {
+    if (iconName) {
+      const found = ACTIVITY_ICONS.find(i => i.value === iconName);
+      if (found) return found.icon;
+    }
+    // Default based on activity type
+    return activityType === 'strength' ? Dumbbell : Activity;
   }
 
   let activities: ActivityType[] = [];
@@ -54,6 +76,7 @@
   let formDistance: string = '';
   let formUrl = '';
   let formNotes = '';
+  let formIcon: string | null = null;
 
   async function loadActivities() {
     loading = true;
@@ -124,6 +147,7 @@
     formDistance = '';
     formUrl = '';
     formNotes = '';
+    formIcon = null;
     selectedTags = [];
     selectedTimeOfDay = null;
   }
@@ -137,6 +161,7 @@
     formDistance = activity.distance_km ? formatDistance(activity.distance_km, $settings.distance_unit).replace(/[^\d.]/g, '') : '';
     formUrl = activity.url || '';
     formNotes = activity.notes || '';
+    formIcon = activity.icon || null;
     selectedTags = activity.tags ? activity.tags.split(',') : [];
     selectedTimeOfDay = activity.time_of_day || null;
     showForm = true;
@@ -161,6 +186,7 @@
       url: urlValue || undefined,
       notes: formData.get('notes') as string,
       tags: selectedTags.join(','),
+      icon: formIcon || undefined,
       exercises: editingActivity?.exercises || [],
     };
 
@@ -316,6 +342,28 @@
       </div>
 
       <div class="mt-4">
+        <span class="label">Icon</span>
+        <div class="flex flex-wrap gap-2">
+          {#each ACTIVITY_ICONS as iconOption}
+            {@const isSelected = formIcon === iconOption.value}
+            <button
+              type="button"
+              on:click={() => formIcon = isSelected ? null : iconOption.value}
+              class={clsx(
+                'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all',
+                isSelected
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-600'
+                  : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
+              )}
+            >
+              <svelte:component this={iconOption.icon} size={18} />
+              <span class="text-sm">{iconOption.label}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <div class="mt-4">
         <label for="notes" class="label">Notes</label>
         <textarea id="notes" name="notes" rows={2} placeholder="How did it feel?" class="input resize-none" bind:value={formNotes}></textarea>
       </div>
@@ -355,11 +403,13 @@
                       : 'bg-strength-100 dark:bg-strength-900/30'
                   )}
                 >
-                  {#if activity.activity_type === 'cardio'}
-                    <Activity size={24} class="text-cardio-600 dark:text-cardio-400" />
-                  {:else}
-                    <Dumbbell size={24} class="text-strength-600 dark:text-strength-400" />
-                  {/if}
+                    <svelte:component
+                    this={getActivityIcon(activity.icon, activity.activity_type)}
+                    size={24}
+                    class={activity.activity_type === 'cardio'
+                      ? 'text-cardio-600 dark:text-cardio-400'
+                      : 'text-strength-600 dark:text-strength-400'}
+                  />
                 </div>
                 <div>
                   <div class="flex items-center gap-2 mb-1 flex-wrap">

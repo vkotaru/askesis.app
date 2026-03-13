@@ -87,8 +87,10 @@ def _ensure_worksheet(service, spreadsheet_id: str, tab_name: str) -> int:
         raise
 
 
-def _clear_and_write(service, spreadsheet_id: str, tab_name: str, data: list[list]):
-    """Clear a tab and write new data."""
+def _clear_and_write(
+    service, spreadsheet_id: str, tab_name: str, data: list[list]
+) -> int:
+    """Clear a tab and write new data. Returns number of data rows (excluding header)."""
     range_name = f"{tab_name}!A1"
 
     # Clear existing content
@@ -106,11 +108,13 @@ def _clear_and_write(service, spreadsheet_id: str, tab_name: str, data: list[lis
             body={"values": data},
         ).execute()
 
-    logger.info(f"Wrote {len(data)} rows to {tab_name}")
+    row_count = len(data) - 1 if len(data) > 1 else 0  # Exclude header
+    logger.info(f"Wrote {row_count} data rows to {tab_name}")
+    return row_count
 
 
-def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session):
-    """Sync Daily_Log tab with columns matching user's format."""
+def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> int:
+    """Sync Daily_Log tab with columns matching user's format. Returns row count."""
     _ensure_worksheet(service, spreadsheet_id, DAILY_LOG_TAB)
 
     # Header row
@@ -208,11 +212,11 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session):
         ]
         data.append(row)
 
-    _clear_and_write(service, spreadsheet_id, DAILY_LOG_TAB, data)
+    return _clear_and_write(service, spreadsheet_id, DAILY_LOG_TAB, data)
 
 
-def _sync_activities(service, spreadsheet_id: str, user_id: int, db: Session):
-    """Sync Activities tab."""
+def _sync_activities(service, spreadsheet_id: str, user_id: int, db: Session) -> int:
+    """Sync Activities tab. Returns row count."""
     _ensure_worksheet(service, spreadsheet_id, ACTIVITIES_TAB)
 
     headers = [
@@ -252,11 +256,11 @@ def _sync_activities(service, spreadsheet_id: str, user_id: int, db: Session):
         ]
         data.append(row)
 
-    _clear_and_write(service, spreadsheet_id, ACTIVITIES_TAB, data)
+    return _clear_and_write(service, spreadsheet_id, ACTIVITIES_TAB, data)
 
 
-def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session):
-    """Sync Measurements tab with inches conversion."""
+def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session) -> int:
+    """Sync Measurements tab with inches conversion. Returns row count."""
     _ensure_worksheet(service, spreadsheet_id, MEASUREMENTS_TAB)
 
     headers = [
@@ -293,7 +297,7 @@ def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session):
         ]
         data.append(row)
 
-    _clear_and_write(service, spreadsheet_id, MEASUREMENTS_TAB, data)
+    return _clear_and_write(service, spreadsheet_id, MEASUREMENTS_TAB, data)
 
 
 def _upload_local_photo_to_drive(
@@ -355,8 +359,8 @@ def _sync_photos(
     db: Session,
     refresh_token: str,
     parent_folder_id: str | None = None,
-):
-    """Sync Photos tab with embedded IMAGE formulas."""
+) -> int:
+    """Sync Photos tab with embedded IMAGE formulas. Returns row count."""
     _ensure_worksheet(service, spreadsheet_id, PHOTOS_TAB)
 
     headers = ["date", "Front", "Side", "Back"]
@@ -426,7 +430,7 @@ def _sync_photos(
         data.append(row)
 
     logger.info(f"Writing {len(data) - 1} photo rows to sheet")
-    _clear_and_write(service, spreadsheet_id, PHOTOS_TAB, data)
+    return _clear_and_write(service, spreadsheet_id, PHOTOS_TAB, data)
 
 
 def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
@@ -450,14 +454,15 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
     settings = db.query(UserSettings).filter(UserSettings.user_id == user.id).first()
     parent_folder_id = settings.drive_parent_folder_id if settings else None
 
+    logger.info(f"Syncing to sheet ID: {sheet_id} for user {user.id}")
     service = get_sheets_service(user.google_refresh_token)
 
     try:
-        # Sync each tab
-        _sync_daily_log(service, sheet_id, user.id, db)
-        _sync_activities(service, sheet_id, user.id, db)
-        _sync_measurements(service, sheet_id, user.id, db)
-        _sync_photos(
+        # Sync each tab and capture row counts
+        daily_rows = _sync_daily_log(service, sheet_id, user.id, db)
+        activity_rows = _sync_activities(service, sheet_id, user.id, db)
+        measurement_rows = _sync_measurements(service, sheet_id, user.id, db)
+        photo_rows = _sync_photos(
             service,
             sheet_id,
             user.id,
@@ -466,10 +471,19 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
             parent_folder_id,
         )
 
+        total_rows = daily_rows + activity_rows + measurement_rows + photo_rows
+        row_summary = f"Daily_Log: {daily_rows}, Activities: {activity_rows}, Measurements: {measurement_rows}, Photos: {photo_rows}"
+
         return {
             "success": True,
-            "message": "Synced all data to Google Sheet",
+            "message": f"Synced {total_rows} rows ({row_summary})",
             "tabs": [DAILY_LOG_TAB, ACTIVITIES_TAB, MEASUREMENTS_TAB, PHOTOS_TAB],
+            "row_counts": {
+                DAILY_LOG_TAB: daily_rows,
+                ACTIVITIES_TAB: activity_rows,
+                MEASUREMENTS_TAB: measurement_rows,
+                PHOTOS_TAB: photo_rows,
+            },
         }
 
     except HttpError as e:

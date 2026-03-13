@@ -41,6 +41,7 @@ class ActivityCreate(BaseModel):
     )  # External link (Strava, Hevy, Garmin)
     notes: str | None = Field(None, max_length=2000)
     tags: str | None = Field(None, max_length=255)
+    icon: str | None = Field(None, max_length=50)  # Icon name (e.g., 'dumbbell', 'bike')
     exercises: list[ExerciseCreate] = Field(default_factory=list, max_length=50)
 
 
@@ -57,6 +58,7 @@ class ActivityResponse(BaseModel):
     url: str | None
     notes: str | None
     tags: str | None
+    icon: str | None
     exercises: list[ExerciseResponse]
 
     class Config:

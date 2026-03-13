@@ -82,6 +82,7 @@ export interface Activity {
   url?: string;
   notes?: string;
   tags?: string;
+  icon?: string;
   exercises: Exercise[];
 }
 
@@ -120,6 +121,7 @@ export interface GSheetSyncResponse {
   message: string;
   last_sync?: string | null;
   tabs: string[];
+  sheet_id?: string | null;
 }
 
 export interface BodyMeasurement {
