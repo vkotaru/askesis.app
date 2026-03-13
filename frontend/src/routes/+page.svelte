@@ -1,18 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { format, subDays, subMonths } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown, Flame, Beef, Wheat } from 'lucide-svelte';
+  import { format, subDays, subMonths, startOfWeek, endOfWeek, parseISO, addWeeks } from 'date-fns';
+  import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown, Flame, Beef, Wheat, Bike, PersonStanding, Dumbbell } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
-  import { formatWeight, weightFromMetric, formatWater, formatDistance, getWeightLabel } from '$lib/utils/units';
+  import { formatWeight, weightFromMetric, formatWater, formatDistance, getWeightLabel, distanceFromMetric } from '$lib/utils/units';
 
   let logs: DailyLog[] = [];
   let activities: ActivityType[] = [];
+  let allActivities: ActivityType[] = [];
   let todayMeals: Meal[] = [];
+  let mealsHistory: Meal[] = [];
+  let nutritionHistory: DailyNutrition[] = [];
   let todayNutrition: DailyNutrition | null = null;
   let loading = true;
   let hoveredPoint: { x: number; y: number; weight: number; date: string } | null = null;
+  let hoveredNutritionPoint: { x: number; y: number; calories: number; protein: number; date: string } | null = null;
 
   // Weight trend time range
   type TimeRange = '1w' | '2w' | '1m' | '6m' | 'all';
@@ -26,18 +30,26 @@
   ];
 
   const today = format(new Date(), 'yyyy-MM-dd');
+  const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+  const sixtyDaysAgo = format(subDays(new Date(), 60), 'yyyy-MM-dd');
 
   onMount(async () => {
     try {
       // Fetch data - use higher limit for weight chart
-      const [logsData, activitiesData, mealsData] = await Promise.all([
+      const [logsData, activitiesData, allActivitiesData, mealsData, mealsHistoryData, nutritionHistoryData] = await Promise.all([
         api.getDailyLogs(undefined, undefined, undefined, 365),
         api.getActivities(undefined, undefined, undefined, 10),
+        api.getActivities(sixtyDaysAgo, today, undefined, 500),
         api.getMeals(today),
+        api.getMeals(undefined, undefined, thirtyDaysAgo, today, 500),
+        api.getNutritionHistory(thirtyDaysAgo, today, undefined, 60),
       ]);
       logs = logsData;
       activities = activitiesData;
+      allActivities = allActivitiesData;
       todayMeals = mealsData;
+      mealsHistory = mealsHistoryData;
+      nutritionHistory = nutritionHistoryData;
 
       // Try to get today's nutrition for macros
       try {
@@ -138,6 +150,98 @@
       y: padding.top + innerHeight - (i / 4) * innerHeight,
     };
   });
+
+  // ===== Nutrition Chart Data =====
+  // Aggregate calories per day from meals
+  $: dailyCaloriesMap = mealsHistory.reduce((acc, meal) => {
+    const date = meal.date;
+    acc[date] = (acc[date] || 0) + (meal.calories || 0);
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Aggregate protein per day from nutrition history
+  $: dailyProteinMap = nutritionHistory.reduce((acc, n) => {
+    acc[n.date] = n.protein_g || 0;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Get all unique dates and sort
+  $: nutritionDates = [...new Set([...Object.keys(dailyCaloriesMap), ...Object.keys(dailyProteinMap)])]
+    .sort()
+    .slice(-30);
+
+  // Nutrition chart data
+  $: nutritionChartData = nutritionDates.map(date => ({
+    date,
+    calories: dailyCaloriesMap[date] || 0,
+    protein: dailyProteinMap[date] || 0,
+  }));
+
+  // Nutrition chart scales
+  $: caloriesMax = Math.max(...nutritionChartData.map(d => d.calories), 100);
+  $: proteinMax = Math.max(...nutritionChartData.map(d => d.protein), 10);
+
+  // ===== Weekly Training Chart Data =====
+  // Helper to check activity type by name
+  function isBikeActivity(name: string): boolean {
+    const lower = name.toLowerCase();
+    return lower.includes('bike') || lower.includes('cycling') || lower.includes('ride') || lower.includes('cycle');
+  }
+
+  function isRunActivity(name: string): boolean {
+    const lower = name.toLowerCase();
+    return lower.includes('run') || lower.includes('running') || lower.includes('walk') || lower.includes('jog');
+  }
+
+  // Get weeks (Monday to Sunday) for the last 8 weeks
+  function getWeeks(numWeeks: number): { start: Date; end: Date; label: string }[] {
+    const weeks: { start: Date; end: Date; label: string }[] = [];
+    const now = new Date();
+    const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
+
+    for (let i = numWeeks - 1; i >= 0; i--) {
+      const weekStart = addWeeks(currentWeekStart, -i);
+      const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+      weeks.push({
+        start: weekStart,
+        end: weekEnd,
+        label: format(weekStart, 'MMM d'),
+      });
+    }
+    return weeks;
+  }
+
+  $: weeks = getWeeks(8);
+
+  // Compute weekly stats
+  $: weeklyTrainingData = weeks.map(week => {
+    const weekActivities = allActivities.filter(a => {
+      const actDate = parseISO(a.date);
+      return actDate >= week.start && actDate <= week.end;
+    });
+
+    const bikeMiles = weekActivities
+      .filter(a => isBikeActivity(a.name) && a.distance_km)
+      .reduce((sum, a) => sum + distanceFromMetric(a.distance_km || 0, $settings.distance_unit), 0);
+
+    const roadMiles = weekActivities
+      .filter(a => isRunActivity(a.name) && a.distance_km)
+      .reduce((sum, a) => sum + distanceFromMetric(a.distance_km || 0, $settings.distance_unit), 0);
+
+    const strengthCount = weekActivities.filter(a => a.activity_type === 'strength').length;
+
+    return {
+      label: week.label,
+      bikeMiles: Math.round(bikeMiles * 10) / 10,
+      roadMiles: Math.round(roadMiles * 10) / 10,
+      strengthCount,
+    };
+  });
+
+  // Training chart scales (separate axes for bike and road)
+  $: maxBikeMiles = Math.max(...weeklyTrainingData.map(w => w.bikeMiles), 1);
+  $: maxRoadMiles = Math.max(...weeklyTrainingData.map(w => w.roadMiles), 1);
+  $: maxStrength = Math.max(...weeklyTrainingData.map(w => w.strengthCount), 1);
 </script>
 
 <svelte:head>
@@ -485,6 +589,288 @@
         {:else}
           <div class="h-48 flex items-center justify-center text-gray-400">
             <p>No activities yet. Let's get moving!</p>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Calories & Protein Chart (Dual Axis Line Graph) -->
+      <div class="card p-6">
+        <div class="flex items-center gap-2 mb-4">
+          <Flame size={20} class="text-nutrition-500" />
+          <h2 class="text-lg font-semibold">Calories & Protein</h2>
+          <span class="text-xs text-gray-400 ml-auto">Last 30 days</span>
+        </div>
+        {#if nutritionChartData.length > 0}
+          <div class="relative" style="aspect-ratio: 2/1;">
+            <svg
+              viewBox="0 0 {chartWidth} {chartHeight}"
+              class="w-full h-full"
+              on:mouseleave={() => hoveredNutritionPoint = null}
+            >
+              <!-- Grid lines -->
+              {#each [0, 0.25, 0.5, 0.75, 1] as tick}
+                <line
+                  x1={padding.left}
+                  y1={padding.top + innerHeight * (1 - tick)}
+                  x2={chartWidth - padding.right}
+                  y2={padding.top + innerHeight * (1 - tick)}
+                  stroke="currentColor"
+                  stroke-opacity="0.1"
+                  stroke-dasharray="4,4"
+                />
+              {/each}
+
+              <!-- Calories line (left axis) -->
+              {#if nutritionChartData.length > 1}
+                <path
+                  d={nutritionChartData.map((d, i) => {
+                    const x = padding.left + (i / (nutritionChartData.length - 1)) * innerWidth;
+                    const y = padding.top + innerHeight - (d.calories / caloriesMax) * innerHeight;
+                    return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+                  }).join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-nutrition-500"
+                />
+                {#each nutritionChartData as d, i}
+                  {@const x = padding.left + (i / (nutritionChartData.length - 1)) * innerWidth}
+                  {@const y = padding.top + innerHeight - (d.calories / caloriesMax) * innerHeight}
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r="4"
+                    class="fill-nutrition-500 cursor-pointer"
+                    on:mouseenter={() => hoveredNutritionPoint = { x, y, calories: d.calories, protein: d.protein, date: d.date }}
+                  />
+                {/each}
+              {/if}
+
+              <!-- Protein line (right axis) -->
+              {#if nutritionChartData.length > 1}
+                <path
+                  d={nutritionChartData.map((d, i) => {
+                    const x = padding.left + (i / (nutritionChartData.length - 1)) * innerWidth;
+                    const y = padding.top + innerHeight - (d.protein / proteinMax) * innerHeight;
+                    return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+                  }).join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-strength-500"
+                />
+                {#each nutritionChartData as d, i}
+                  {@const x = padding.left + (i / (nutritionChartData.length - 1)) * innerWidth}
+                  {@const y = padding.top + innerHeight - (d.protein / proteinMax) * innerHeight}
+                  <circle cx={x} cy={y} r="3" class="fill-strength-500" />
+                {/each}
+              {/if}
+
+              <!-- Left Y-axis labels (Calories) -->
+              <text x={padding.left - 8} y={padding.top} text-anchor="end" dominant-baseline="middle" class="fill-nutrition-500 text-[9px] font-medium">
+                {Math.round(caloriesMax)}
+              </text>
+              <text x={padding.left - 8} y={padding.top + innerHeight / 2} text-anchor="end" dominant-baseline="middle" class="fill-nutrition-500 text-[9px]">
+                {Math.round(caloriesMax / 2)}
+              </text>
+              <text x={padding.left - 8} y={padding.top + innerHeight} text-anchor="end" dominant-baseline="middle" class="fill-nutrition-500 text-[9px]">
+                0
+              </text>
+
+              <!-- Right Y-axis labels (Protein) -->
+              <text x={chartWidth - padding.right + 8} y={padding.top} text-anchor="start" dominant-baseline="middle" class="fill-strength-500 text-[9px] font-medium">
+                {Math.round(proteinMax)}g
+              </text>
+              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight / 2} text-anchor="start" dominant-baseline="middle" class="fill-strength-500 text-[9px]">
+                {Math.round(proteinMax / 2)}g
+              </text>
+              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight} text-anchor="start" dominant-baseline="middle" class="fill-strength-500 text-[9px]">
+                0
+              </text>
+
+              <!-- X-axis labels -->
+              {#if nutritionChartData.length > 0}
+                <text x={padding.left} y={chartHeight - 8} text-anchor="start" class="fill-gray-400 text-[9px]">
+                  {format(parseISO(nutritionChartData[0].date), 'MMM d')}
+                </text>
+                <text x={chartWidth - padding.right} y={chartHeight - 8} text-anchor="end" class="fill-gray-400 text-[9px]">
+                  {format(parseISO(nutritionChartData[nutritionChartData.length - 1].date), 'MMM d')}
+                </text>
+              {/if}
+            </svg>
+
+            <!-- Tooltip -->
+            {#if hoveredNutritionPoint}
+              <div
+                class="absolute bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg pointer-events-none z-10"
+                style="left: {(hoveredNutritionPoint.x / chartWidth) * 100}%; top: {(hoveredNutritionPoint.y / chartHeight) * 100 - 10}%; transform: translateX(-50%);"
+              >
+                <div class="font-medium text-nutrition-300">{hoveredNutritionPoint.calories} cal</div>
+                <div class="text-strength-300">{hoveredNutritionPoint.protein}g protein</div>
+                <div class="text-gray-300">{format(parseISO(hoveredNutritionPoint.date), 'MMM d')}</div>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Legend -->
+          <div class="flex items-center justify-center gap-6 mt-4 text-xs text-gray-500">
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-0.5 bg-nutrition-500 rounded"></div>
+              <span>Calories (left)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-0.5 bg-strength-500 rounded"></div>
+              <span>Protein g (right)</span>
+            </div>
+          </div>
+        {:else}
+          <div class="h-48 flex items-center justify-center text-gray-400">
+            <p>No nutrition data yet</p>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Weekly Training Chart (Dual Axis) -->
+      <div class="card p-6">
+        <div class="flex items-center gap-2 mb-4">
+          <Dumbbell size={20} class="text-strength-500" />
+          <h2 class="text-lg font-semibold">Weekly Training</h2>
+          <span class="text-xs text-gray-400 ml-auto">Last 8 weeks</span>
+        </div>
+        {#if weeklyTrainingData.some(w => w.bikeMiles > 0 || w.roadMiles > 0 || w.strengthCount > 0)}
+          <div class="relative" style="aspect-ratio: 2/1;">
+            <svg viewBox="0 0 {chartWidth} {chartHeight}" class="w-full h-full">
+              <!-- Grid lines -->
+              {#each [0, 0.25, 0.5, 0.75, 1] as tick}
+                <line
+                  x1={padding.left}
+                  y1={padding.top + innerHeight * (1 - tick)}
+                  x2={chartWidth - padding.right}
+                  y2={padding.top + innerHeight * (1 - tick)}
+                  stroke="currentColor"
+                  stroke-opacity="0.1"
+                  stroke-dasharray="4,4"
+                />
+              {/each}
+
+              <!-- Bars for each week -->
+              {#each weeklyTrainingData as week, i}
+                {@const groupWidth = innerWidth / weeklyTrainingData.length}
+                {@const barWidth = groupWidth * 0.25}
+                {@const groupX = padding.left + i * groupWidth + groupWidth * 0.1}
+
+                <!-- Bike miles bar (left axis) -->
+                {@const bikeHeight = (week.bikeMiles / maxBikeMiles) * innerHeight}
+                <rect
+                  x={groupX}
+                  y={padding.top + innerHeight - bikeHeight}
+                  width={barWidth}
+                  height={bikeHeight}
+                  class="fill-cardio-400"
+                  rx="2"
+                />
+
+                <!-- Road miles bar (right axis) -->
+                {@const roadHeight = (week.roadMiles / maxRoadMiles) * innerHeight}
+                <rect
+                  x={groupX + barWidth + 2}
+                  y={padding.top + innerHeight - roadHeight}
+                  width={barWidth}
+                  height={roadHeight}
+                  class="fill-primary-400"
+                  rx="2"
+                />
+
+                <!-- Strength count bar -->
+                {@const strengthHeight = (week.strengthCount / maxStrength) * innerHeight}
+                <rect
+                  x={groupX + (barWidth + 2) * 2}
+                  y={padding.top + innerHeight - strengthHeight}
+                  width={barWidth}
+                  height={strengthHeight}
+                  class="fill-strength-400"
+                  rx="2"
+                />
+
+                <!-- Week label -->
+                <text
+                  x={groupX + groupWidth * 0.35}
+                  y={chartHeight - 8}
+                  text-anchor="middle"
+                  class="fill-gray-400 text-[8px]"
+                >
+                  {week.label}
+                </text>
+              {/each}
+
+              <!-- Left Y-axis labels (Bike) -->
+              <text x={padding.left - 8} y={padding.top} text-anchor="end" dominant-baseline="middle" class="fill-cardio-500 text-[9px] font-medium">
+                {Math.round(maxBikeMiles)}
+              </text>
+              <text x={padding.left - 8} y={padding.top + innerHeight / 2} text-anchor="end" dominant-baseline="middle" class="fill-cardio-500 text-[9px]">
+                {Math.round(maxBikeMiles / 2)}
+              </text>
+              <text x={padding.left - 8} y={padding.top + innerHeight} text-anchor="end" dominant-baseline="middle" class="fill-cardio-500 text-[9px]">
+                0
+              </text>
+
+              <!-- Right Y-axis labels (Run/Walk) -->
+              <text x={chartWidth - padding.right + 8} y={padding.top} text-anchor="start" dominant-baseline="middle" class="fill-primary-500 text-[9px] font-medium">
+                {Math.round(maxRoadMiles)}
+              </text>
+              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight / 2} text-anchor="start" dominant-baseline="middle" class="fill-primary-500 text-[9px]">
+                {Math.round(maxRoadMiles / 2)}
+              </text>
+              <text x={chartWidth - padding.right + 8} y={padding.top + innerHeight} text-anchor="start" dominant-baseline="middle" class="fill-primary-500 text-[9px]">
+                0
+              </text>
+            </svg>
+          </div>
+
+          <!-- Legend -->
+          <div class="flex items-center justify-center gap-4 mt-4 text-xs text-gray-500">
+            <div class="flex items-center gap-1">
+              <Bike size={12} class="text-cardio-400" />
+              <span>Bike (left)</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <PersonStanding size={12} class="text-primary-400" />
+              <span>Run/Walk (right)</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <Dumbbell size={12} class="text-strength-400" />
+              <span>Strength</span>
+            </div>
+          </div>
+
+          <!-- Stats summary -->
+          <div class="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div class="text-center">
+              <p class="text-lg font-bold text-cardio-500">
+                {weeklyTrainingData.reduce((sum, w) => sum + w.bikeMiles, 0).toFixed(0)}
+              </p>
+              <p class="text-xs text-gray-400">Total bike {$settings.distance_unit}</p>
+            </div>
+            <div class="text-center">
+              <p class="text-lg font-bold text-primary-500">
+                {weeklyTrainingData.reduce((sum, w) => sum + w.roadMiles, 0).toFixed(0)}
+              </p>
+              <p class="text-xs text-gray-400">Total run {$settings.distance_unit}</p>
+            </div>
+            <div class="text-center">
+              <p class="text-lg font-bold text-strength-500">
+                {weeklyTrainingData.reduce((sum, w) => sum + w.strengthCount, 0)}
+              </p>
+              <p class="text-xs text-gray-400">Strength sessions</p>
+            </div>
+          </div>
+        {:else}
+          <div class="h-48 flex items-center justify-center text-gray-400">
+            <p>No training data yet</p>
           </div>
         {/if}
       </div>

@@ -267,9 +267,32 @@ def save_daily_nutrition(
     return nutrition
 
 
+@router.get("/daily", response_model=list[DailyNutritionResponse])
+def get_daily_nutrition_history(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    user_id: int | None = None,
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get daily nutrition history over a date range."""
+    target_user = check_view_permission(user_id, "nutrition", db, current_user)
+    query = db.query(DailyNutrition).filter(DailyNutrition.user_id == target_user.id)
+
+    if start_date:
+        query = query.filter(DailyNutrition.date >= start_date)
+    if end_date:
+        query = query.filter(DailyNutrition.date <= end_date)
+
+    return query.order_by(DailyNutrition.date.desc()).limit(limit).all()
+
+
 @router.get("/meals")
 def get_meals(
     meal_date: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
     user_id: int | None = None,
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
@@ -281,6 +304,11 @@ def get_meals(
 
     if meal_date:
         query = query.filter(Meal.date == meal_date)
+    else:
+        if start_date:
+            query = query.filter(Meal.date >= start_date)
+        if end_date:
+            query = query.filter(Meal.date <= end_date)
 
     meals = (
         query.order_by(Meal.date.desc(), Meal.time).offset(offset).limit(limit).all()

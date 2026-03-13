@@ -295,12 +295,24 @@ export const api = {
     }),
 
   // Nutrition - Meals
-  getMeals: (date?: string, userId?: number) => {
+  getMeals: (date?: string, userId?: number, startDate?: string, endDate?: string, limit?: number) => {
     const params = new URLSearchParams();
     if (date) params.set('meal_date', date);
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
     if (userId) params.set('user_id', userId.toString());
+    if (limit) params.set('limit', limit.toString());
     const query = params.toString() ? `?${params}` : '';
     return fetchJSON<Meal[]>(`/api/nutrition/meals${query}`);
+  },
+  getNutritionHistory: (startDate?: string, endDate?: string, userId?: number, limit?: number) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    if (userId) params.set('user_id', userId.toString());
+    if (limit) params.set('limit', limit.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return fetchJSON<DailyNutrition[]>(`/api/nutrition/daily${query}`);
   },
   createMeal: (data: MealInput) =>
     fetchJSON<Meal>('/api/nutrition/meals', {
