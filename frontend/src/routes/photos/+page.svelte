@@ -76,7 +76,7 @@
   }
 
   // Reload comparison when dates or view change
-  $: if (compareMode && compareLeftDate && compareRightDate) {
+  $: if (compareMode && compareLeftDate && compareRightDate && compareView) {
     loadComparePhotos();
   }
 
