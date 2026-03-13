@@ -21,9 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Add icon field to activities table
-    op.add_column(
-        "activities", sa.Column("icon", sa.String(50), nullable=True)
-    )
+    op.add_column("activities", sa.Column("icon", sa.String(50), nullable=True))
 
 
 def downgrade() -> None:

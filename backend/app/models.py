@@ -184,7 +184,9 @@ class Activity(Base):
     )  # External link (Strava, Hevy, Garmin)
     notes: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[str | None] = mapped_column(String(255))  # Comma-separated
-    icon: Mapped[str | None] = mapped_column(String(50))  # Icon name (e.g., 'dumbbell', 'bike')
+    icon: Mapped[str | None] = mapped_column(
+        String(50)
+    )  # Icon name (e.g., 'dumbbell', 'bike')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="activities")
