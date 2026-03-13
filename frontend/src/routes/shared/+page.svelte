@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, subDays, parseISO } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Activity, Users, TrendingUp, TrendingDown, Bike, Flame, Waves, Dumbbell } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Activity, Users, TrendingUp, TrendingDown, Dumbbell } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog, type Activity as ActivityType, type SharedWithMe } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
   import { sharedWithMe, viewContext } from '$lib/stores/viewContext';
   import { formatWeight, weightFromMetric, formatWater, getWeightLabel } from '$lib/utils/units';
+  import { getActivityIcon, LEGEND_ICONS } from '$lib/utils/activityIcons';
 
   interface UserData {
     user: { id: number | null; name: string; picture?: string };
@@ -134,18 +135,6 @@
     }
     return { userIndex: idx, userName: u.user.name, byDate };
   });
-
-  // Get icon component for activity
-  function getActivityIcon(iconName: string | null | undefined): typeof Footprints {
-    switch (iconName) {
-      case 'footprints': return Footprints;
-      case 'bike': return Bike;
-      case 'flame': return Flame;
-      case 'waves': return Waves;
-      case 'dumbbell': return Dumbbell;
-      default: return Activity;
-    }
-  }
 </script>
 
 <svelte:head>
@@ -468,19 +457,13 @@
           </div>
 
           <!-- Legend -->
-          <div class="flex items-center justify-center gap-4 mt-4 text-xs text-gray-400">
-            <div class="flex items-center gap-1">
-              <div class="p-1 rounded-full bg-cardio-100 dark:bg-cardio-900/30">
-                <Footprints size={10} class="text-cardio-500" />
+          <div class="flex items-center justify-center flex-wrap gap-3 mt-4 text-xs text-gray-400">
+            {#each LEGEND_ICONS.slice(0, 4) as { icon: IconComponent, label }}
+              <div class="flex items-center gap-1">
+                <svelte:component this={IconComponent} size={12} class="text-gray-500" />
+                <span>{label}</span>
               </div>
-              <span>Cardio</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <div class="p-1 rounded-full bg-strength-100 dark:bg-strength-900/30">
-                <Dumbbell size={10} class="text-strength-500" />
-              </div>
-              <span>Strength</span>
-            </div>
+            {/each}
           </div>
         {:else}
           <div class="h-48 flex items-center justify-center text-gray-400">
