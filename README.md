@@ -4,6 +4,11 @@
 
 A personal fitness tracking app for daily logs, nutrition, progress photos, and body measurements.
 
+<p align="center">
+  <img src=".media/Dashboard.png" width="45%" alt="Dashboard" />
+  <img src=".media/DailyLog.png" width="45%" alt="Daily Log" />
+</p>
+
 ## Features
 
 - **Daily Log** - Track weight, sleep, energy levels, and notes
