@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
+  import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
@@ -44,6 +44,16 @@
   let loading = true;
   let expandedActivity: number | null = null;
   let selectedDate = format(new Date(), 'yyyy-MM-dd');
+  let editingActivity: ActivityType | null = null;
+
+  // Form fields for editing
+  let formName = '';
+  let formActivityType: 'cardio' | 'strength' = 'cardio';
+  let formDuration: string = '';
+  let formCalories: string = '';
+  let formDistance: string = '';
+  let formUrl = '';
+  let formNotes = '';
 
   async function loadActivities() {
     loading = true;
@@ -105,6 +115,33 @@
     }
   }
 
+  function resetForm() {
+    editingActivity = null;
+    formName = '';
+    formActivityType = 'cardio';
+    formDuration = '';
+    formCalories = '';
+    formDistance = '';
+    formUrl = '';
+    formNotes = '';
+    selectedTags = [];
+    selectedTimeOfDay = null;
+  }
+
+  function openEditForm(activity: ActivityType) {
+    editingActivity = activity;
+    formName = activity.name;
+    formActivityType = activity.activity_type;
+    formDuration = activity.duration_mins?.toString() || '';
+    formCalories = activity.calories?.toString() || '';
+    formDistance = activity.distance_km ? formatDistance(activity.distance_km, $settings.distance_unit).replace(/[^\d.]/g, '') : '';
+    formUrl = activity.url || '';
+    formNotes = activity.notes || '';
+    selectedTags = activity.tags ? activity.tags.split(',') : [];
+    selectedTimeOfDay = activity.time_of_day || null;
+    showForm = true;
+  }
+
   function toggleExpanded(activityId: number) {
     expandedActivity = expandedActivity === activityId ? null : activityId;
   }
@@ -124,18 +161,21 @@
       url: urlValue || undefined,
       notes: formData.get('notes') as string,
       tags: selectedTags.join(','),
-      exercises: [],
+      exercises: editingActivity?.exercises || [],
     };
 
     try {
-      await api.createActivity(data);
+      if (editingActivity) {
+        await api.updateActivity(editingActivity.id, data);
+      } else {
+        await api.createActivity(data);
+      }
       showForm = false;
-      selectedTags = [];
-      selectedTimeOfDay = null;
+      resetForm();
       loadActivities();
       loadRecentActivities();
     } catch (err) {
-      console.error('Failed to create activity:', err);
+      console.error('Failed to save activity:', err);
     }
   }
 
@@ -187,7 +227,7 @@
     <!-- Add Activity Button -->
     {#if !$isViewingOther}
       <div class="flex justify-center mt-4">
-        <button on:click={() => (showForm = !showForm)} class="btn-primary flex items-center gap-2">
+        <button on:click={() => { resetForm(); showForm = !showForm; }} class="btn-primary flex items-center gap-2">
           <Plus size={20} />
           Add Activity
         </button>
@@ -195,21 +235,22 @@
     {/if}
   </div>
 
-  <!-- Add activity form -->
+  <!-- Add/Edit activity form -->
   {#if showForm && !$isViewingOther}
     <form on:submit|preventDefault={handleSubmit} class="card p-6 mb-6">
+      <h3 class="text-lg font-semibold mb-4">{editingActivity ? 'Edit Activity' : 'Add Activity'}</h3>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label for="activity-date" class="label">Date</label>
-          <input id="activity-date" type="date" name="date" value={selectedDate} class="input" />
+          <input id="activity-date" type="date" name="date" value={editingActivity?.date || selectedDate} class="input" />
         </div>
         <div>
           <label for="activity-name" class="label">Name</label>
-          <input id="activity-name" type="text" name="name" required placeholder="Morning Run" class="input" />
+          <input id="activity-name" type="text" name="name" required placeholder="Morning Run" class="input" bind:value={formName} />
         </div>
         <div>
           <label for="activity-type" class="label">Type</label>
-          <select id="activity-type" name="activity_type" class="input">
+          <select id="activity-type" name="activity_type" class="input" bind:value={formActivityType}>
             <option value="cardio">Cardio</option>
             <option value="strength">Strength</option>
           </select>
@@ -237,19 +278,19 @@
         </div>
         <div>
           <label for="duration" class="label">Duration (mins)</label>
-          <input id="duration" type="number" name="duration_mins" placeholder="30" class="input" />
+          <input id="duration" type="number" name="duration_mins" placeholder="30" class="input" bind:value={formDuration} />
         </div>
         <div>
           <label for="calories" class="label">Calories</label>
-          <input id="calories" type="number" name="calories" placeholder="250" class="input" />
+          <input id="calories" type="number" name="calories" placeholder="250" class="input" bind:value={formCalories} />
         </div>
         <div>
           <label for="distance" class="label">Distance ({getDistanceLabel($settings.distance_unit)})</label>
-          <input id="distance" type="number" name="distance" step="0.01" placeholder="5.00" class="input" />
+          <input id="distance" type="number" name="distance" step="0.01" placeholder="5.00" class="input" bind:value={formDistance} />
         </div>
         <div class="md:col-span-3">
           <label for="url" class="label">External Link (Strava, Hevy, Garmin)</label>
-          <input id="url" type="url" name="url" placeholder="https://www.strava.com/activities/..." class="input" />
+          <input id="url" type="url" name="url" placeholder="https://www.strava.com/activities/..." class="input" bind:value={formUrl} />
         </div>
       </div>
 
@@ -276,14 +317,14 @@
 
       <div class="mt-4">
         <label for="notes" class="label">Notes</label>
-        <textarea id="notes" name="notes" rows={2} placeholder="How did it feel?" class="input resize-none"></textarea>
+        <textarea id="notes" name="notes" rows={2} placeholder="How did it feel?" class="input resize-none" bind:value={formNotes}></textarea>
       </div>
 
       <div class="mt-6 flex justify-end gap-3">
-        <button type="button" on:click={() => { showForm = false; selectedTags = []; selectedTimeOfDay = null; }} class="btn-secondary">
+        <button type="button" on:click={() => { showForm = false; resetForm(); }} class="btn-secondary">
           Cancel
         </button>
-        <button type="submit" class="btn-primary">Save Activity</button>
+        <button type="submit" class="btn-primary">{editingActivity ? 'Update Activity' : 'Save Activity'}</button>
       </div>
     </form>
   {/if}
@@ -432,9 +473,16 @@
                   </div>
                 {/if}
 
-                <!-- Delete button -->
+                <!-- Edit/Delete buttons -->
                 {#if !$isViewingOther}
-                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-end">
+                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-end gap-2">
+                    <button
+                      on:click|stopPropagation={() => openEditForm(activity)}
+                      class="flex items-center gap-2 px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors"
+                    >
+                      <Pencil size={16} />
+                      Edit
+                    </button>
                     <button
                       on:click|stopPropagation={() => deleteActivity(activity.id)}
                       class="flex items-center gap-2 px-3 py-1.5 text-sm text-accent-600 hover:bg-accent-50 dark:hover:bg-accent-900/20 rounded-lg transition-colors"

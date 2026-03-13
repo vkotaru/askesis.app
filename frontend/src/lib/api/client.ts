@@ -345,6 +345,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  updateActivity: (id: number, data: ActivityInput) =>
+    fetchJSON<Activity>(`/api/activities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   deleteActivity: (id: number) =>
     fetchJSON(`/api/activities/${id}`, { method: 'DELETE' }),
   getCalendar: (year: number, month: number, userId?: number) => {
