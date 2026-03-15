@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, addDays, subDays, parseISO } from 'date-fns';
-  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet, Pencil, Check } from 'lucide-svelte';
+  import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet, Pencil, Check, UtensilsCrossed, ChevronDown, ChevronUp } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
+  import FoodSearch from '$lib/components/FoodSearch.svelte';
+  import FoodItemForm from '$lib/components/FoodItemForm.svelte';
   import { clsx } from 'clsx';
-  import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition } from '$lib/api/client';
+  import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition, type FoodItem, type MealFoodItemInput } from '$lib/api/client';
   import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
@@ -29,6 +31,13 @@
   let editingMealId: number | null = null;
   let editMealData: MealInput = { date: '', label: '' };
   let savingMeal = false;
+
+  // Food items for new meal form
+  let selectedFoodItems: { food: FoodItem; quantity: number; notes?: string }[] = [];
+  let newMealFoodItems: MealFoodItemInput[] = [];
+  let showFoodItemForm = false;
+  let foodItemInitialName = '';
+  let expandedMealId: number | null = null;
 
   // Editable macro fields (protein, carbs, fat - calories come from meals)
   let editingMacros = false;
@@ -101,6 +110,7 @@
       time: timeValue || undefined,  // Convert empty string to undefined
       calories: parseInt(formData.get('calories') as string) || photoAnalysis?.calories || undefined,
       description: formData.get('description') as string || photoAnalysis?.description || undefined,
+      food_items: newMealFoodItems.length > 0 ? newMealFoodItems : undefined,
     };
 
     try {
@@ -113,6 +123,8 @@
 
       showForm = false;
       clearPhotoPreview();
+      selectedFoodItems = [];
+      newMealFoodItems = [];
       loadMeals();
     } catch (err) {
       console.error('Failed to create meal:', err);
@@ -136,6 +148,11 @@
       time: meal.time || undefined,
       calories: meal.calories || undefined,
       description: meal.description || undefined,
+      food_items: meal.food_items?.map(fi => ({
+        food_item_id: fi.food_item_id,
+        quantity: fi.quantity,
+        notes: fi.notes,
+      })),
     };
   }
 
@@ -480,6 +497,27 @@
                   {#if meal.description}
                     <p class="mt-1 text-gray-600 dark:text-gray-400 truncate">{meal.description}</p>
                   {/if}
+                  {#if meal.food_items && meal.food_items.length > 0}
+                    <button
+                      type="button"
+                      on:click={() => expandedMealId = expandedMealId === meal.id ? null : meal.id}
+                      class="mt-1 text-xs text-primary-500 hover:underline flex items-center gap-1"
+                    >
+                      <UtensilsCrossed size={12} />
+                      {meal.food_items.length} food item{meal.food_items.length !== 1 ? 's' : ''}
+                      {#if expandedMealId === meal.id}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
+                    </button>
+                    {#if expandedMealId === meal.id}
+                      <div class="mt-2 space-y-1">
+                        {#each meal.food_items as fi}
+                          <div class="text-xs text-gray-500 flex justify-between px-2 py-1 bg-gray-50 dark:bg-gray-800 rounded">
+                            <span>{fi.food_item_name} <span class="text-gray-400">x{fi.quantity}</span></span>
+                            <span>{fi.calories ? `${fi.calories} cal` : ''}</span>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                  {/if}
                 </div>
 
                 <div class="flex items-center gap-3 flex-shrink-0">
@@ -591,6 +629,23 @@
         />
       </div>
 
+      <!-- Food items section -->
+      <div class="mb-4">
+        <span class="label flex items-center gap-2">
+          <UtensilsCrossed size={16} class="text-nutrition-500" />
+          Food Items
+          <span class="text-xs text-gray-400 font-normal">(optional)</span>
+          <a href="/nutrition/foods" class="text-xs text-primary-500 hover:underline ml-auto font-normal">Manage foods</a>
+        </span>
+        <div class="mt-2">
+          <FoodSearch
+            bind:selectedFoods={selectedFoodItems}
+            on:change={(e) => { newMealFoodItems = e.detail; }}
+            on:createNew={(e) => { foodItemInitialName = e.detail; showFoodItemForm = true; }}
+          />
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="label">Label</label>
@@ -605,7 +660,14 @@
           <input type="time" name="time" class="input" />
         </div>
         <div>
-          <label class="label">Calories {#if photoAnalysis?.calories}<span class="text-xs text-accent-500">(AI: {photoAnalysis.calories})</span>{/if}</label>
+          <label class="label">
+            Calories
+            {#if newMealFoodItems.length > 0}
+              <span class="text-xs text-gray-400">(auto-calculated if empty)</span>
+            {:else if photoAnalysis?.calories}
+              <span class="text-xs text-accent-500">(AI: {photoAnalysis.calories})</span>
+            {/if}
+          </label>
           <input
             type="number"
             name="calories"
@@ -624,7 +686,7 @@
         </div>
       </div>
       <div class="mt-4 flex justify-end gap-3">
-        <button type="button" on:click={() => { showForm = false; clearPhotoPreview(); }} class="btn-secondary">
+        <button type="button" on:click={() => { showForm = false; clearPhotoPreview(); selectedFoodItems = []; newMealFoodItems = []; }} class="btn-secondary">
           Cancel
         </button>
         <button type="submit" class="btn-primary" disabled={analyzingPhoto}>
@@ -665,4 +727,15 @@
   dataType="meals"
   title="Import Meals"
   on:success={() => loadData()}
+/>
+
+<FoodItemForm
+  bind:show={showFoodItemForm}
+  initialName={foodItemInitialName}
+  on:saved={(e) => {
+    // Add newly created food to the selection
+    const food = e.detail;
+    selectedFoodItems = [...selectedFoodItems, { food, quantity: 1 }];
+    newMealFoodItems = [...newMealFoodItems, { food_item_id: food.id, quantity: 1 }];
+  }}
 />
