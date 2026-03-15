@@ -121,9 +121,9 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
     headers = [
         "date",
         "Weight (kg)",
-        "Meal 1",
-        "Meal 2",
-        "Meal 3",
+        "Breakfast",
+        "Lunch",
+        "Dinner",
         "Snacks",
         "Water (L)",
         "Total Cals",
@@ -132,6 +132,7 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
         "Carbs (g)",
         "Fat (g)",
         "Active Cals",
+        "Sleep (hrs)",
         "Missed Out",
     ]
 
@@ -153,11 +154,11 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
             # Map meal labels to columns
             label = meal.label.lower()
             if "breakfast" in label or "meal 1" in label:
-                col = "Meal 1"
+                col = "Breakfast"
             elif "lunch" in label or "meal 2" in label:
-                col = "Meal 2"
+                col = "Lunch"
             elif "dinner" in label or "meal 3" in label:
-                col = "Meal 3"
+                col = "Dinner"
             else:
                 col = "Snacks"
             meals_by_date[meal.date][col] += meal.calories
@@ -197,9 +198,9 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
         row = [
             d.isoformat(),
             log.weight if log and log.weight else "",
-            meal_data.get("Meal 1", "") or "",
-            meal_data.get("Meal 2", "") or "",
-            meal_data.get("Meal 3", "") or "",
+            meal_data.get("Breakfast", "") or "",
+            meal_data.get("Lunch", "") or "",
+            meal_data.get("Dinner", "") or "",
             meal_data.get("Snacks", "") or "",
             round(log.water_ml / 1000, 2) if log and log.water_ml else "",
             total_cals_by_date.get(d, "") or "",
@@ -208,6 +209,7 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
             nutr.carbs_g if nutr and nutr.carbs_g else "",
             nutr.fat_g if nutr and nutr.fat_g else "",
             active_cals_by_date.get(d, "") or "",
+            log.sleep_hours if log and log.sleep_hours else "",
             log.notes if log and log.notes else "",
         ]
         data.append(row)
