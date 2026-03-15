@@ -33,6 +33,45 @@ export type DailyNutritionInput = Omit<DailyNutrition, 'id' | 'user_id'>;
 
 export type DailyLogInput = Omit<DailyLog, 'id'>;
 
+export interface FoodItem {
+  id: number;
+  user_id?: number;
+  name: string;
+  brand?: string;
+  category?: string;
+  serving_size: number;
+  serving_unit: string;
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  fiber_g?: number;
+  is_shared: boolean;
+  source?: string;
+}
+
+export type FoodItemInput = Omit<FoodItem, 'id' | 'user_id' | 'source'>;
+
+export interface MealFoodItem {
+  id: number;
+  food_item_id: number;
+  food_item_name: string;
+  serving_size: number;
+  serving_unit: string;
+  quantity: number;
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  notes?: string;
+}
+
+export interface MealFoodItemInput {
+  food_item_id: number;
+  quantity: number;
+  notes?: string;
+}
+
 export interface Meal {
   id: number;
   date: string;
@@ -44,9 +83,21 @@ export interface Meal {
   drive_file_id?: string;
   ai_analysis?: string;
   photo_url?: string;
+  food_items?: MealFoodItem[];
+  computed_calories?: number;
+  computed_protein_g?: number;
+  computed_carbs_g?: number;
+  computed_fat_g?: number;
 }
 
-export type MealInput = Omit<Meal, 'id' | 'photo_path' | 'drive_file_id' | 'ai_analysis' | 'photo_url'>;
+export interface MealInput {
+  date: string;
+  label: string;
+  time?: string;
+  calories?: number;
+  description?: string;
+  food_items?: MealFoodItemInput[];
+}
 
 export interface FoodAnalysis {
   calories?: number;
@@ -345,6 +396,29 @@ export const api = {
     return fetchFormData<FoodAnalysis>('/api/nutrition/analyze-photo', formData);
   },
   getMealPhotoUrl: (mealId: number) => `/api/nutrition/meals/${mealId}/photo`,
+
+  // Food Items
+  searchFoods: (q?: string, category?: string, userOnly = false, limit = 50) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (category) params.set('category', category);
+    if (userOnly) params.set('user_only', 'true');
+    if (limit) params.set('limit', limit.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return fetchJSON<FoodItem[]>(`/api/nutrition/foods${query}`);
+  },
+  createFoodItem: (data: FoodItemInput) =>
+    fetchJSON<FoodItem>('/api/nutrition/foods', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateFoodItem: (id: number, data: FoodItemInput) =>
+    fetchJSON<FoodItem>(`/api/nutrition/foods/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteFoodItem: (id: number) =>
+    fetchJSON(`/api/nutrition/foods/${id}`, { method: 'DELETE' }),
 
   // Activities
   getActivities: (startDate?: string, endDate?: string, userId?: number, limit?: number) => {

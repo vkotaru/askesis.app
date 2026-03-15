@@ -26,7 +26,7 @@ except ImportError:
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, Meal, MealTemplate, UserSettings, DailyNutrition
+from app.models import User, Meal, MealTemplate, UserSettings, DailyNutrition, FoodItem, MealFoodItem
 from app.routers.auth import get_current_user, check_view_permission
 from app import google_drive
 
@@ -49,21 +49,80 @@ def require_drive_access(user: User):
         )
 
 
+class MealFoodItemCreate(BaseModel):
+    food_item_id: int
+    quantity: float = Field(1.0, gt=0, le=100)
+    notes: str | None = None
+
+
+class MealFoodItemResponse(BaseModel):
+    id: int
+    food_item_id: int
+    food_item_name: str
+    serving_size: float
+    serving_unit: str
+    quantity: float
+    calories: int | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    notes: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class MealCreate(BaseModel):
     date: date
     label: str = Field(..., min_length=1, max_length=50)
     time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")  # HH:MM format
     calories: int | None = Field(None, ge=0, le=10000)
     description: str | None = Field(None, max_length=2000)
+    food_items: list[MealFoodItemCreate] = Field(default_factory=list)
 
 
-class MealResponse(MealCreate):
+class MealResponse(BaseModel):
     id: int
     user_id: int
+    date: date
+    label: str
+    time: str | None = None
+    calories: int | None = None
+    description: str | None = None
     photo_path: str | None = None
     drive_file_id: str | None = None
     ai_analysis: str | None = None
     photo_url: str | None = None
+    food_items: list[MealFoodItemResponse] = []
+    computed_calories: int | None = None
+    computed_protein_g: float | None = None
+    computed_carbs_g: float | None = None
+    computed_fat_g: float | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# Food Item schemas
+class FoodItemCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    brand: str | None = Field(None, max_length=200)
+    category: str | None = Field(None, max_length=100)
+    serving_size: float = Field(1.0, gt=0)
+    serving_unit: str = Field("g", max_length=20)
+    calories: int | None = Field(None, ge=0, le=10000)
+    protein_g: float | None = Field(None, ge=0)
+    carbs_g: float | None = Field(None, ge=0)
+    fat_g: float | None = Field(None, ge=0)
+    fiber_g: float | None = Field(None, ge=0)
+    is_shared: bool = True
+
+
+class FoodItemResponse(FoodItemCreate):
+    id: int
+    user_id: int | None = None
+    source: str | None = None
+    created_at: str | None = None
 
     class Config:
         from_attributes = True
@@ -152,10 +211,46 @@ Be conservative with calorie estimates. If you can't identify the food clearly, 
         return None
 
 
+def _compute_meal_nutrition(meal: Meal) -> dict:
+    """Compute total nutrition from food items."""
+    totals = {"calories": 0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0}
+    if not meal.food_items:
+        return {k: None for k in totals}
+    for mfi in meal.food_items:
+        fi = mfi.food_item
+        if fi.calories:
+            totals["calories"] += round(fi.calories * mfi.quantity)
+        if fi.protein_g:
+            totals["protein_g"] += round(fi.protein_g * mfi.quantity, 1)
+        if fi.carbs_g:
+            totals["carbs_g"] += round(fi.carbs_g * mfi.quantity, 1)
+        if fi.fat_g:
+            totals["fat_g"] += round(fi.fat_g * mfi.quantity, 1)
+    return totals
+
+
+def _food_item_response(mfi: MealFoodItem) -> dict:
+    """Convert MealFoodItem to response dict with computed nutrition."""
+    fi = mfi.food_item
+    return {
+        "id": mfi.id,
+        "food_item_id": fi.id,
+        "food_item_name": fi.name,
+        "serving_size": fi.serving_size,
+        "serving_unit": fi.serving_unit,
+        "quantity": mfi.quantity,
+        "calories": round(fi.calories * mfi.quantity) if fi.calories else None,
+        "protein_g": round(fi.protein_g * mfi.quantity, 1) if fi.protein_g else None,
+        "carbs_g": round(fi.carbs_g * mfi.quantity, 1) if fi.carbs_g else None,
+        "fat_g": round(fi.fat_g * mfi.quantity, 1) if fi.fat_g else None,
+        "notes": mfi.notes,
+    }
+
+
 def meal_to_response(meal: Meal) -> dict:
-    """Convert Meal to response dict with photo URL."""
-    # Photo URL available if either Drive file or legacy local file exists
+    """Convert Meal to response dict with photo URL and food items."""
     has_photo = meal.drive_file_id or meal.photo_path
+    computed = _compute_meal_nutrition(meal)
     return {
         "id": meal.id,
         "user_id": meal.user_id,
@@ -168,6 +263,11 @@ def meal_to_response(meal: Meal) -> dict:
         "drive_file_id": meal.drive_file_id,
         "ai_analysis": meal.ai_analysis,
         "photo_url": f"/api/nutrition/meals/{meal.id}/photo" if has_photo else None,
+        "food_items": [_food_item_response(mfi) for mfi in meal.food_items],
+        "computed_calories": computed["calories"],
+        "computed_protein_g": computed["protein_g"],
+        "computed_carbs_g": computed["carbs_g"],
+        "computed_fat_g": computed["fat_g"],
     }
 
 
@@ -322,8 +422,25 @@ def create_meal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    meal = Meal(user_id=current_user.id, **meal_data.model_dump())
+    food_items_data = meal_data.food_items
+    meal_dict = meal_data.model_dump(exclude={"food_items"})
+
+    meal = Meal(user_id=current_user.id, **meal_dict)
     db.add(meal)
+    db.flush()
+
+    for fi_data in food_items_data:
+        mfi = MealFoodItem(meal_id=meal.id, **fi_data.model_dump())
+        db.add(mfi)
+
+    # Auto-compute calories from food items if not manually set
+    if food_items_data and not meal.calories:
+        db.flush()
+        db.refresh(meal)
+        computed = _compute_meal_nutrition(meal)
+        if computed["calories"]:
+            meal.calories = computed["calories"]
+
     db.commit()
     db.refresh(meal)
     return meal_to_response(meal)
@@ -345,8 +462,22 @@ def update_meal(
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
 
-    for key, value in meal_data.model_dump().items():
+    for key, value in meal_data.model_dump(exclude={"food_items"}).items():
         setattr(meal, key, value)
+
+    # Replace food items
+    db.query(MealFoodItem).filter(MealFoodItem.meal_id == meal_id).delete()
+    for fi_data in meal_data.food_items:
+        mfi = MealFoodItem(meal_id=meal.id, **fi_data.model_dump())
+        db.add(mfi)
+
+    # Auto-compute calories from food items if not manually set
+    if meal_data.food_items and not meal.calories:
+        db.flush()
+        db.refresh(meal)
+        computed = _compute_meal_nutrition(meal)
+        if computed["calories"]:
+            meal.calories = computed["calories"]
 
     db.commit()
     db.refresh(meal)
@@ -606,6 +737,18 @@ def copy_meals_from_yesterday(
             description=meal.description,
         )
         db.add(new_meal)
+        db.flush()
+
+        # Copy food items
+        for mfi in meal.food_items:
+            new_mfi = MealFoodItem(
+                meal_id=new_meal.id,
+                food_item_id=mfi.food_item_id,
+                quantity=mfi.quantity,
+                notes=mfi.notes,
+            )
+            db.add(new_mfi)
+
         new_meals.append(new_meal)
 
     db.commit()
@@ -632,3 +775,100 @@ def create_template(
     db.commit()
     db.refresh(template)
     return template
+
+
+# Food Items
+@router.get("/foods", response_model=list[FoodItemResponse])
+def search_foods(
+    q: str | None = None,
+    category: str | None = None,
+    user_only: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search food items. Returns shared items + user's own."""
+    from sqlalchemy import or_
+
+    query = db.query(FoodItem)
+
+    if user_only:
+        query = query.filter(FoodItem.user_id == current_user.id)
+    else:
+        query = query.filter(
+            or_(FoodItem.is_shared == True, FoodItem.user_id == current_user.id)  # noqa: E712
+        )
+
+    if q:
+        query = query.filter(FoodItem.name.ilike(f"%{q}%"))
+    if category:
+        query = query.filter(FoodItem.category == category)
+
+    return query.order_by(FoodItem.name).limit(limit).all()
+
+
+@router.post("/foods", response_model=FoodItemResponse)
+def create_food_item(
+    data: FoodItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new food item."""
+    food = FoodItem(user_id=current_user.id, source="manual", **data.model_dump())
+    db.add(food)
+    db.commit()
+    db.refresh(food)
+    return food
+
+
+@router.put("/foods/{food_id}", response_model=FoodItemResponse)
+def update_food_item(
+    food_id: int,
+    data: FoodItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update a food item (owner only)."""
+    food = (
+        db.query(FoodItem)
+        .filter(FoodItem.id == food_id, FoodItem.user_id == current_user.id)
+        .first()
+    )
+    if not food:
+        raise HTTPException(status_code=404, detail="Food item not found")
+
+    for key, value in data.model_dump().items():
+        setattr(food, key, value)
+    db.commit()
+    db.refresh(food)
+    return food
+
+
+@router.delete("/foods/{food_id}")
+def delete_food_item(
+    food_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a food item (owner only, blocked if referenced by meals)."""
+    food = (
+        db.query(FoodItem)
+        .filter(FoodItem.id == food_id, FoodItem.user_id == current_user.id)
+        .first()
+    )
+    if not food:
+        raise HTTPException(status_code=404, detail="Food item not found")
+
+    # Check if referenced by any meals
+    ref_count = (
+        db.query(MealFoodItem).filter(MealFoodItem.food_item_id == food_id).count()
+    )
+    if ref_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete: food item is used in {ref_count} meal(s)",
+        )
+
+    db.delete(food)
+    db.commit()
+    return {"ok": True}

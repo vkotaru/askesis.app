@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, date
 from sqlalchemy import (
     String,
@@ -139,6 +141,59 @@ class Meal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="meals")
+    food_items: Mapped[list["MealFoodItem"]] = relationship(
+        back_populates="meal", cascade="all, delete-orphan"
+    )
+
+
+class FoodItem(Base):
+    """Custom food database shared across users."""
+
+    __tablename__ = "food_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id")
+    )  # NULL = system/seed item
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    brand: Mapped[str | None] = mapped_column(String(200))
+    category: Mapped[str | None] = mapped_column(String(100))
+    # Nutrition per serving
+    serving_size: Mapped[float] = mapped_column(Float, default=1.0)
+    serving_unit: Mapped[str] = mapped_column(String(20), default="g")
+    calories: Mapped[int | None] = mapped_column(Integer)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
+    fiber_g: Mapped[float | None] = mapped_column(Float)
+    is_shared: Mapped[bool] = mapped_column(Boolean, default=True)
+    source: Mapped[str | None] = mapped_column(String(50))  # manual, ai_analysis
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User | None"] = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "brand", name="unique_food_item"),
+    )
+
+
+class MealFoodItem(Base):
+    """Links food items to meals with quantity."""
+
+    __tablename__ = "meal_food_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meal_id: Mapped[int] = mapped_column(
+        ForeignKey("meals.id", ondelete="CASCADE"), index=True
+    )
+    food_item_id: Mapped[int] = mapped_column(
+        ForeignKey("food_items.id"), index=True
+    )
+    quantity: Mapped[float] = mapped_column(Float, default=1.0)  # number of servings
+    notes: Mapped[str | None] = mapped_column(String(255))
+
+    meal: Mapped["Meal"] = relationship(back_populates="food_items")
+    food_item: Mapped["FoodItem"] = relationship("FoodItem")
 
 
 class DailyNutrition(Base):
