@@ -52,6 +52,21 @@ export interface FoodItem {
 
 export type FoodItemInput = Omit<FoodItem, 'id' | 'user_id' | 'source'>;
 
+export interface ExternalFoodResult {
+  external_id: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  serving_size: number;
+  serving_unit: string;
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  fiber_g?: number;
+  source: string;
+}
+
 export interface MealFoodItem {
   id: number;
   food_item_id: number;
@@ -419,6 +434,15 @@ export const api = {
     }),
   deleteFoodItem: (id: number) =>
     fetchJSON(`/api/nutrition/foods/${id}`, { method: 'DELETE' }),
+  searchExternalFoods: (q: string, limit = 15) => {
+    const params = new URLSearchParams({ q, limit: limit.toString() });
+    return fetchJSON<ExternalFoodResult[]>(`/api/nutrition/foods/search-external?${params}`);
+  },
+  importExternalFood: (data: ExternalFoodResult) =>
+    fetchJSON<FoodItem>('/api/nutrition/foods/import-external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Activities
   getActivities: (startDate?: string, endDate?: string, userId?: number, limit?: number) => {
