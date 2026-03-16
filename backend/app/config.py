@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     token_expire_hours: int = 720  # 30 days - stay logged in longer
 
     # External food databases
-    usda_api_key: str = ""  # Get free key at https://fdc.nal.usda.gov/api-key-signup.html
+    usda_api_key: str = (
+        ""  # Get free key at https://fdc.nal.usda.gov/api-key-signup.html
+    )
 
     # File upload limits (in bytes)
     max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)

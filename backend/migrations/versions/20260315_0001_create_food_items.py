@@ -27,9 +27,7 @@ def upgrade() -> None:
         sa.Column("brand", sa.String(200), nullable=True),
         sa.Column("category", sa.String(100), nullable=True),
         sa.Column("serving_size", sa.Float(), nullable=False, server_default="1.0"),
-        sa.Column(
-            "serving_unit", sa.String(20), nullable=False, server_default="g"
-        ),
+        sa.Column("serving_unit", sa.String(20), nullable=False, server_default="g"),
         sa.Column("calories", sa.Integer(), nullable=True),
         sa.Column("protein_g", sa.Float(), nullable=True),
         sa.Column("carbs_g", sa.Float(), nullable=True),
@@ -53,9 +51,7 @@ def upgrade() -> None:
         sa.Column("food_item_id", sa.Integer(), nullable=False),
         sa.Column("quantity", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("notes", sa.String(255), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["meal_id"], ["meals.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["meal_id"], ["meals.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["food_item_id"], ["food_items.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -74,9 +70,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_meal_food_items_food_item_id"), table_name="meal_food_items"
-    )
+    op.drop_index(op.f("ix_meal_food_items_food_item_id"), table_name="meal_food_items")
     op.drop_index(op.f("ix_meal_food_items_meal_id"), table_name="meal_food_items")
     op.drop_table("meal_food_items")
     op.drop_index(op.f("ix_food_items_name"), table_name="food_items")

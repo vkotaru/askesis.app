@@ -26,7 +26,15 @@ except ImportError:
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, Meal, MealTemplate, UserSettings, DailyNutrition, FoodItem, MealFoodItem
+from app.models import (
+    User,
+    Meal,
+    MealTemplate,
+    UserSettings,
+    DailyNutrition,
+    FoodItem,
+    MealFoodItem,
+)
 from app.routers.auth import get_current_user, check_view_permission
 from app import google_drive
 
