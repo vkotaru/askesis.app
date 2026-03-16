@@ -203,7 +203,7 @@
       >
         <ChevronLeft size={20} />
       </button>
-      <div class="relative min-w-0 flex-1 max-w-[200px]">
+      <div class="relative w-[180px]">
         <input
           type="date"
           value={selectedDate}
