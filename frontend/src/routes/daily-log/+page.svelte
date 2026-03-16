@@ -199,28 +199,23 @@
       <button
         type="button"
         on:click={prevDay}
-        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex-shrink-0"
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
       >
         <ChevronLeft size={20} />
       </button>
-      <div class="relative w-[180px]">
-        <input
-          type="date"
-          value={selectedDate}
-          on:change={handleDateChange}
-          class={clsx(
-            'input w-full text-center',
-            hasData && 'border-primary-300 dark:border-primary-700'
-          )}
-        />
-        {#if hasData}
-          <div class="absolute -top-1 -right-1 w-3 h-3 bg-primary-500 rounded-full border-2 border-white dark:border-gray-800"></div>
-        {/if}
-      </div>
+      <input
+        type="date"
+        value={selectedDate}
+        on:change={handleDateChange}
+        class={clsx(
+          'input !w-auto max-w-[180px] text-center',
+          hasData && 'border-primary-300 dark:border-primary-700'
+        )}
+      />
       <button
         type="button"
         on:click={nextDay}
-        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex-shrink-0"
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
       >
         <ChevronRight size={20} />
       </button>
