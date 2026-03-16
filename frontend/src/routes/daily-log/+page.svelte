@@ -199,17 +199,17 @@
       <button
         type="button"
         on:click={prevDay}
-        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex-shrink-0"
       >
         <ChevronLeft size={20} />
       </button>
-      <div class="relative">
+      <div class="relative min-w-0">
         <input
           type="date"
           value={selectedDate}
           on:change={handleDateChange}
           class={clsx(
-            'input max-w-[180px] text-center',
+            'input w-full max-w-[180px] text-center',
             hasData && 'border-primary-300 dark:border-primary-700'
           )}
         />
@@ -220,7 +220,7 @@
       <button
         type="button"
         on:click={nextDay}
-        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex-shrink-0"
       >
         <ChevronRight size={20} />
       </button>
