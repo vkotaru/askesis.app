@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]  # Override in production
     token_expire_hours: int = 720  # 30 days - stay logged in longer
 
+    # External food databases
+    usda_api_key: str = ""  # Get free key at https://fdc.nal.usda.gov/api-key-signup.html
+
     # File upload limits (in bytes)
     max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)
     max_csv_size: int = 10 * 1024 * 1024  # 10MB

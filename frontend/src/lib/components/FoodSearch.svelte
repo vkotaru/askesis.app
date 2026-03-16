@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { Search, Plus, X, Minus } from 'lucide-svelte';
-  import { api, type FoodItem, type MealFoodItemInput } from '$lib/api/client';
+  import { Search, Plus, X, Minus, Globe, Download } from 'lucide-svelte';
+  import { api, type FoodItem, type MealFoodItemInput, type ExternalFoodResult } from '$lib/api/client';
 
   export let selectedFoods: { food: FoodItem; quantity: number; notes?: string }[] = [];
 
@@ -12,12 +12,16 @@
 
   let query = '';
   let results: FoodItem[] = [];
+  let externalResults: ExternalFoodResult[] = [];
   let searching = false;
+  let searchingExternal = false;
   let showDropdown = false;
   let debounceTimer: ReturnType<typeof setTimeout>;
+  let importingId: string | null = null;
 
   function handleInput() {
     clearTimeout(debounceTimer);
+    externalResults = [];
     if (!query.trim()) {
       results = [];
       showDropdown = false;
@@ -28,6 +32,21 @@
       try {
         results = await api.searchFoods(query);
         showDropdown = true;
+
+        // If local results are sparse, search external DBs
+        if (results.length < 5 && query.trim().length >= 2) {
+          searchingExternal = true;
+          try {
+            externalResults = await api.searchExternalFoods(query);
+            // Filter out items that match local results by name
+            const localNames = new Set(results.map(r => r.name.toLowerCase()));
+            externalResults = externalResults.filter(r => !localNames.has(r.name.toLowerCase()));
+          } catch (err) {
+            console.error('External search failed:', err);
+          } finally {
+            searchingExternal = false;
+          }
+        }
       } catch (err) {
         console.error('Search failed:', err);
       } finally {
@@ -43,7 +62,20 @@
     query = '';
     showDropdown = false;
     results = [];
+    externalResults = [];
     emitChange();
+  }
+
+  async function importAndAdd(ext: ExternalFoodResult) {
+    importingId = ext.external_id;
+    try {
+      const food = await api.importExternalFood(ext);
+      addFood(food);
+    } catch (err) {
+      console.error('Import failed:', err);
+    } finally {
+      importingId = null;
+    }
   }
 
   function removeFood(index: number) {
@@ -86,6 +118,12 @@
     setTimeout(() => { showDropdown = false; }, 200);
   }
 
+  function sourceLabel(source: string): string {
+    if (source === 'usda') return 'USDA';
+    if (source === 'openfoodfacts') return 'Open Food Facts';
+    return source;
+  }
+
   $: totals = selectedFoods.reduce(
     (acc, { food, quantity }) => ({
       calories: acc.calories + (food.calories ? Math.round(food.calories * quantity) : 0),
@@ -106,7 +144,7 @@
         type="text"
         bind:value={query}
         on:input={handleInput}
-        on:focus={() => { if (results.length) showDropdown = true; }}
+        on:focus={() => { if (results.length || externalResults.length) showDropdown = true; }}
         on:blur={handleBlur}
         placeholder="Search foods..."
         class="input pl-9"
@@ -120,12 +158,14 @@
 
     <!-- Dropdown results -->
     {#if showDropdown}
-      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-        {#if results.length === 0 && query.trim()}
+      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-80 overflow-y-auto">
+        {#if results.length === 0 && externalResults.length === 0 && !searchingExternal && query.trim()}
           <div class="p-3 text-sm text-gray-500">
             No foods found for "{query}"
           </div>
         {/if}
+
+        <!-- Local results -->
         {#each results as food}
           <button
             type="button"
@@ -147,10 +187,53 @@
             {/if}
           </button>
         {/each}
+
+        <!-- External results -->
+        {#if externalResults.length > 0}
+          <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border-t border-b border-gray-200 dark:border-gray-700 flex items-center gap-1.5">
+            <Globe size={12} class="text-gray-400" />
+            <span class="text-xs text-gray-500 font-medium">External databases</span>
+          </div>
+          {#each externalResults as ext}
+            <button
+              type="button"
+              class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between border-b border-gray-100 dark:border-gray-700 last:border-0"
+              on:mousedown|preventDefault={() => importAndAdd(ext)}
+              disabled={importingId === ext.external_id}
+            >
+              <div>
+                <span class="font-medium text-sm">{ext.name}</span>
+                {#if ext.brand}
+                  <span class="text-xs text-gray-400 ml-1">({ext.brand})</span>
+                {/if}
+                <div class="text-xs text-gray-500">
+                  {ext.serving_size}{ext.serving_unit}
+                  {#if ext.calories} · {ext.calories} cal{/if}
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 rounded-full text-blue-500">{sourceLabel(ext.source)}</span>
+                {#if importingId === ext.external_id}
+                  <div class="w-3 h-3 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin"></div>
+                {:else}
+                  <Download size={12} class="text-gray-400" />
+                {/if}
+              </div>
+            </button>
+          {/each}
+        {/if}
+
+        {#if searchingExternal}
+          <div class="px-3 py-2 flex items-center gap-2 text-xs text-gray-400">
+            <div class="w-3 h-3 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin"></div>
+            Searching external databases...
+          </div>
+        {/if}
+
         {#if query.trim()}
           <button
             type="button"
-            class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-primary-500 text-sm font-medium"
+            class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-primary-500 text-sm font-medium border-t border-gray-100 dark:border-gray-700"
             on:mousedown|preventDefault={handleCreateNew}
           >
             <Plus size={14} />

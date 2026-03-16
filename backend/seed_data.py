@@ -24,6 +24,7 @@ from app.models import (
     TimeOfDay,
     BodyMeasurement,
     DataShare,
+    FoodItem,
 )
 
 
@@ -380,6 +381,42 @@ def seed_measurements(db: Session, user: User, weeks: int = 8):
     print(f"  Created measurements for {user.name}")
 
 
+def seed_foods(db: Session):
+    """Seed common food items from common_foods.json."""
+    import json
+    import os
+
+    # Skip if foods already exist
+    if db.query(FoodItem).first():
+        print("  Food items already seeded, skipping.")
+        return
+
+    json_path = os.path.join(os.path.dirname(__file__), "common_foods.json")
+    with open(json_path) as f:
+        foods = json.load(f)
+
+    for item in foods:
+        food = FoodItem(
+            user_id=None,  # system/seed item
+            name=item["name"],
+            brand=item.get("brand"),
+            category=item.get("category"),
+            serving_size=item.get("serving_size", 1.0),
+            serving_unit=item.get("serving_unit", "g"),
+            calories=item.get("calories"),
+            protein_g=item.get("protein_g"),
+            carbs_g=item.get("carbs_g"),
+            fat_g=item.get("fat_g"),
+            fiber_g=item.get("fiber_g"),
+            is_shared=True,
+            source="seed",
+        )
+        db.add(food)
+
+    db.commit()
+    print(f"  Seeded {len(foods)} food items from common_foods.json")
+
+
 def main():
     """Main entry point."""
     print("=" * 50)
@@ -402,6 +439,8 @@ def main():
             seed_nutrition(db, user)
             seed_activities(db, user)
             seed_measurements(db, user)
+
+        seed_foods(db)
 
         print("\n" + "=" * 50)
         print("Seeding complete!")

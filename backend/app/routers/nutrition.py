@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 from PIL import Image, ImageOps
 
 try:
@@ -122,7 +122,7 @@ class FoodItemResponse(FoodItemCreate):
     id: int
     user_id: int | None = None
     source: str | None = None
-    created_at: str | None = None
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -815,6 +815,77 @@ def create_food_item(
 ):
     """Create a new food item."""
     food = FoodItem(user_id=current_user.id, source="manual", **data.model_dump())
+    db.add(food)
+    db.commit()
+    db.refresh(food)
+    return food
+
+
+# External food search (must be before /foods/{food_id} routes)
+class ExternalFoodResult(BaseModel):
+    external_id: str
+    name: str
+    brand: str | None = None
+    category: str | None = None
+    serving_size: float = 100
+    serving_unit: str = "g"
+    calories: int | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    fiber_g: float | None = None
+    source: str
+
+
+@router.get("/foods/search-external", response_model=list[ExternalFoodResult])
+async def search_external_foods(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(15, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+):
+    """Search USDA + Open Food Facts for foods not in local DB."""
+    from app.food_search import search_external
+
+    return await search_external(q, limit)
+
+
+class ImportExternalFood(BaseModel):
+    external_id: str
+    name: str
+    brand: str | None = None
+    category: str | None = None
+    serving_size: float = 100
+    serving_unit: str = "g"
+    calories: int | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    fiber_g: float | None = None
+    source: str
+
+
+@router.post("/foods/import-external", response_model=FoodItemResponse)
+def import_external_food(
+    data: ImportExternalFood,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import a food from external search into the local database."""
+    food = FoodItem(
+        user_id=current_user.id,
+        name=data.name,
+        brand=data.brand,
+        category=data.category,
+        serving_size=data.serving_size,
+        serving_unit=data.serving_unit,
+        calories=data.calories,
+        protein_g=data.protein_g,
+        carbs_g=data.carbs_g,
+        fat_g=data.fat_g,
+        fiber_g=data.fiber_g,
+        is_shared=True,
+        source=data.source,
+    )
     db.add(food)
     db.commit()
     db.refresh(food)
