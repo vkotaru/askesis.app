@@ -203,13 +203,13 @@
       >
         <ChevronLeft size={20} />
       </button>
-      <div class="relative min-w-0">
+      <div class="relative min-w-0 flex-1 max-w-[200px]">
         <input
           type="date"
           value={selectedDate}
           on:change={handleDateChange}
           class={clsx(
-            'input w-full max-w-[180px] text-center',
+            'input w-full text-center',
             hasData && 'border-primary-300 dark:border-primary-700'
           )}
         />
