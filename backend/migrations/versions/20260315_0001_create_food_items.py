@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("category", sa.String(100), nullable=True),
         sa.Column("serving_size", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column(
-            "serving_unit", sa.String(20), nullable=False, server_default="'g'"
+            "serving_unit", sa.String(20), nullable=False, server_default="g"
         ),
         sa.Column("calories", sa.Integer(), nullable=True),
         sa.Column("protein_g", sa.Float(), nullable=True),
@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.Column("fat_g", sa.Float(), nullable=True),
         sa.Column("fiber_g", sa.Float(), nullable=True),
         sa.Column(
-            "is_shared", sa.Boolean(), nullable=False, server_default=sa.text("1")
+            "is_shared", sa.Boolean(), nullable=False, server_default=sa.text("true")
         ),
         sa.Column("source", sa.String(50), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=True),
