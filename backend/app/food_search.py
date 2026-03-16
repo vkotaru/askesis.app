@@ -20,17 +20,39 @@ def _map_category(raw: str | None) -> str | None:
         return None
     r = raw.lower()
     for kw, cat in [
-        ("fruit", "fruit"), ("vegetable", "vegetable"), ("grain", "grain"),
-        ("cereal", "grain"), ("bread", "grain"), ("rice", "grain"),
-        ("dairy", "dairy"), ("milk", "dairy"), ("cheese", "dairy"),
-        ("yogurt", "dairy"), ("meat", "protein"), ("poultry", "protein"),
-        ("chicken", "protein"), ("fish", "protein"), ("seafood", "protein"),
-        ("egg", "protein"), ("legume", "legume"), ("bean", "legume"),
-        ("lentil", "legume"), ("nut", "nut"), ("seed", "nut"),
-        ("oil", "oil"), ("fat", "oil"), ("butter", "oil"),
-        ("beverage", "beverage"), ("drink", "beverage"), ("juice", "beverage"),
-        ("snack", "snack"), ("candy", "snack"), ("chocolate", "snack"),
-        ("spice", "spice"), ("herb", "spice"), ("sauce", "prepared"),
+        ("fruit", "fruit"),
+        ("vegetable", "vegetable"),
+        ("grain", "grain"),
+        ("cereal", "grain"),
+        ("bread", "grain"),
+        ("rice", "grain"),
+        ("dairy", "dairy"),
+        ("milk", "dairy"),
+        ("cheese", "dairy"),
+        ("yogurt", "dairy"),
+        ("meat", "protein"),
+        ("poultry", "protein"),
+        ("chicken", "protein"),
+        ("fish", "protein"),
+        ("seafood", "protein"),
+        ("egg", "protein"),
+        ("legume", "legume"),
+        ("bean", "legume"),
+        ("lentil", "legume"),
+        ("nut", "nut"),
+        ("seed", "nut"),
+        ("oil", "oil"),
+        ("fat", "oil"),
+        ("butter", "oil"),
+        ("beverage", "beverage"),
+        ("drink", "beverage"),
+        ("juice", "beverage"),
+        ("snack", "snack"),
+        ("candy", "snack"),
+        ("chocolate", "snack"),
+        ("spice", "spice"),
+        ("herb", "spice"),
+        ("sauce", "prepared"),
     ]:
         if kw in r:
             return cat
@@ -60,21 +82,29 @@ async def search_usda(query: str, limit: int = 10) -> list[dict]:
 
         results = []
         for food in data.get("foods", []):
-            nutrients = {n["nutrientName"]: n.get("value", 0) for n in food.get("foodNutrients", [])}
-            results.append({
-                "external_id": f"usda:{food['fdcId']}",
-                "name": food.get("description", "").title(),
-                "brand": food.get("brandName"),
-                "category": _map_category(food.get("foodCategory")),
-                "serving_size": 100,
-                "serving_unit": "g",
-                "calories": round(nutrients.get("Energy", 0)),
-                "protein_g": round(nutrients.get("Protein", 0), 1),
-                "carbs_g": round(nutrients.get("Carbohydrate, by difference", 0), 1),
-                "fat_g": round(nutrients.get("Total lipid (fat)", 0), 1),
-                "fiber_g": round(nutrients.get("Fiber, total dietary", 0), 1) or None,
-                "source": "usda",
-            })
+            nutrients = {
+                n["nutrientName"]: n.get("value", 0)
+                for n in food.get("foodNutrients", [])
+            }
+            results.append(
+                {
+                    "external_id": f"usda:{food['fdcId']}",
+                    "name": food.get("description", "").title(),
+                    "brand": food.get("brandName"),
+                    "category": _map_category(food.get("foodCategory")),
+                    "serving_size": 100,
+                    "serving_unit": "g",
+                    "calories": round(nutrients.get("Energy", 0)),
+                    "protein_g": round(nutrients.get("Protein", 0), 1),
+                    "carbs_g": round(
+                        nutrients.get("Carbohydrate, by difference", 0), 1
+                    ),
+                    "fat_g": round(nutrients.get("Total lipid (fat)", 0), 1),
+                    "fiber_g": round(nutrients.get("Fiber, total dietary", 0), 1)
+                    or None,
+                    "source": "usda",
+                }
+            )
         return results
     except Exception as e:
         logger.warning(f"USDA search failed: {e}")
@@ -116,20 +146,22 @@ async def search_open_food_facts(query: str, limit: int = 10) -> list[dict]:
             cats = product.get("categories_tags", [])
             cat_str = cats[0].replace("en:", "") if cats else None
 
-            results.append({
-                "external_id": f"off:{product.get('code', name)}",
-                "name": name,
-                "brand": product.get("brands"),
-                "category": _map_category(cat_str),
-                "serving_size": 100,
-                "serving_unit": "g",
-                "calories": round(calories) if calories else None,
-                "protein_g": round(protein, 1) if protein else None,
-                "carbs_g": round(carbs, 1) if carbs else None,
-                "fat_g": round(fat, 1) if fat else None,
-                "fiber_g": round(fiber, 1) if fiber else None,
-                "source": "openfoodfacts",
-            })
+            results.append(
+                {
+                    "external_id": f"off:{product.get('code', name)}",
+                    "name": name,
+                    "brand": product.get("brands"),
+                    "category": _map_category(cat_str),
+                    "serving_size": 100,
+                    "serving_unit": "g",
+                    "calories": round(calories) if calories else None,
+                    "protein_g": round(protein, 1) if protein else None,
+                    "carbs_g": round(carbs, 1) if carbs else None,
+                    "fat_g": round(fat, 1) if fat else None,
+                    "fiber_g": round(fiber, 1) if fiber else None,
+                    "source": "openfoodfacts",
+                }
+            )
         return results
     except Exception as e:
         logger.warning(f"Open Food Facts search failed: {e}")

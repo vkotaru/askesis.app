@@ -186,9 +186,7 @@ class MealFoodItem(Base):
     meal_id: Mapped[int] = mapped_column(
         ForeignKey("meals.id", ondelete="CASCADE"), index=True
     )
-    food_item_id: Mapped[int] = mapped_column(
-        ForeignKey("food_items.id"), index=True
-    )
+    food_item_id: Mapped[int] = mapped_column(ForeignKey("food_items.id"), index=True)
     quantity: Mapped[float] = mapped_column(Float, default=1.0)  # number of servings
     notes: Mapped[str | None] = mapped_column(String(255))
 
