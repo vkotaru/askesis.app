@@ -5,8 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
-  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
-  import { settings } from '$lib/stores/settings';
+import { settings } from '$lib/stores/settings';
   import { getMeasurementLabel, formatMeasurement, measurementToMetric, measurementFromMetric } from '$lib/utils/units';
 
   let recentMeasurements: BodyMeasurement[] = [];
@@ -43,7 +42,7 @@
   async function loadMeasurement() {
     loading = true;
     try {
-      const measurement = await api.getMeasurement(selectedDate, $viewingUserId ?? undefined);
+      const measurement = await api.getMeasurement(selectedDate, undefined);
       neck = fromMetric(measurement.neck);
       shoulders = fromMetric(measurement.shoulders);
       chest = fromMetric(measurement.chest);
@@ -62,7 +61,7 @@
     } catch {
       // No measurement for this date, try to load latest as reference
       try {
-        const latest = await api.getLatestMeasurement($viewingUserId ?? undefined);
+        const latest = await api.getLatestMeasurement(undefined);
         if (latest) {
           // Pre-fill with latest values for convenience
           neck = fromMetric(latest.neck);
@@ -113,7 +112,7 @@
     try {
       const endDate = format(new Date(), 'yyyy-MM-dd');
       const startDate = format(subDays(new Date(), 365), 'yyyy-MM-dd');
-      const measurements = await api.getMeasurements(startDate, endDate, $viewingUserId ?? undefined);
+      const measurements = await api.getMeasurements(startDate, endDate, undefined);
       // Sort by date descending and take last 10
       recentMeasurements = measurements.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
     } catch {
@@ -125,10 +124,6 @@
     loadMeasurement();
     loadRecentMeasurements();
   });
-
-  // Reload when viewing user changes
-  $: $viewingUserId, loadMeasurement();
-  $: $viewingUserId, loadRecentMeasurements();
 
   function goToDate(date: string) {
     selectedDate = date;
@@ -432,8 +427,7 @@
           ></textarea>
         </div>
 
-        {#if !$isViewingOther}
-          <div class="flex justify-end">
+        <div class="flex justify-end">
             <button
               type="submit"
               disabled={saving}
@@ -450,13 +444,11 @@
               {/if}
             </button>
           </div>
-        {/if}
       </div>
     </form>
   {/if}
 
 <!-- Import Button -->
-  {#if !$isViewingOther}
     <div class="mt-6">
       <button
         on:click={() => (showImportModal = true)}
@@ -466,7 +458,6 @@
         Import Bulk
       </button>
     </div>
-  {/if}
 
 <!-- Recent Measurements -->
   {#if recentMeasurements.length > 0}

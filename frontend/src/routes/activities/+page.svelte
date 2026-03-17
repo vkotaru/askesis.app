@@ -5,7 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
-  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+
   import { settings } from '$lib/stores/settings';
   import { formatDistance, distanceToMetric, getDistanceLabel, formatWeight, getWeightLabel } from '$lib/utils/units';
   import { ACTIVITY_ICONS, getActivityIcon } from '$lib/utils/activityIcons';
@@ -60,7 +60,7 @@
   async function loadActivities() {
     loading = true;
     try {
-      activities = await api.getActivities(selectedDate, selectedDate, $viewingUserId ?? undefined);
+      activities = await api.getActivities(selectedDate, selectedDate, undefined);
     } catch (err) {
       console.error('Failed to load activities:', err);
     } finally {
@@ -72,7 +72,7 @@
     try {
       const endDate = format(new Date(), 'yyyy-MM-dd');
       const startDate = format(subDays(new Date(), 60), 'yyyy-MM-dd');
-      const allActivities = await api.getActivities(startDate, endDate, $viewingUserId ?? undefined);
+      const allActivities = await api.getActivities(startDate, endDate, undefined);
       // Sort by date descending and take last 10
       recentActivities = allActivities.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
     } catch {
@@ -85,9 +85,6 @@
     loadRecentActivities();
   });
 
-  // Reload when viewing user changes
-  $: $viewingUserId, loadActivities();
-  $: $viewingUserId, loadRecentActivities();
 
   function goToDate(date: string) {
     selectedDate = date;
@@ -230,18 +227,16 @@
     </div>
 
     <!-- Add Activity Button -->
-    {#if !$isViewingOther}
       <div class="flex justify-center mt-4">
         <button on:click={() => { resetForm(); showForm = !showForm; }} class="btn-primary flex items-center gap-2">
           <Plus size={20} />
           Add Activity
         </button>
       </div>
-    {/if}
   </div>
 
   <!-- Add/Edit activity form -->
-  {#if showForm && !$isViewingOther}
+  {#if showForm}
     <form on:submit|preventDefault={handleSubmit} class="card p-6 mb-6">
       <h3 class="text-lg font-semibold mb-4">{editingActivity ? 'Edit Activity' : 'Add Activity'}</h3>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -503,8 +498,7 @@
                 {/if}
 
                 <!-- Edit/Delete buttons -->
-                {#if !$isViewingOther}
-                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-end gap-2">
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-end gap-2">
                     <button
                       on:click|stopPropagation={() => openEditForm(activity)}
                       class="flex items-center gap-2 px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors"
@@ -520,7 +514,6 @@
                       Delete
                     </button>
                   </div>
-                {/if}
               </div>
             {/if}
           </li>
@@ -536,7 +529,6 @@
   </div>
 
 <!-- Import Button -->
-  {#if !$isViewingOther}
     <div class="mt-6">
       <button
         on:click={() => (showImportModal = true)}
@@ -546,7 +538,6 @@
         Import Bulk
       </button>
     </div>
-  {/if}
 
 <!-- Recent Activities -->
   {#if recentActivities.length > 0}

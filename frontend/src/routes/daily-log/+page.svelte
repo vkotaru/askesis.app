@@ -5,7 +5,6 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog } from '$lib/api/client';
-  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
   import { settings } from '$lib/stores/settings';
   import { formatWater, formatWeight, waterToMetric, waterFromMetric, weightToMetric, weightFromMetric, getWaterLabel, getWeightLabel } from '$lib/utils/units';
 
@@ -48,8 +47,6 @@
 
   // Auto-save function - saves current form state
   async function autoSave(fieldName: string) {
-    if ($isViewingOther) return;
-
     saving = true;
     try {
       await api.saveDailyLog({
@@ -80,7 +77,7 @@
 
   async function loadLog() {
     try {
-      const log = await api.getDailyLog(selectedDate, $viewingUserId ?? undefined);
+      const log = await api.getDailyLog(selectedDate);
       weight = log.weight ? weightFromMetric(log.weight, $settings.weight_unit) : undefined;
       sleep_hours = log.sleep_hours;
       steps = log.steps;
@@ -105,7 +102,7 @@
   async function loadRecentLogs() {
     try {
       // Fetch 10 most recent logs (backend returns sorted by date desc)
-      recentLogs = await api.getDailyLogs(undefined, undefined, $viewingUserId ?? undefined, 10);
+      recentLogs = await api.getDailyLogs(undefined, undefined, undefined, 10);
     } catch (e) {
       console.error('Failed to load logs:', e);
       recentLogs = [];
@@ -116,10 +113,6 @@
     loadLog();
     loadRecentLogs();
   });
-
-  // Reload when viewing user changes
-  $: $viewingUserId, loadLog();
-  $: $viewingUserId, loadRecentLogs();
 
   function goToDate(date: string) {
     selectedDate = date;
@@ -137,7 +130,6 @@
   }
 
   function toggleFeeling(feeling: string) {
-    if ($isViewingOther) return;
     if (feelings.includes(feeling)) {
       feelings = feelings.filter(f => f !== feeling);
     } else {
@@ -248,7 +240,7 @@
           on:blur={() => autoSave('weight')}
           placeholder="Enter weight"
           class={clsx('input', fieldSaved['weight'] && 'ring-2 ring-primary-300')}
-          disabled={$isViewingOther}
+
         />
       </div>
 
@@ -268,7 +260,7 @@
           on:blur={() => autoSave('sleep')}
           placeholder="Enter sleep hours"
           class={clsx('input', fieldSaved['sleep'] && 'ring-2 ring-primary-300')}
-          disabled={$isViewingOther}
+
         />
       </div>
 
@@ -287,7 +279,7 @@
           on:blur={() => autoSave('steps')}
           placeholder="Enter steps"
           class={clsx('input', fieldSaved['steps'] && 'ring-2 ring-primary-300')}
-          disabled={$isViewingOther}
+
         />
       </div>
 
@@ -307,7 +299,7 @@
           on:blur={() => autoSave('water')}
           placeholder="Enter water intake"
           class={clsx('input', fieldSaved['water'] && 'ring-2 ring-primary-300')}
-          disabled={$isViewingOther}
+
         />
       </div>
 
@@ -326,7 +318,7 @@
           on:blur={() => autoSave('caffeine')}
           placeholder="Enter caffeine"
           class={clsx('input', fieldSaved['caffeine'] && 'ring-2 ring-primary-300')}
-          disabled={$isViewingOther}
+
         />
       </div>
 
@@ -341,7 +333,7 @@
         <button
           type="button"
           on:click={() => { ate_outside = !ate_outside; autoSave('ate_outside'); }}
-          disabled={$isViewingOther}
+
           class={clsx(
             'relative inline-flex h-10 w-20 items-center rounded-full transition-colors',
             ate_outside
@@ -406,7 +398,6 @@
         rows={3}
         placeholder="How was your day? Any observations..."
         class={clsx('input resize-none', fieldSaved['notes'] && 'ring-2 ring-primary-300')}
-        disabled={$isViewingOther}
       ></textarea>
     </div>
 
@@ -420,7 +411,6 @@
   </form>
 
 <!-- Import Button -->
-  {#if !$isViewingOther}
     <div class="mt-6">
       <button
         on:click={() => (showImportModal = true)}
@@ -430,7 +420,6 @@
         Import Bulk
       </button>
     </div>
-  {/if}
 
 <!-- Recent Entries -->
   {#if recentLogs.length > 0}
