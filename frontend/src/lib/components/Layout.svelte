@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, MoreHorizontal, Menu, Users } from 'lucide-svelte';
+  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Menu, Users } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import type { User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
@@ -21,11 +21,6 @@
     { href: '/settings', icon: Settings, label: 'Settings', color: 'text-gray-500' },
   ];
 
-  // Mobile bottom nav: first 4 items + More
-  const mobileNavItems = navItems.slice(0, 4);
-  const moreMenuItems = navItems.slice(4);
-
-  let showMoreMenu = false;
   let showMobileMenu = false;
 
   const widthClasses = {
@@ -37,10 +32,7 @@
 
   $: currentPath = $page.url.pathname;
   $: widthClass = widthClasses[$settings.content_width];
-  $: isMoreActive = moreMenuItems.some(item => currentPath === item.href);
-
   function closeMenus() {
-    showMoreMenu = false;
     showMobileMenu = false;
   }
 </script>
@@ -209,65 +201,22 @@
     </div>
   </main>
 
-  <!-- Mobile Bottom Navigation -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-2 pb-safe">
-    <div class="flex items-center justify-around py-2">
-      {#each mobileNavItems as { href, icon: Icon, label, color }}
+  <!-- Mobile Bottom Navigation (horizontally scrollable) -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 pb-safe">
+    <div class="flex overflow-x-auto scrollbar-hide py-2 px-1">
+      {#each navItems as { href, icon: Icon, label, color }}
         {@const isActive = currentPath === href}
         <a
           {href}
           class={clsx(
-            'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all min-w-[60px]',
+            'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all min-w-[64px] flex-shrink-0',
             isActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500'
           )}
         >
           <Icon size={22} class={isActive ? color : ''} />
-          <span class="text-xs font-medium">{label.split(' ')[0]}</span>
+          <span class="text-xs font-medium whitespace-nowrap">{label.split(' ')[0]}</span>
         </a>
       {/each}
-
-      <!-- More button -->
-      <div class="relative">
-        <button
-          on:click|stopPropagation={() => (showMoreMenu = !showMoreMenu)}
-          class={clsx(
-            'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all min-w-[60px]',
-            isMoreActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500'
-          )}
-        >
-          <MoreHorizontal size={22} />
-          <span class="text-xs font-medium">More</span>
-        </button>
-
-        <!-- More menu popup -->
-        {#if showMoreMenu}
-          <div
-            class="absolute bottom-full right-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 overflow-hidden"
-            on:click|stopPropagation
-            on:keydown|stopPropagation
-            role="menu"
-          >
-            {#each moreMenuItems as { href, icon: Icon, label, color }}
-              {@const isActive = currentPath === href}
-              <a
-                {href}
-                on:click={closeMenus}
-                class={clsx(
-                  'flex items-center gap-3 px-4 py-3 transition-all',
-                  isActive
-                    ? 'bg-primary-50 dark:bg-gray-700'
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                )}
-              >
-                <Icon size={18} class={clsx(isActive ? color : 'text-gray-400')} />
-                <span class={clsx('font-medium text-sm', isActive ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400')}>
-                  {label}
-                </span>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      </div>
     </div>
   </nav>
 </div>
@@ -276,5 +225,14 @@
   /* Safe area for devices with home indicator */
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Hide scrollbar but keep scroll */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 </style>
