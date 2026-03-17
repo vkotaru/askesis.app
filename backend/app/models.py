@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     Boolean,
+    Index,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -122,6 +123,8 @@ class DailyLog(Base):
 
     user: Mapped["User"] = relationship(back_populates="daily_logs")
 
+    __table_args__ = (Index("ix_daily_logs_user_date", "user_id", "date"),)
+
 
 class Meal(Base):
     __tablename__ = "meals"
@@ -144,6 +147,8 @@ class Meal(Base):
     food_items: Mapped[list["MealFoodItem"]] = relationship(
         back_populates="meal", cascade="all, delete-orphan"
     )
+
+    __table_args__ = (Index("ix_meals_user_date", "user_id", "date"),)
 
 
 class FoodItem(Base):
@@ -215,6 +220,7 @@ class DailyNutrition(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "date", name="unique_user_nutrition_date"),
+        Index("ix_daily_nutrition_user_date", "user_id", "date"),
     )
 
 
@@ -244,6 +250,8 @@ class Activity(Base):
 
     user: Mapped["User"] = relationship(back_populates="activities")
     exercises: Mapped[list["Exercise"]] = relationship(back_populates="activity")
+
+    __table_args__ = (Index("ix_activities_user_date", "user_id", "date"),)
 
 
 class Exercise(Base):
@@ -289,6 +297,8 @@ class BodyMeasurement(Base):
 
     user: Mapped["User"] = relationship("User")
 
+    __table_args__ = (Index("ix_body_measurements_user_date", "user_id", "date"),)
+
 
 class MealTemplate(Base):
     __tablename__ = "meal_templates"
@@ -332,6 +342,8 @@ class ProgressPhoto(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (Index("ix_progress_photos_user_date", "user_id", "date"),)
 
 
 class DataShare(Base):
