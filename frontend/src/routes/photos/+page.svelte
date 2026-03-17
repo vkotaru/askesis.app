@@ -4,7 +4,6 @@
   import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image, AlertTriangle, GitCompare, X } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type ProgressPhoto, type PhotoView, type DriveStatus } from '$lib/api/client';
-  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
 
   const VIEWS: { value: PhotoView; label: string; emoji: string }[] = [
     { value: 'front', label: 'Front', emoji: '🧍' },
@@ -36,7 +35,7 @@
   async function loadAllPhotoDates() {
     try {
       // Get all photos to extract unique dates
-      const allPhotos = await api.getPhotos(undefined, undefined, undefined, $viewingUserId ?? undefined);
+      const allPhotos = await api.getPhotos(undefined, undefined, undefined, undefined);
       const dates = [...new Set(allPhotos.map(p => p.date))].sort();
       allPhotoDates = dates;
       // Set default comparison dates
@@ -56,8 +55,8 @@
     loadingCompare = true;
     try {
       const [leftPhotos, rightPhotos] = await Promise.all([
-        api.getPhotosByDate(compareLeftDate, $viewingUserId ?? undefined),
-        api.getPhotosByDate(compareRightDate, $viewingUserId ?? undefined),
+        api.getPhotosByDate(compareLeftDate, undefined),
+        api.getPhotosByDate(compareRightDate, undefined),
       ]);
       compareLeftPhoto = leftPhotos.find(p => p.view === compareView) || null;
       compareRightPhoto = rightPhotos.find(p => p.view === compareView) || null;
@@ -92,7 +91,7 @@
   async function loadPhotos() {
     loading = true;
     try {
-      photos = await api.getPhotosByDate(selectedDate, $viewingUserId ?? undefined);
+      photos = await api.getPhotosByDate(selectedDate, undefined);
     } catch (err) {
       console.error('Failed to load photos:', err);
       photos = [];
@@ -105,9 +104,6 @@
     checkDriveStatus();
     loadPhotos();
   });
-
-  // Reload when viewing user changes
-  $: $viewingUserId, loadPhotos();
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
@@ -221,7 +217,7 @@
     </div>
   </div>
 
-  {#if driveStatus && !driveStatus.working && !$isViewingOther}
+  {#if driveStatus && !driveStatus.working}
     <div class="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
       <div class="flex items-start gap-3">
         <AlertTriangle size={20} class="text-amber-500 mt-0.5 flex-shrink-0" />
@@ -385,8 +381,7 @@
                 alt="{label} view"
                 class="w-full h-full object-cover"
               />
-              {#if !$isViewingOther}
-                <div class="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors group">
+              <div class="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors group">
                   <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       on:click={() => triggerUpload(value)}
@@ -404,12 +399,6 @@
                     </button>
                   </div>
                 </div>
-              {/if}
-            {:else if $isViewingOther}
-              <div class="w-full h-full flex flex-col items-center justify-center text-gray-400">
-                <Image size={48} class="mb-3 opacity-30" />
-                <span class="text-sm">No photo</span>
-              </div>
             {:else}
               <button
                 on:click={() => triggerUpload(value)}

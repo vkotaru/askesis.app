@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, subDays, parseISO } from 'date-fns';
-  import { Scale, Moon, Footprints, Droplets, Activity, Users, TrendingUp, TrendingDown, Dumbbell } from 'lucide-svelte';
+  import { Scale, Moon, Footprints, Droplets, Activity, Users, TrendingUp, TrendingDown, Dumbbell, ChevronDown } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type DailyLog, type Activity as ActivityType, type SharedWithMe } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
-  import { sharedWithMe, viewContext } from '$lib/stores/viewContext';
   import { formatWeight, weightFromMetric, formatWater, getWeightLabel } from '$lib/utils/units';
   import { getActivityIcon, LEGEND_ICONS } from '$lib/utils/activityIcons';
 
@@ -20,36 +19,45 @@
     weightData: DailyLog[];
   }
 
-  let loading = true;
+  let loadingShares = true;
+  let loading = false;
   let userData: UserData[] = [];
+  let availableUsers: SharedWithMe[] = [];
+  let selectedUserId: number | null = null;
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
 
   onMount(async () => {
-    await viewContext.load();
-    await loadAllData();
+    try {
+      availableUsers = await api.getSharedWithMe();
+    } catch {
+      availableUsers = [];
+    } finally {
+      loadingShares = false;
+    }
   });
 
-  async function loadAllData() {
+  async function loadComparison() {
+    const selected = availableUsers.find(u => u.owner_id === selectedUserId);
+    if (!selected) return;
+
     loading = true;
     try {
-      // Load current user's data
-      const myData = await loadUserData(null, 'Me');
-
-      // Load data for each shared user
-      const sharedData = await Promise.all(
-        $sharedWithMe
-          .filter(share => share.categories.includes('daily_logs'))
-          .map(share => loadUserData(share.owner_id, share.owner_name, share.owner_picture))
-      );
-
-      userData = [myData, ...sharedData];
+      const [myData, theirData] = await Promise.all([
+        loadUserData(null, 'Me'),
+        loadUserData(selected.owner_id, selected.owner_name, selected.owner_picture),
+      ]);
+      userData = [myData, theirData];
     } catch (err) {
       console.error('Failed to load shared dashboard data:', err);
     } finally {
       loading = false;
     }
+  }
+
+  $: if (selectedUserId !== null) {
+    loadComparison();
   }
 
   async function loadUserData(userId: number | null, name: string, picture?: string): Promise<UserData> {
@@ -152,11 +160,11 @@
     </p>
   </div>
 
-  {#if loading}
+  {#if loadingShares}
     <div class="flex items-center justify-center h-64">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
     </div>
-  {:else if userData.length < 2}
+  {:else if availableUsers.length === 0}
     <div class="card p-12 text-center">
       <Users size={48} class="mx-auto mb-4 text-gray-300" />
       <h2 class="text-lg font-semibold mb-2">No shared data yet</h2>
@@ -164,6 +172,34 @@
         Ask someone to share their data with you, or share your data with them in Settings.
       </p>
       <a href="/settings" class="btn btn-primary">Go to Settings</a>
+    </div>
+  {:else}
+    <!-- User selector -->
+    <div class="card p-4 mb-6">
+      <label for="compare-user" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        Compare against
+      </label>
+      <select
+        id="compare-user"
+        bind:value={selectedUserId}
+        class="input max-w-xs"
+      >
+        <option value={null}>Select a person...</option>
+        {#each availableUsers.filter(u => u.categories.includes('daily_logs')) as user}
+          <option value={user.owner_id}>
+            {user.owner_name}
+          </option>
+        {/each}
+      </select>
+    </div>
+
+  {#if loading}
+    <div class="flex items-center justify-center h-64">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+    </div>
+  {:else if userData.length < 2}
+    <div class="card p-12 text-center text-gray-500">
+      <p>Select a person above to compare your progress.</p>
     </div>
   {:else}
     <!-- User avatars/names header -->
@@ -472,5 +508,6 @@
         {/if}
       </div>
     </div>
+  {/if}
   {/if}
 </div>

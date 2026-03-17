@@ -7,7 +7,7 @@
   import FoodItemForm from '$lib/components/FoodItemForm.svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition, type FoodItem, type MealFoodItemInput } from '$lib/api/client';
-  import { viewingUserId, isViewingOther } from '$lib/stores/viewContext';
+
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -49,7 +49,7 @@
   async function loadMeals() {
     loading = true;
     try {
-      meals = await api.getMeals(selectedDate, $viewingUserId ?? undefined);
+      meals = await api.getMeals(selectedDate, undefined);
     } catch (err) {
       console.error('Failed to load meals:', err);
     } finally {
@@ -59,7 +59,7 @@
 
   async function loadDailyNutrition() {
     try {
-      dailyNutrition = await api.getDailyNutrition(selectedDate, $viewingUserId ?? undefined);
+      dailyNutrition = await api.getDailyNutrition(selectedDate, undefined);
       // Populate macro fields from daily nutrition
       macroProtein = dailyNutrition.protein_g ?? undefined;
       macroCarbs = dailyNutrition.carbs_g ?? undefined;
@@ -95,9 +95,6 @@
   }
 
   onMount(loadData);
-
-  // Reload when viewing user changes
-  $: $viewingUserId, loadData();
 
   $: totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0);
 
@@ -284,15 +281,13 @@
       >
         <ChevronRight size={20} />
       </button>
-      {#if !$isViewingOther}
-        <button
+      <button
           on:click={copyYesterday}
           class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
           title="Copy yesterday's meals"
         >
           <Copy size={16} />
         </button>
-      {/if}
     </div>
   </div>
 
@@ -300,8 +295,7 @@
   <div class="card p-4 mb-6">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-medium text-gray-500">Daily Totals</h3>
-      {#if !$isViewingOther}
-        {#if editingMacros}
+      {#if editingMacros}
           <button
             on:click={saveMacros}
             disabled={savingMacros}
@@ -319,7 +313,6 @@
             <Pencil size={16} />
           </button>
         {/if}
-      {/if}
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -452,7 +445,7 @@
                     alt={meal.label}
                     class="w-16 h-16 rounded-lg object-cover flex-shrink-0"
                   />
-                {:else if !$isViewingOther}
+                {:else}
                   <button
                     on:click={() => triggerMealPhotoUpload(meal.id)}
                     disabled={uploadingMealId === meal.id}
@@ -465,10 +458,6 @@
                       <Camera size={20} class="text-gray-400" />
                     {/if}
                   </button>
-                {:else}
-                  <div class="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                    <Camera size={20} class="text-gray-400" />
-                  </div>
                 {/if}
 
                 <input
@@ -524,7 +513,6 @@
                   {#if meal.calories}
                     <span class="font-medium">{meal.calories} cal</span>
                   {/if}
-                  {#if !$isViewingOther}
                     <button
                       on:click={() => startEditMeal(meal)}
                       class="text-gray-400 hover:text-primary-500"
@@ -539,7 +527,6 @@
                     >
                       <Trash2 size={18} />
                     </button>
-                  {/if}
                 </div>
               </div>
             {/if}
@@ -552,9 +539,7 @@
   </div>
 
   <!-- Add meal form -->
-  {#if $isViewingOther}
-    <!-- Read-only mode - no add form -->
-  {:else if showForm}
+  {#if showForm}
     <form on:submit|preventDefault={handleSubmit} class="card p-6">
       <h2 class="text-lg font-semibold mb-4">Add Meal</h2>
 
@@ -709,7 +694,6 @@
   {/if}
 
   <!-- Import Button -->
-  {#if !$isViewingOther}
     <div class="mt-6">
       <button
         on:click={() => (showImportModal = true)}
@@ -719,7 +703,6 @@
         Import Bulk
       </button>
     </div>
-  {/if}
 </div>
 
 <ImportModal

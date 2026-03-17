@@ -1,11 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Eye, X, MoreHorizontal, Menu, Users } from 'lucide-svelte';
+  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, MoreHorizontal, Menu, Users } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import type { User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
-  import { viewContext, isViewingOther, viewingUser } from '$lib/stores/viewContext';
-  import UserSwitcher from './UserSwitcher.svelte';
 
   export let user: User;
 
@@ -57,7 +55,6 @@
         Askesis
       </h1>
       <div class="flex items-center gap-3">
-        <UserSwitcher />
         <button
           on:click|stopPropagation={() => (showMobileMenu = !showMobileMenu)}
           class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -144,9 +141,6 @@
         Askesis
       </h1>
       <p class="text-xs text-gray-400 mt-1">Health & Fitness Tracker</p>
-      <div class="mt-3">
-        <UserSwitcher />
-      </div>
     </div>
 
     <nav class="flex-1 px-3 overflow-y-auto">
@@ -210,28 +204,6 @@
 
   <!-- Main content -->
   <main class="flex-1 overflow-auto pt-14 pb-20 md:pt-0 md:pb-0">
-    {#if $isViewingOther}
-      <div class="bg-accent-100 dark:bg-accent-900/30 border-b border-accent-200 dark:border-accent-800 px-4 md:px-8 py-3">
-        <div class="flex items-center justify-between max-w-7xl mx-auto">
-          <div class="flex items-center gap-2 md:gap-3">
-            <Eye size={18} class="text-accent-600 dark:text-accent-400" />
-            <span class="text-sm font-medium text-accent-700 dark:text-accent-300">
-              Viewing {$viewingUser?.owner_name}'s data
-            </span>
-            <span class="hidden sm:inline text-xs text-accent-500 dark:text-accent-400">
-              (read-only)
-            </span>
-          </div>
-          <button
-            on:click={() => viewContext.viewOwn()}
-            class="flex items-center gap-1 text-sm text-accent-600 dark:text-accent-400 hover:text-accent-800 dark:hover:text-accent-200"
-          >
-            <X size={16} />
-            <span class="hidden sm:inline">Back to my data</span>
-          </button>
-        </div>
-      </div>
-    {/if}
     <div class={clsx('mx-auto transition-all duration-300 p-4 md:p-8 content-area', widthClass)}>
       <slot />
     </div>
