@@ -93,6 +93,9 @@ class UserSettings(Base):
     google_sheet_id: Mapped[str | None] = mapped_column(
         String(100)
     )  # Sheet ID for export sync
+    gsheet_sync_interval_hours: Mapped[int | None] = mapped_column(
+        Integer
+    )  # Auto-sync interval in hours (null = disabled)
     last_gsheet_sync: Mapped[datetime | None] = mapped_column(
         DateTime
     )  # Last successful sync timestamp

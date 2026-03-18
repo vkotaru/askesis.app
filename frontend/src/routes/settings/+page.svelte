@@ -817,6 +817,28 @@
         </p>
       </div>
 
+      <!-- Auto-sync interval -->
+      <div class="max-w-md mb-4">
+        <label for="sync-interval" class="label">Auto-sync interval</label>
+        <select
+          id="sync-interval"
+          class="input"
+          value={$settings.gsheet_sync_interval_hours ?? 0}
+          on:change={(e) => {
+            const val = parseInt(e.currentTarget.value);
+            settings.updateSetting('gsheet_sync_interval_hours', val || null);
+          }}
+        >
+          <option value={0}>Disabled (manual only)</option>
+          <option value={6}>Every 6 hours</option>
+          <option value={12}>Every 12 hours</option>
+          <option value={24}>Every 24 hours</option>
+        </select>
+        <p class="text-xs text-gray-500 mt-1">
+          Automatically sync your data to Google Sheets in the background.
+        </p>
+      </div>
+
       <div class="flex items-center gap-4">
         <button
           on:click={syncToGoogleSheet}

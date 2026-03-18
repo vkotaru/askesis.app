@@ -33,6 +33,7 @@ class UserSettingsSchema(BaseModel):
     drive_parent_folder_id: str | None = None
     # Google Sheets sync settings
     google_sheet_id: str | None = None
+    gsheet_sync_interval_hours: int | None = None
     last_gsheet_sync: datetime | None = None
 
     class Config:
@@ -51,6 +52,7 @@ class UserSettingsUpdate(BaseModel):
     water_unit: str | None = None
     drive_parent_folder_id: str | None = None
     google_sheet_id: str | None = None
+    gsheet_sync_interval_hours: int | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -131,6 +133,8 @@ def update_settings(
         settings.drive_parent_folder_id = settings_data.drive_parent_folder_id
     if settings_data.google_sheet_id is not None:
         settings.google_sheet_id = settings_data.google_sheet_id
+    if settings_data.gsheet_sync_interval_hours is not None:
+        settings.gsheet_sync_interval_hours = settings_data.gsheet_sync_interval_hours
 
     db.commit()
     db.refresh(settings)

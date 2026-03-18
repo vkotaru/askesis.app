@@ -180,6 +180,7 @@ export interface UserSettings {
   water_unit: WaterUnit;
   drive_parent_folder_id?: string | null;
   google_sheet_id?: string | null;
+  gsheet_sync_interval_hours?: number | null;
   last_gsheet_sync?: string | null;
 }
 
