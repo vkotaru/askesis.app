@@ -81,7 +81,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
             created_at TEXT
         )
     """)
-    logs = db.query(DailyLog).filter(DailyLog.user_id == user.id).all()
+    logs = db.query(DailyLog).filter(DailyLog.user_id == user.id).filter(DailyLog.deleted_at == None).all()
     cursor.executemany(
         """INSERT INTO daily_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
@@ -116,7 +116,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
             created_at TEXT
         )
     """)
-    meals = db.query(Meal).filter(Meal.user_id == user.id).all()
+    meals = db.query(Meal).filter(Meal.user_id == user.id).filter(Meal.deleted_at == None).all()
     cursor.executemany(
         """INSERT INTO meals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
@@ -152,7 +152,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
             created_at TEXT
         )
     """)
-    activities = db.query(Activity).filter(Activity.user_id == user.id).all()
+    activities = db.query(Activity).filter(Activity.user_id == user.id).filter(Activity.deleted_at == None).all()
     cursor.executemany(
         """INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
@@ -233,7 +233,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
         )
     """)
     measurements = (
-        db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).all()
+        db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).filter(BodyMeasurement.deleted_at == None).all()
     )
     cursor.executemany(
         """INSERT INTO body_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -273,7 +273,7 @@ def create_sqlite_export(db: Session, user: User) -> Path:
             created_at TEXT
         )
     """)
-    photos = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == user.id).all()
+    photos = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == user.id).filter(ProgressPhoto.deleted_at == None).all()
     cursor.executemany(
         """INSERT INTO progress_photos VALUES (?, ?, ?, ?, ?, ?)""",
         [
