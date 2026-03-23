@@ -485,11 +485,12 @@
               {/if}
 
               <!-- Data points -->
+              {@const dotRadius = points.length > 90 ? 1.5 : points.length > 30 ? 2.5 : 4}
               {#each points as point, i}
                 <circle
                   cx={point.x}
                   cy={point.y}
-                  r={hoveredPoint?.date === point.date ? 6 : 4}
+                  r={hoveredPoint?.date === point.date ? dotRadius + 2 : dotRadius}
                   class="fill-primary-500 cursor-pointer transition-all"
                   on:mouseenter={() => hoveredPoint = point}
                 />
@@ -636,13 +637,14 @@
                   stroke-linejoin="round"
                   class="text-nutrition-500"
                 />
+                {@const nutDotR = nutritionChartData.length > 20 ? 2.5 : 4}
                 {#each nutritionChartData as d, i}
                   {@const x = padding.left + (i / (nutritionChartData.length - 1)) * innerWidth}
                   {@const y = padding.top + innerHeight - (d.calories / caloriesMax) * innerHeight}
                   <circle
                     cx={x}
                     cy={y}
-                    r="4"
+                    r={nutDotR}
                     class="fill-nutrition-500 cursor-pointer"
                     on:mouseenter={() => hoveredNutritionPoint = { x, y, calories: d.calories, protein: d.protein, date: d.date }}
                   />
@@ -667,7 +669,7 @@
                 {#each nutritionChartData as d, i}
                   {@const x = padding.left + (i / (nutritionChartData.length - 1)) * innerWidth}
                   {@const y = padding.top + innerHeight - (d.protein / proteinMax) * innerHeight}
-                  <circle cx={x} cy={y} r="3" class="fill-strength-500" />
+                  <circle cx={x} cy={y} r={nutritionChartData.length > 20 ? 2 : 3} class="fill-strength-500" />
                 {/each}
               {/if}
 
