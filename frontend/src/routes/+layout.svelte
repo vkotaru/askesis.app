@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { api } from '$lib/api/client';
   import { user, userLoading } from '$lib/stores/user';
   import { settings } from '$lib/stores/settings';
@@ -11,7 +12,15 @@
   import { hydrateFromServer } from '$lib/stores/data';
   import { sync } from '$lib/sync';
 
+  // Public routes bypass auth
+  $: isPublicRoute = $page.url.pathname.startsWith('/report/');
+
   onMount(async () => {
+    if (isPublicRoute) {
+      userLoading.set(false);
+      return;
+    }
+
     try {
       const userData = await api.getMe();
       user.set(userData);
@@ -28,7 +37,9 @@
   });
 </script>
 
-{#if $userLoading}
+{#if isPublicRoute}
+  <slot />
+{:else if $userLoading}
   <div class="min-h-screen flex items-center justify-center bg-surface-light dark:bg-surface-dark">
     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
   </div>

@@ -1,9 +1,56 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload, FileSpreadsheet, RefreshCw } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload, FileSpreadsheet, RefreshCw, Link, Copy, RotateCw } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
+
+  // Report link state
+  let reportToken = '';
+  let reportUrl = '';
+  let reportLoading = false;
+  let reportCopied = false;
+
+  async function loadReportToken() {
+    try {
+      const res = await fetch('/api/report/token', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        reportToken = data.token;
+        reportUrl = `${window.location.origin}${data.url}`;
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function regenerateReportToken() {
+    reportLoading = true;
+    try {
+      const res = await fetch('/api/report/token/regenerate', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        reportToken = data.token;
+        reportUrl = `${window.location.origin}${data.url}`;
+      }
+    } catch { /* ignore */ }
+    finally { reportLoading = false; }
+  }
+
+  async function revokeReportToken() {
+    if (!confirm('Revoke report link? Anyone with the old link will lose access.')) return;
+    reportLoading = true;
+    try {
+      await fetch('/api/report/token', { method: 'DELETE', credentials: 'include' });
+      reportToken = '';
+      reportUrl = '';
+    } catch { /* ignore */ }
+    finally { reportLoading = false; }
+  }
+
+  function copyReportUrl() {
+    navigator.clipboard.writeText(reportUrl);
+    reportCopied = true;
+    setTimeout(() => (reportCopied = false), 2000);
+  }
 
   // Sharing state
   let myShares: DataShare[] = [];
@@ -68,7 +115,10 @@
     }
   }
 
-  onMount(loadShares);
+  onMount(() => {
+    loadShares();
+    loadReportToken();
+  });
 
   // Helper functions to handle select changes with proper typing
   function handleDistanceUnitChange(e: Event) {
@@ -553,6 +603,68 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Shareable Report -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-3">
+        <Link size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Shareable Report</h2>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">
+        Generate a public link to a read-only summary of your weight trend and weekly activities. No personal details are shown.
+      </p>
+
+      {#if reportUrl}
+        <div class="flex items-center gap-2 mb-3">
+          <input
+            type="text"
+            readonly
+            value={reportUrl}
+            class="input flex-1 text-sm bg-gray-50 dark:bg-gray-700/50"
+            on:click={(e) => e.currentTarget.select()}
+          />
+          <button
+            on:click={copyReportUrl}
+            class="btn-secondary px-3 py-2 flex items-center gap-1"
+            title="Copy link"
+          >
+            {#if reportCopied}
+              <Check size={16} class="text-green-500" />
+            {:else}
+              <Copy size={16} />
+            {/if}
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            on:click={regenerateReportToken}
+            disabled={reportLoading}
+            class="text-xs text-gray-500 hover:text-primary-500 flex items-center gap-1 transition-colors"
+          >
+            <RotateCw size={12} />
+            New link
+          </button>
+          <span class="text-gray-300 dark:text-gray-600">·</span>
+          <button
+            on:click={revokeReportToken}
+            disabled={reportLoading}
+            class="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 transition-colors"
+          >
+            <Trash2 size={12} />
+            Revoke
+          </button>
+        </div>
+      {:else}
+        <button
+          on:click={loadReportToken}
+          disabled={reportLoading}
+          class="btn-primary px-4 py-2 text-sm flex items-center gap-2"
+        >
+          <Link size={16} />
+          Generate Report Link
+        </button>
+      {/if}
     </div>
 
     <!-- Data Sharing -->
