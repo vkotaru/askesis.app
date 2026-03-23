@@ -6,6 +6,7 @@
   import { settings } from '$lib/stores/settings';
   import Layout from '$lib/components/Layout.svelte';
   import Login from '$lib/components/Login.svelte';
+  import SWUpdatePrompt from '$lib/components/SWUpdatePrompt.svelte';
 
   onMount(async () => {
     try {
@@ -31,3 +32,5 @@
 {:else}
   <Login />
 {/if}
+
+<SWUpdatePrompt />
