@@ -1,6 +1,6 @@
 import io
 import uuid
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
@@ -86,7 +86,7 @@ def get_photos(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "photos", db, current_user)
-    query = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == target_user.id)
+    query = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == target_user.id).filter(ProgressPhoto.deleted_at == None)
 
     if start_date:
         query = query.filter(ProgressPhoto.date >= start_date)
@@ -124,6 +124,7 @@ def get_photos_by_date(
         .filter(
             ProgressPhoto.user_id == target_user.id, ProgressPhoto.date == photo_date
         )
+        .filter(ProgressPhoto.deleted_at == None)
         .all()
     )
 
@@ -207,6 +208,7 @@ async def upload_photo(
             ProgressPhoto.date == photo_date,
             ProgressPhoto.view == view,
         )
+        .filter(ProgressPhoto.deleted_at == None)
         .first()
     )
 
@@ -334,29 +336,14 @@ def delete_photo(
     photo = (
         db.query(ProgressPhoto)
         .filter(ProgressPhoto.id == photo_id, ProgressPhoto.user_id == current_user.id)
+        .filter(ProgressPhoto.deleted_at == None)
         .first()
     )
 
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    # Delete from Google Drive
-    if photo.drive_file_id and current_user.google_refresh_token:
-        try:
-            google_drive.delete_photo(
-                current_user.google_refresh_token, photo.drive_file_id
-            )
-        except Exception:
-            pass  # Continue even if Drive delete fails
-
-    # Legacy: delete local file if exists
-    if photo.file_path:
-        file_path = Path(photo.file_path)
-        if file_path.exists():
-            file_path.unlink()
-
-    # Delete database record
-    db.delete(photo)
+    photo.deleted_at = datetime.utcnow()
     db.commit()
 
     return {"ok": True}

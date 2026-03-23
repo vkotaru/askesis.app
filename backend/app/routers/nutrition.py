@@ -408,7 +408,7 @@ def get_meals(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "nutrition", db, current_user)
-    query = db.query(Meal).filter(Meal.user_id == target_user.id)
+    query = db.query(Meal).filter(Meal.user_id == target_user.id).filter(Meal.deleted_at == None)
 
     if meal_date:
         query = query.filter(Meal.date == meal_date)
@@ -464,6 +464,7 @@ def update_meal(
     meal = (
         db.query(Meal)
         .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
+        .filter(Meal.deleted_at == None)
         .first()
     )
 
@@ -692,28 +693,14 @@ def delete_meal(
     meal = (
         db.query(Meal)
         .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
+        .filter(Meal.deleted_at == None)
         .first()
     )
 
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
 
-    # Delete photo from Google Drive
-    if meal.drive_file_id and current_user.google_refresh_token:
-        try:
-            google_drive.delete_photo(
-                current_user.google_refresh_token, meal.drive_file_id
-            )
-        except Exception:
-            pass  # Continue even if Drive delete fails
-
-    # Legacy: delete local file if exists
-    if meal.photo_path:
-        file_path = Path(meal.photo_path)
-        if file_path.exists():
-            file_path.unlink()
-
-    db.delete(meal)
+    meal.deleted_at = datetime.utcnow()
     db.commit()
     return {"ok": True}
 
@@ -731,6 +718,7 @@ def copy_meals_from_yesterday(
     yesterday_meals = (
         db.query(Meal)
         .filter(Meal.user_id == current_user.id, Meal.date == yesterday)
+        .filter(Meal.deleted_at == None)
         .all()
     )
 
@@ -798,7 +786,7 @@ def search_foods(
     """Search food items. Returns shared items + user's own."""
     from sqlalchemy import or_
 
-    query = db.query(FoodItem)
+    query = db.query(FoodItem).filter(FoodItem.deleted_at == None)
 
     if user_only:
         query = query.filter(FoodItem.user_id == current_user.id)
@@ -911,6 +899,7 @@ def update_food_item(
     food = (
         db.query(FoodItem)
         .filter(FoodItem.id == food_id, FoodItem.user_id == current_user.id)
+        .filter(FoodItem.deleted_at == None)
         .first()
     )
     if not food:
@@ -933,6 +922,7 @@ def delete_food_item(
     food = (
         db.query(FoodItem)
         .filter(FoodItem.id == food_id, FoodItem.user_id == current_user.id)
+        .filter(FoodItem.deleted_at == None)
         .first()
     )
     if not food:
@@ -948,6 +938,6 @@ def delete_food_item(
             detail=f"Cannot delete: food item is used in {ref_count} meal(s)",
         )
 
-    db.delete(food)
+    food.deleted_at = datetime.utcnow()
     db.commit()
     return {"ok": True}
