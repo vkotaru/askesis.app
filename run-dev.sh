@@ -16,6 +16,12 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}Starting Askesis in development mode...${NC}"
 
+# Create .env from example if it doesn't exist
+if [ ! -f "$BACKEND_DIR/.env" ]; then
+    echo -e "${GREEN}Creating .env from .env.example (DEV_MODE=true)...${NC}"
+    cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
+fi
+
 # Check if we need to set up backend
 if [ ! -d "$BACKEND_DIR/venv" ]; then
     echo -e "${GREEN}Setting up backend virtual environment...${NC}"
@@ -27,6 +33,11 @@ else
     cd "$BACKEND_DIR"
     source venv/bin/activate
 fi
+
+# Run database migrations
+echo -e "${GREEN}Running database migrations...${NC}"
+cd "$BACKEND_DIR"
+alembic upgrade head
 
 # Check if we need to install frontend deps
 if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
