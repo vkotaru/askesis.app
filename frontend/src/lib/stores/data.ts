@@ -218,8 +218,8 @@ async function hydrateTable<T>(
   try {
     const serverData = await fetcher();
     await table.bulkAdd(serverData.map(toLocal));
-  } catch {
-    // Server unavailable — will hydrate when online
+  } catch (err) {
+    console.warn(`[askesis] Failed to hydrate ${tableName}:`, err);
   }
 }
 
