@@ -331,9 +331,8 @@
       </div>
 
       <!-- Steps Bar Chart -->
-      {#if report.week_steps.some(s => s.steps)}
         <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
-          <h2 class="text-sm font-semibold text-gray-500 mb-4">Steps</h2>
+          <h2 class="text-sm font-semibold text-gray-500 mb-4">Steps <span class="font-normal text-gray-400 ml-1">last 7 days</span></h2>
           <div class="flex items-end gap-2 h-32">
             {#each report.week_steps as day, i}
               {@const pct = day.steps ? (day.steps / maxSteps) * 100 : 0}
@@ -355,12 +354,10 @@
             {/each}
           </div>
         </div>
-      {/if}
 
       <!-- Nutrition Bar Chart -->
-      {#if report.week_nutrition.some(n => n.calories > 0)}
         <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
-          <h2 class="text-sm font-semibold text-gray-500 mb-1">Nutrition</h2>
+          <h2 class="text-sm font-semibold text-gray-500 mb-1">Nutrition <span class="font-normal text-gray-400 ml-1">last 7 days</span></h2>
           <div class="flex items-center gap-4 mb-4">
             <span class="flex items-center gap-1 text-[10px] text-gray-400">
               <span class="inline-block w-2 h-2 rounded-sm bg-orange-400"></span> Calories
@@ -395,7 +392,6 @@
             {/each}
           </div>
         </div>
-      {/if}
 
       <!-- Body Measurements (latest vs previous) -->
       {#if report.latest_measurements}
