@@ -23,6 +23,8 @@ import {
   type FoodItem,
   type BodyMeasurement,
   type BodyMeasurementInput,
+  type DailyNutrition,
+  type DailyNutritionInput,
 } from '$lib/api/client';
 import { queueSync } from '$lib/sync';
 
@@ -667,6 +669,38 @@ export const offlineApi = {
       if (existing) {
         await queueSync('measurements', 'delete', existing.localId!, existing.serverId);
       }
+    }
+  },
+
+  // ── Nutrition (pass-through with offline fallback) ─────────────────────
+
+  async getDailyNutrition(date: string, userId?: number): Promise<DailyNutrition> {
+    try {
+      return await api.getDailyNutrition(date, userId);
+    } catch {
+      // Return empty nutrition for offline
+      return { id: 0, user_id: 0, date } as DailyNutrition;
+    }
+  },
+
+  async saveDailyNutrition(data: DailyNutritionInput): Promise<DailyNutrition> {
+    try {
+      return await api.saveDailyNutrition(data);
+    } catch {
+      return { id: 0, user_id: 0, ...data } as DailyNutrition;
+    }
+  },
+
+  async getNutritionHistory(
+    startDate?: string,
+    endDate?: string,
+    userId?: number,
+    limit?: number
+  ): Promise<DailyNutrition[]> {
+    try {
+      return await api.getNutritionHistory(startDate, endDate, userId, limit);
+    } catch {
+      return [];
     }
   },
 };

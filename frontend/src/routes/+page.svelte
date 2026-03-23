@@ -3,7 +3,8 @@
   import { format, subDays, subMonths, startOfWeek, endOfWeek, parseISO, addWeeks } from 'date-fns';
   import { Scale, Moon, Footprints, Droplets, Activity, TrendingUp, TrendingDown, Flame, Beef, Wheat, Bike, PersonStanding, Dumbbell } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition } from '$lib/api/client';
+  import { type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition } from '$lib/api/client';
+  import { offlineApi } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
   import { formatWeight, weightFromMetric, formatWater, formatDistance, getWeightLabel, distanceFromMetric } from '$lib/utils/units';
 
@@ -37,12 +38,12 @@
     try {
       // Fetch data - use higher limit for weight chart
       const [logsData, activitiesData, allActivitiesData, mealsData, mealsHistoryData, nutritionHistoryData] = await Promise.all([
-        api.getDailyLogs(undefined, undefined, undefined, 365),
-        api.getActivities(undefined, undefined, undefined, 10),
-        api.getActivities(sixtyDaysAgo, today, undefined, 500),
-        api.getMeals(today),
-        api.getMeals(undefined, undefined, thirtyDaysAgo, today, 500),
-        api.getNutritionHistory(thirtyDaysAgo, today, undefined, 60),
+        offlineApi.getDailyLogs(undefined, undefined, undefined, 365),
+        offlineApi.getActivities(undefined, undefined, undefined, 10),
+        offlineApi.getActivities(sixtyDaysAgo, today, undefined, 500),
+        offlineApi.getMeals(today),
+        offlineApi.getMeals(undefined, undefined, thirtyDaysAgo, today, 500),
+        offlineApi.getNutritionHistory(thirtyDaysAgo, today, undefined, 60),
       ]);
       logs = logsData;
       activities = activitiesData;
@@ -53,7 +54,7 @@
 
       // Try to get today's nutrition for macros
       try {
-        todayNutrition = await api.getDailyNutrition(today);
+        todayNutrition = await offlineApi.getDailyNutrition(today);
       } catch {
         todayNutrition = null;
       }
