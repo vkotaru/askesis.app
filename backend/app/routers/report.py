@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models import (
     User,
+    UserSettings,
     ReportToken,
     DailyLog,
     Activity,
@@ -83,6 +84,7 @@ class ReportResponse(BaseModel):
     latest_weight: float | None = None
     latest_weight_date: str | None = None
     weight_unit: str = "kg"
+    measurement_unit: str = "cm"
     weight_trend: list[WeightPoint] = []
     week_activities: list[ActivityEntry] = []
     week_start: str
@@ -328,10 +330,21 @@ def get_report(
     latest_measurements = _to_snapshot(measurement_rows[0]) if len(measurement_rows) >= 1 else None
     previous_measurements = _to_snapshot(measurement_rows[1]) if len(measurement_rows) >= 2 else None
 
+    # ── User unit preferences ─────────────────────────────────────────────
+    user_settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.user_id == user_id)
+        .first()
+    )
+    weight_unit = user_settings.weight_unit if user_settings else "kg"
+    measurement_unit = user_settings.measurement_unit if user_settings else "cm"
+
     return ReportResponse(
         today=today.isoformat(),
         latest_weight=latest_weight,
         latest_weight_date=latest_weight_log.date.isoformat() if latest_weight_log else None,
+        weight_unit=weight_unit,
+        measurement_unit=measurement_unit,
         weight_trend=weight_trend,
         week_activities=week_activities,
         week_start=week_start.isoformat(),
