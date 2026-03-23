@@ -26,6 +26,7 @@
   "dependencies": {
     "clsx": "^2.1.0",
     "date-fns": "^3.3.0",
+    "dexie": "^4.3.0",
     "layerchart": "^0.30.0",
     "lucide-svelte": "^0.344.0"
   }
