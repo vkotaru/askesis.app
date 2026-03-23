@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { api, type UserSettings, type ColorScheme } from '$lib/api/client';
+import { db } from '$lib/db';
 
 const DEFAULT_SETTINGS: UserSettings = {
   theme: 'system',
@@ -112,14 +113,31 @@ function createSettingsStore() {
 
     async load() {
       try {
+        // Try Dexie first for instant load
+        const cached = await db.settings.get('userSettings');
+        if (cached?.value) {
+          const cachedSettings = cached.value as UserSettings;
+          set(cachedSettings);
+          applySettings(cachedSettings);
+        }
+
+        // Then fetch from server and update cache
         const settings = await api.getSettings();
         set(settings);
         applySettings(settings);
+        await db.settings.put({ key: 'userSettings', value: settings });
       } catch (err) {
-        // Use defaults if not authenticated or on error
-        console.error('Failed to load settings, using defaults:', err);
-        set(DEFAULT_SETTINGS);
-        applySettings(DEFAULT_SETTINGS);
+        // If server failed but we have cached settings, keep them
+        const cached = await db.settings.get('userSettings').catch(() => null);
+        if (cached?.value) {
+          const cachedSettings = cached.value as UserSettings;
+          set(cachedSettings);
+          applySettings(cachedSettings);
+        } else {
+          console.error('Failed to load settings, using defaults:', err);
+          set(DEFAULT_SETTINGS);
+          applySettings(DEFAULT_SETTINGS);
+        }
       }
     },
 
@@ -130,6 +148,10 @@ function createSettingsStore() {
         applySettings(newSettings);
         return newSettings;
       });
+
+      // Cache in Dexie
+      const current = get({ subscribe });
+      db.settings.put({ key: 'userSettings', value: current }).catch(() => {});
 
       // Persist to server
       try {
