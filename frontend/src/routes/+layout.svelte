@@ -7,12 +7,18 @@
   import Layout from '$lib/components/Layout.svelte';
   import Login from '$lib/components/Login.svelte';
   import SWUpdatePrompt from '$lib/components/SWUpdatePrompt.svelte';
+  import { hydrateFromServer } from '$lib/stores/data';
+  import { sync } from '$lib/sync';
 
   onMount(async () => {
     try {
       const userData = await api.getMe();
       user.set(userData);
       await settings.load();
+      // Hydrate Dexie from server (only if tables are empty)
+      hydrateFromServer(userData.id).catch(() => {});
+      // Sync any pending offline mutations
+      sync().catch(() => {});
     } catch {
       user.set(null);
     } finally {
