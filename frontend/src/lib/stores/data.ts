@@ -224,11 +224,12 @@ async function hydrateTable<T>(
 }
 
 export async function hydrateFromServer(userId?: number): Promise<void> {
+  // Use max server limit (500) to get complete data for offline use
   await Promise.all([
-    hydrateTable('dailyLogs', () => api.getDailyLogs(), (log) => toLocalDailyLog(log, userId)),
-    hydrateTable('activities', () => api.getActivities(), (a) => toLocalActivity(a, userId)),
-    hydrateTable('meals', () => api.getMeals(), (m) => toLocalMeal(m, userId)),
-    hydrateTable('foods', () => api.searchFoods(), (f) => ({
+    hydrateTable('dailyLogs', () => api.getDailyLogs(undefined, undefined, undefined, 500), (log) => toLocalDailyLog(log, userId)),
+    hydrateTable('activities', () => api.getActivities(undefined, undefined, undefined, 500), (a) => toLocalActivity(a, userId)),
+    hydrateTable('meals', () => api.getMeals(undefined, undefined, undefined, undefined, 500), (m) => toLocalMeal(m, userId)),
+    hydrateTable('foods', () => api.searchFoods(undefined, undefined, false, 200), (f) => ({
       serverId: f.id,
       name: f.name,
       brand: f.brand,
@@ -244,8 +245,8 @@ export async function hydrateFromServer(userId?: number): Promise<void> {
       source: f.source,
       updatedAt: now(),
     })),
-    hydrateTable('measurements', () => api.getMeasurements(), (m) => toLocalMeasurement(m, userId)),
-    hydrateTable('photos', () => api.getPhotos(), (p) => ({
+    hydrateTable('measurements', () => api.getMeasurements(undefined, undefined, undefined), (m) => toLocalMeasurement(m, userId)),
+    hydrateTable('photos', () => api.getPhotos(undefined, undefined, undefined, undefined), (p) => ({
       serverId: p.id,
       date: p.date,
       view: p.view,
@@ -280,24 +281,10 @@ export const offlineApi = {
     if (limit) results = results.slice(0, limit);
 
     if (results.length > 0) {
-      // Background refresh from server
-      api.getDailyLogs(startDate, endDate, _userId, limit)
-        .then(async (serverLogs) => {
-          for (const log of serverLogs) {
-            const existing = await db.dailyLogs.where('serverId').equals(log.id).first();
-            if (existing) {
-              await db.dailyLogs.update(existing.localId!, toLocalDailyLog(log));
-            } else {
-              await db.dailyLogs.add(toLocalDailyLog(log) as LocalDailyLog);
-            }
-          }
-        })
-        .catch(() => { /* offline */ });
-
       return results.map(fromLocalDailyLog);
     }
 
-    // No local data — try server
+    // No local data — try server and cache
     try {
       const serverLogs = await api.getDailyLogs(startDate, endDate, _userId, limit);
       for (const log of serverLogs) {
@@ -314,15 +301,7 @@ export const offlineApi = {
 
   async getDailyLog(date: string, _userId?: number): Promise<DailyLog> {
     const local = await db.dailyLogs.where('date').equals(date).first();
-
     if (local) {
-      // Background refresh
-      api.getDailyLog(date, _userId)
-        .then(async (serverLog) => {
-          await db.dailyLogs.update(local.localId!, toLocalDailyLog(serverLog));
-        })
-        .catch(() => { /* offline */ });
-
       return fromLocalDailyLog(local);
     }
 
@@ -378,19 +357,6 @@ export const offlineApi = {
     if (limit) results = results.slice(0, limit);
 
     if (results.length > 0) {
-      api.getActivities(startDate, endDate, _userId, limit)
-        .then(async (serverActivities) => {
-          for (const a of serverActivities) {
-            const existing = await db.activities.where('serverId').equals(a.id).first();
-            if (existing) {
-              await db.activities.update(existing.localId!, toLocalActivity(a));
-            } else {
-              await db.activities.add(toLocalActivity(a) as LocalActivity);
-            }
-          }
-        })
-        .catch(() => {});
-
       return results.map(fromLocalActivity);
     }
 
@@ -489,19 +455,6 @@ export const offlineApi = {
     if (limit) results = results.slice(0, limit);
 
     if (results.length > 0) {
-      api.getMeals(date, _userId, startDate, endDate, limit)
-        .then(async (serverMeals) => {
-          for (const m of serverMeals) {
-            const existing = await db.meals.where('serverId').equals(m.id).first();
-            if (existing) {
-              await db.meals.update(existing.localId!, toLocalMeal(m));
-            } else {
-              await db.meals.add(toLocalMeal(m) as LocalMeal);
-            }
-          }
-        })
-        .catch(() => {});
-
       return results.map(fromLocalMeal);
     }
 
@@ -596,19 +549,6 @@ export const offlineApi = {
     }
 
     if (results.length > 0) {
-      api.getMeasurements(startDate, endDate, _userId)
-        .then(async (serverMeasurements) => {
-          for (const m of serverMeasurements) {
-            const existing = await db.measurements.where('serverId').equals(m.id).first();
-            if (existing) {
-              await db.measurements.update(existing.localId!, toLocalMeasurement(m));
-            } else {
-              await db.measurements.add(toLocalMeasurement(m) as LocalMeasurement);
-            }
-          }
-        })
-        .catch(() => {});
-
       return results.map(fromLocalMeasurement);
     }
 
@@ -628,14 +568,7 @@ export const offlineApi = {
 
   async getMeasurement(date: string, _userId?: number): Promise<BodyMeasurement> {
     const local = await db.measurements.where('date').equals(date).first();
-
     if (local) {
-      api.getMeasurement(date, _userId)
-        .then(async (server) => {
-          await db.measurements.update(local.localId!, toLocalMeasurement(server));
-        })
-        .catch(() => {});
-
       return fromLocalMeasurement(local);
     }
 
@@ -736,29 +669,6 @@ export const offlineApi = {
     }
 
     if (results.length > 0) {
-      // Background refresh
-      api.getPhotos(startDate, endDate, view, _userId)
-        .then(async (serverPhotos) => {
-          for (const p of serverPhotos) {
-            const existing = await db.photos.where('serverId').equals(p.id).first();
-            const local: LocalPhoto = {
-              serverId: p.id,
-              date: p.date,
-              view: p.view,
-              drive_file_id: p.drive_file_id,
-              notes: p.notes,
-              url: p.url,
-              updatedAt: now(),
-            };
-            if (existing) {
-              await db.photos.update(existing.localId!, local as UpdateSpec);
-            } else {
-              await db.photos.add(local);
-            }
-          }
-        })
-        .catch(() => {});
-
       return results.map(p => ({
         id: p.serverId ?? p.localId!,
         date: p.date,
@@ -795,29 +705,6 @@ export const offlineApi = {
     const local = await db.photos.where('date').equals(date).toArray();
 
     if (local.length > 0) {
-      // Background refresh
-      api.getPhotosByDate(date, _userId)
-        .then(async (serverPhotos) => {
-          for (const p of serverPhotos) {
-            const existing = await db.photos.where('serverId').equals(p.id).first();
-            const record: LocalPhoto = {
-              serverId: p.id,
-              date: p.date,
-              view: p.view,
-              drive_file_id: p.drive_file_id,
-              notes: p.notes,
-              url: p.url,
-              updatedAt: now(),
-            };
-            if (existing) {
-              await db.photos.update(existing.localId!, record as UpdateSpec);
-            } else {
-              await db.photos.add(record);
-            }
-          }
-        })
-        .catch(() => {});
-
       return local.map(p => ({
         id: p.serverId ?? p.localId!,
         date: p.date,

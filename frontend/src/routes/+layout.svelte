@@ -7,6 +7,7 @@
   import Layout from '$lib/components/Layout.svelte';
   import Login from '$lib/components/Login.svelte';
   import SWUpdatePrompt from '$lib/components/SWUpdatePrompt.svelte';
+  import SyncErrorToast from '$lib/components/SyncErrorToast.svelte';
   import { hydrateFromServer } from '$lib/stores/data';
   import { sync } from '$lib/sync';
 
@@ -40,3 +41,4 @@
 {/if}
 
 <SWUpdatePrompt />
+<SyncErrorToast />

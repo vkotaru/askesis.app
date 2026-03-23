@@ -2,8 +2,6 @@
  * Sync engine for askesis.app
  *
  * Handles the offline mutation queue (pendingSync) and server synchronization.
- * The FastAPI backend sync endpoints (GET /api/sync/changes, POST /api/sync/push)
- * don't exist yet — this module gracefully handles their absence.
  */
 
 import { writable, derived, get } from 'svelte/store';
@@ -16,6 +14,7 @@ export const isOnline = writable(browser ? navigator.onLine : true);
 export const pendingSyncCount = writable(0);
 export const isSyncing = writable(false);
 export const lastSyncTime = writable<string | null>(null);
+export const syncErrors = writable<string[]>([]);
 
 export const syncStatus = derived(
   [isOnline, pendingSyncCount, isSyncing],
@@ -26,9 +25,33 @@ export const syncStatus = derived(
   })
 );
 
+// ── Persist lastSyncTime in Dexie ────────────────────────────────────────────
+
+async function loadLastSyncTime() {
+  try {
+    const entry = await db.settings.get('lastSyncTime');
+    if (entry?.value) {
+      lastSyncTime.set(entry.value as string);
+    }
+  } catch {
+    // DB might not be open yet
+  }
+}
+
+async function saveLastSyncTime(time: string) {
+  lastSyncTime.set(time);
+  try {
+    await db.settings.put({ key: 'lastSyncTime', value: time });
+  } catch {
+    // Best effort
+  }
+}
+
 // ── Online/offline detection ─────────────────────────────────────────────────
 
 if (browser) {
+  loadLastSyncTime();
+
   window.addEventListener('online', () => {
     isOnline.set(true);
     flushPendingSync();
@@ -86,25 +109,35 @@ export async function flushPendingSync(): Promise<void> {
   isSyncing.set(true);
 
   try {
-    // Try the batch sync endpoint first (future)
-    const pushed = await pushToServer(entries);
-    if (pushed) {
-      // Clear all successfully synced entries
+    const result = await pushToServer(entries);
+    if (result.pushed) {
+      // Clear successfully synced entries
       await db.pendingSync.clear();
       await refreshPendingSyncCount();
-      lastSyncTime.set(new Date().toISOString());
+      await saveLastSyncTime(new Date().toISOString());
+
+      // Report any partial failures
+      if (result.errors.length > 0) {
+        syncErrors.set(result.errors);
+        // Auto-clear errors after 10 seconds
+        setTimeout(() => syncErrors.set([]), 10000);
+      }
     }
   } catch {
-    // Server sync endpoints don't exist yet — that's OK.
     // Entries stay in the queue for next attempt.
   } finally {
     isSyncing.set(false);
   }
 }
 
-// ── Server communication (graceful fallback) ─────────────────────────────────
+// ── Server communication ─────────────────────────────────────────────────────
 
-async function pushToServer(entries: PendingSyncEntry[]): Promise<boolean> {
+interface PushResult {
+  pushed: boolean;
+  errors: string[];
+}
+
+async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
   try {
     const res = await fetch('/api/sync/push', {
       method: 'POST',
@@ -114,19 +147,29 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<boolean> {
     });
 
     if (res.status === 404) {
-      // Sync endpoint doesn't exist yet — not an error
-      return false;
+      return { pushed: false, errors: [] };
     }
 
     if (!res.ok) {
       throw new Error(`Sync push failed: HTTP ${res.status}`);
     }
 
-    return true;
+    const data = await res.json();
+    const errors: string[] = [];
+
+    if (data.results) {
+      for (const r of data.results) {
+        if (!r.ok && r.error) {
+          errors.push(`Sync error (${entries[r.index]?.table || '?'}): ${r.error}`);
+        }
+      }
+    }
+
+    return { pushed: true, errors };
   } catch (err) {
     if (err instanceof TypeError) {
       // Network error — we're offline
-      return false;
+      return { pushed: false, errors: [] };
     }
     throw err;
   }
@@ -142,7 +185,6 @@ export async function pullFromServer(): Promise<void> {
     });
 
     if (res.status === 404) {
-      // Sync endpoint doesn't exist yet — not an error
       return;
     }
 
@@ -177,9 +219,9 @@ export async function pullFromServer(): Promise<void> {
       }
     }
 
-    lastSyncTime.set(new Date().toISOString());
+    await saveLastSyncTime(new Date().toISOString());
   } catch {
-    // Network error or sync endpoint doesn't exist — silently skip
+    // Network error — silently skip
   }
 }
 
