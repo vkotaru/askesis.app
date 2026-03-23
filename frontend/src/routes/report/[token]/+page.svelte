@@ -18,13 +18,41 @@
     icon: string | null;
   }
 
+  interface MeasurementSnapshot {
+    date: string;
+    neck: number | null;
+    shoulders: number | null;
+    chest: number | null;
+    bicep_left: number | null;
+    bicep_right: number | null;
+    waist: number | null;
+    abdomen: number | null;
+    hips: number | null;
+    thigh_left: number | null;
+    thigh_right: number | null;
+    calf_left: number | null;
+    calf_right: number | null;
+  }
+
+  interface NutritionAverage {
+    avg_calories: number | null;
+    avg_protein_g: number | null;
+    avg_carbs_g: number | null;
+    avg_fat_g: number | null;
+    days_tracked: number;
+  }
+
   interface Report {
+    today: string;
     latest_weight: number | null;
+    latest_weight_date: string | null;
     weight_unit: string;
     weight_trend: WeightPoint[];
     week_activities: ActivityEntry[];
     week_start: string;
     week_end: string;
+    latest_measurements: MeasurementSnapshot | null;
+    nutrition_avg: NutritionAverage | null;
     generated_at: string;
   }
 
@@ -133,6 +161,9 @@
         <p class="text-lg text-gray-500">{error}</p>
       </div>
     {:else if report}
+      <!-- Date -->
+      <p class="text-sm text-gray-400 mb-4">{format(parseISO(report.today), 'EEEE, MMMM d, yyyy')}</p>
+
       <!-- Latest Weight -->
       <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
         <p class="text-sm text-gray-500 mb-1">Current Weight</p>
@@ -144,6 +175,11 @@
             <span class="text-lg text-gray-400">kg</span>
           {/if}
         </div>
+        {#if report.latest_weight_date}
+          <p class="text-xs text-gray-400 mt-1">
+            as of {format(parseISO(report.latest_weight_date), 'MMM d, yyyy')}
+          </p>
+        {/if}
         {#if weightChange !== null}
           <p class="text-sm mt-2 {weightChange < 0 ? 'text-green-500' : weightChange > 0 ? 'text-red-500' : 'text-gray-400'}">
             {weightChange > 0 ? '+' : ''}{weightChange.toFixed(2)} kg over 30 days
@@ -265,6 +301,75 @@
           </div>
         {/if}
       </div>
+
+      <!-- Nutrition Averages -->
+      {#if report.nutrition_avg && report.nutrition_avg.days_tracked > 0}
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
+          <h2 class="text-sm font-semibold text-gray-500 mb-4">
+            Nutrition
+            <span class="font-normal text-gray-400 ml-1">7-day average</span>
+          </h2>
+          <div class="grid grid-cols-4 gap-4">
+            <div>
+              <p class="text-xs text-gray-400">Calories</p>
+              <p class="text-xl font-bold">{report.nutrition_avg.avg_calories ?? '—'}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Protein</p>
+              <p class="text-xl font-bold">
+                {report.nutrition_avg.avg_protein_g ?? '—'}{#if report.nutrition_avg.avg_protein_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Carbs</p>
+              <p class="text-xl font-bold">
+                {report.nutrition_avg.avg_carbs_g ?? '—'}{#if report.nutrition_avg.avg_carbs_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Fat</p>
+              <p class="text-xl font-bold">
+                {report.nutrition_avg.avg_fat_g ?? '—'}{#if report.nutrition_avg.avg_fat_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
+              </p>
+            </div>
+          </div>
+          <p class="text-xs text-gray-400 mt-3">Based on {report.nutrition_avg.days_tracked} day{report.nutrition_avg.days_tracked === 1 ? '' : 's'} tracked</p>
+        </div>
+      {/if}
+
+      <!-- Body Measurements -->
+      {#if report.latest_measurements}
+        {@const m = report.latest_measurements}
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
+          <h2 class="text-sm font-semibold text-gray-500 mb-4">
+            Body Measurements
+            <span class="font-normal text-gray-400 ml-1">{format(parseISO(m.date), 'MMM d, yyyy')}</span>
+          </h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+            {#each [
+              ['Chest', m.chest],
+              ['Waist', m.waist],
+              ['Hips', m.hips],
+              ['Shoulders', m.shoulders],
+              ['Neck', m.neck],
+              ['Abdomen', m.abdomen],
+              ['Bicep L', m.bicep_left],
+              ['Bicep R', m.bicep_right],
+              ['Thigh L', m.thigh_left],
+              ['Thigh R', m.thigh_right],
+              ['Calf L', m.calf_left],
+              ['Calf R', m.calf_right],
+            ] as [label, value]}
+              {#if value}
+                <div class="flex justify-between items-baseline">
+                  <span class="text-xs text-gray-400">{label}</span>
+                  <span class="text-sm font-semibold">{Number(value).toFixed(1)} <span class="text-xs font-normal text-gray-400">cm</span></span>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- Footer -->
       <p class="text-center text-xs text-gray-300 dark:text-gray-600 mt-8">
