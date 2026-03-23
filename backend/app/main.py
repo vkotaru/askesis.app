@@ -20,6 +20,7 @@ from app.routers import (
     sharing,
     import_router,
     export,
+    sync,
 )
 
 # Configure logging
@@ -95,6 +96,7 @@ app.include_router(photos.router, prefix="/api/photos", tags=["photos"])
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 app.include_router(import_router.router, prefix="/api/import", tags=["import"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
+app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 
 
 @app.get("/health")
