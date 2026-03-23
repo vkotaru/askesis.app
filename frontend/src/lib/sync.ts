@@ -5,6 +5,7 @@
  */
 
 import { writable, derived, get } from 'svelte/store';
+import { type Table } from 'dexie';
 import { db, type PendingSyncEntry, type SyncOperation } from './db';
 import { browser } from '$app/environment';
 
@@ -111,8 +112,10 @@ export async function flushPendingSync(): Promise<void> {
   try {
     const result = await pushToServer(entries);
     if (result.pushed) {
-      // Clear successfully synced entries
-      await db.pendingSync.clear();
+      // Only delete entries that the server confirmed as ok
+      if (result.successIds.length > 0) {
+        await db.pendingSync.bulkDelete(result.successIds);
+      }
       await refreshPendingSyncCount();
       await saveLastSyncTime(new Date().toISOString());
 
@@ -134,6 +137,7 @@ export async function flushPendingSync(): Promise<void> {
 
 interface PushResult {
   pushed: boolean;
+  successIds: number[];
   errors: string[];
 }
 
@@ -147,7 +151,7 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
     });
 
     if (res.status === 404) {
-      return { pushed: false, errors: [] };
+      return { pushed: false, successIds: [], errors: [] };
     }
 
     if (!res.ok) {
@@ -155,21 +159,25 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
     }
 
     const data = await res.json();
+    const successIds: number[] = [];
     const errors: string[] = [];
 
     if (data.results) {
       for (const r of data.results) {
-        if (!r.ok && r.error) {
+        if (r.ok) {
+          const entryId = entries[r.index]?.id;
+          if (entryId != null) successIds.push(entryId);
+        } else if (r.error) {
           errors.push(`Sync error (${entries[r.index]?.table || '?'}): ${r.error}`);
         }
       }
     }
 
-    return { pushed: true, errors };
+    return { pushed: true, successIds, errors };
   } catch (err) {
     if (err instanceof TypeError) {
       // Network error — we're offline
-      return { pushed: false, errors: [] };
+      return { pushed: false, successIds: [], errors: [] };
     }
     throw err;
   }
@@ -218,6 +226,11 @@ export async function pullFromServer(): Promise<void> {
         await mergeServerRecord(db.measurements, measurement);
       }
     }
+    if (data.photos) {
+      for (const photo of data.photos) {
+        await mergeServerRecord(db.photos, photo);
+      }
+    }
 
     await saveLastSyncTime(new Date().toISOString());
   } catch {
@@ -227,7 +240,7 @@ export async function pullFromServer(): Promise<void> {
 
 async function mergeServerRecord(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  table: any,
+  table: Table<any, number>,
   serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown }
 ): Promise<void> {
   // Look up by serverId first, then fall back to date (prevents duplicates
