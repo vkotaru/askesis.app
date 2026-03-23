@@ -4,6 +4,7 @@
   import { clsx } from 'clsx';
   import type { User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
+  import SyncStatus from './SyncStatus.svelte';
 
   export let user: User;
 
@@ -47,6 +48,7 @@
         Askesis
       </h1>
       <div class="flex items-center gap-3">
+        <SyncStatus />
         <button
           on:click|stopPropagation={() => (showMobileMenu = !showMobileMenu)}
           class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -184,13 +186,16 @@
           <p class="text-xs text-gray-500 truncate">{user.email}</p>
         </div>
       </div>
-      <a
-        href="/auth/logout"
-        class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors px-2"
-      >
-        <LogOut size={16} />
-        Sign out
-      </a>
+      <div class="flex items-center justify-between px-2">
+        <a
+          href="/auth/logout"
+          class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors"
+        >
+          <LogOut size={16} />
+          Sign out
+        </a>
+        <SyncStatus />
+      </div>
     </div>
   </aside>
 
