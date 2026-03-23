@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 
 from app.database import get_db
 from app.models import User, Activity, Exercise, ActivityType, TimeOfDay
@@ -79,7 +79,7 @@ def get_activities(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "activities", db, current_user)
-    query = db.query(Activity).filter(Activity.user_id == target_user.id)
+    query = db.query(Activity).filter(Activity.user_id == target_user.id).filter(Activity.deleted_at == None)
 
     if start_date:
         query = query.filter(Activity.date >= start_date)
@@ -102,6 +102,7 @@ def get_activity(
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.user_id == target_user.id)
+        .filter(Activity.deleted_at == None)
         .first()
     )
 
@@ -143,6 +144,7 @@ def update_activity(
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.user_id == current_user.id)
+        .filter(Activity.deleted_at == None)
         .first()
     )
 
@@ -173,13 +175,14 @@ def delete_activity(
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.user_id == current_user.id)
+        .filter(Activity.deleted_at == None)
         .first()
     )
 
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
-    db.delete(activity)
+    activity.deleted_at = datetime.utcnow()
     db.commit()
     return {"ok": True}
 
@@ -206,6 +209,7 @@ def get_calendar(
             Activity.date >= start,
             Activity.date <= end,
         )
+        .filter(Activity.deleted_at == None)
         .all()
     )
 
