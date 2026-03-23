@@ -123,6 +123,10 @@ class DailyLog(Base):
     ate_outside: Mapped[bool | None] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="daily_logs")
 
@@ -145,6 +149,10 @@ class Meal(Base):
     )  # Google Drive file ID
     ai_analysis: Mapped[str | None] = mapped_column(Text)  # Gemini analysis result
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="meals")
     food_items: Mapped[list["MealFoodItem"]] = relationship(
@@ -177,6 +185,10 @@ class FoodItem(Base):
     is_shared: Mapped[bool] = mapped_column(Boolean, default=True)
     source: Mapped[str | None] = mapped_column(String(50))  # manual, ai_analysis
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User | None"] = relationship("User")
 
@@ -250,6 +262,10 @@ class Activity(Base):
         String(50)
     )  # Icon name (e.g., 'dumbbell', 'bike')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="activities")
     exercises: Mapped[list["Exercise"]] = relationship(back_populates="activity")
@@ -297,6 +313,10 @@ class BodyMeasurement(Base):
     # Notes
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship("User")
 
@@ -343,6 +363,10 @@ class ProgressPhoto(Base):
     )  # Google Drive file ID
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship("User")
 
