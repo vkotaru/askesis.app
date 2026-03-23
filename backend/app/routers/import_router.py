@@ -328,7 +328,8 @@ def import_daily_logs(
                 existing_log = (
                     db.query(DailyLog)
                     .filter(
-                        DailyLog.user_id == current_user.id, DailyLog.date == log_date
+                        DailyLog.user_id == current_user.id, DailyLog.date == log_date,
+                        DailyLog.deleted_at == None,
                     )
                     .first()
                 )
@@ -454,6 +455,7 @@ def import_measurements(
                 .filter(
                     BodyMeasurement.user_id == current_user.id,
                     BodyMeasurement.date == measurement_date,
+                    BodyMeasurement.deleted_at == None,
                 )
                 .first()
             )
@@ -547,6 +549,7 @@ def import_meals(
                             Meal.user_id == current_user.id,
                             Meal.date == log_date,
                             Meal.label == label,
+                            Meal.deleted_at == None,
                         )
                         .first()
                     )
