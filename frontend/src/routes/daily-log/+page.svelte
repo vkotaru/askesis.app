@@ -4,7 +4,8 @@
   import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar, CheckCircle } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
-  import { api, type DailyLog } from '$lib/api/client';
+  import { type DailyLog } from '$lib/api/client';
+  import { offlineApi } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
   import { formatWater, formatWeight, waterToMetric, waterFromMetric, weightToMetric, weightFromMetric, getWaterLabel, getWeightLabel } from '$lib/utils/units';
 
@@ -49,7 +50,7 @@
   async function autoSave(fieldName: string) {
     saving = true;
     try {
-      await api.saveDailyLog({
+      await offlineApi.saveDailyLog({
         date: selectedDate,
         weight: weight ? weightToMetric(weight, $settings.weight_unit) : undefined,
         sleep_hours,
@@ -77,7 +78,7 @@
 
   async function loadLog() {
     try {
-      const log = await api.getDailyLog(selectedDate);
+      const log = await offlineApi.getDailyLog(selectedDate);
       weight = log.weight ? weightFromMetric(log.weight, $settings.weight_unit) : undefined;
       sleep_hours = log.sleep_hours;
       steps = log.steps;
@@ -102,7 +103,7 @@
   async function loadRecentLogs() {
     try {
       // Fetch 10 most recent logs (backend returns sorted by date desc)
-      recentLogs = await api.getDailyLogs(undefined, undefined, undefined, 10);
+      recentLogs = await offlineApi.getDailyLogs(undefined, undefined, undefined, 10);
     } catch (e) {
       console.error('Failed to load logs:', e);
       recentLogs = [];
@@ -142,7 +143,7 @@
     saving = true;
     saved = false;
     try {
-      await api.saveDailyLog({
+      await offlineApi.saveDailyLog({
         date: selectedDate,
         weight: weight ? weightToMetric(weight, $settings.weight_unit) : undefined,
         sleep_hours,

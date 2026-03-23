@@ -5,6 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
+  import { offlineApi } from '$lib/stores/data';
 import { settings } from '$lib/stores/settings';
   import { getMeasurementLabel, formatMeasurement, measurementToMetric, measurementFromMetric } from '$lib/utils/units';
 
@@ -42,7 +43,7 @@ import { settings } from '$lib/stores/settings';
   async function loadMeasurement() {
     loading = true;
     try {
-      const measurement = await api.getMeasurement(selectedDate, undefined);
+      const measurement = await offlineApi.getMeasurement(selectedDate, undefined);
       neck = fromMetric(measurement.neck);
       shoulders = fromMetric(measurement.shoulders);
       chest = fromMetric(measurement.chest);
@@ -112,7 +113,7 @@ import { settings } from '$lib/stores/settings';
     try {
       const endDate = format(new Date(), 'yyyy-MM-dd');
       const startDate = format(subDays(new Date(), 365), 'yyyy-MM-dd');
-      const measurements = await api.getMeasurements(startDate, endDate, undefined);
+      const measurements = await offlineApi.getMeasurements(startDate, endDate, undefined);
       // Sort by date descending and take last 10
       recentMeasurements = measurements.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
     } catch {
@@ -140,7 +141,7 @@ import { settings } from '$lib/stores/settings';
     saving = true;
     saved = false;
     try {
-      await api.saveMeasurement({
+      await offlineApi.saveMeasurement({
         date: selectedDate,
         neck: toMetric(neck),
         shoulders: toMetric(shoulders),

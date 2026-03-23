@@ -7,6 +7,7 @@
   import FoodItemForm from '$lib/components/FoodItemForm.svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition, type FoodItem, type MealFoodItemInput } from '$lib/api/client';
+  import { offlineApi } from '$lib/stores/data';
 
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
@@ -49,7 +50,7 @@
   async function loadMeals() {
     loading = true;
     try {
-      meals = await api.getMeals(selectedDate, undefined);
+      meals = await offlineApi.getMeals(selectedDate, undefined);
     } catch (err) {
       console.error('Failed to load meals:', err);
     } finally {
@@ -59,7 +60,7 @@
 
   async function loadDailyNutrition() {
     try {
-      dailyNutrition = await api.getDailyNutrition(selectedDate, undefined);
+      dailyNutrition = await offlineApi.getDailyNutrition(selectedDate, undefined);
       // Populate macro fields from daily nutrition
       macroProtein = dailyNutrition.protein_g ?? undefined;
       macroCarbs = dailyNutrition.carbs_g ?? undefined;
@@ -75,7 +76,7 @@
   async function saveMacros() {
     savingMacros = true;
     try {
-      await api.saveDailyNutrition({
+      await offlineApi.saveDailyNutrition({
         date: selectedDate,
         protein_g: macroProtein,
         carbs_g: macroCarbs,
@@ -111,7 +112,7 @@
     };
 
     try {
-      const meal = await api.createMeal(data);
+      const meal = await offlineApi.createMeal(data);
 
       // Upload photo if selected
       if (selectedFile) {
@@ -130,7 +131,7 @@
 
   async function deleteMeal(id: number) {
     try {
-      await api.deleteMeal(id);
+      await offlineApi.deleteMeal(id);
       loadMeals();
     } catch (err) {
       console.error('Failed to delete meal:', err);
@@ -162,7 +163,7 @@
     if (!editingMealId) return;
     savingMeal = true;
     try {
-      await api.updateMeal(editingMealId, editMealData);
+      await offlineApi.updateMeal(editingMealId, editMealData);
       editingMealId = null;
       editMealData = { date: '', label: '' };
       loadMeals();

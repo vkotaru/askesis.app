@@ -4,7 +4,8 @@
   import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
-  import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
+  import { type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
+  import { offlineApi } from '$lib/stores/data';
 
   import { settings } from '$lib/stores/settings';
   import { formatDistance, distanceToMetric, getDistanceLabel, formatWeight, getWeightLabel } from '$lib/utils/units';
@@ -60,7 +61,7 @@
   async function loadActivities() {
     loading = true;
     try {
-      activities = await api.getActivities(selectedDate, selectedDate, undefined);
+      activities = await offlineApi.getActivities(selectedDate, selectedDate, undefined);
     } catch (err) {
       console.error('Failed to load activities:', err);
     } finally {
@@ -72,7 +73,7 @@
     try {
       const endDate = format(new Date(), 'yyyy-MM-dd');
       const startDate = format(subDays(new Date(), 60), 'yyyy-MM-dd');
-      const allActivities = await api.getActivities(startDate, endDate, undefined);
+      const allActivities = await offlineApi.getActivities(startDate, endDate, undefined);
       // Sort by date descending and take last 10
       recentActivities = allActivities.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
     } catch {
@@ -168,9 +169,9 @@
 
     try {
       if (editingActivity) {
-        await api.updateActivity(editingActivity.id, data);
+        await offlineApi.updateActivity(editingActivity.id, data);
       } else {
-        await api.createActivity(data);
+        await offlineApi.createActivity(data);
       }
       showForm = false;
       resetForm();
@@ -183,7 +184,7 @@
 
   async function deleteActivity(id: number) {
     try {
-      await api.deleteActivity(id);
+      await offlineApi.deleteActivity(id);
       loadActivities();
       loadRecentActivities();
     } catch (err) {
