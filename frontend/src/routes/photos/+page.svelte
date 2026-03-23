@@ -4,6 +4,8 @@
   import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image, AlertTriangle, GitCompare, X } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type ProgressPhoto, type PhotoView, type DriveStatus } from '$lib/api/client';
+  import { offlineApi } from '$lib/stores/data';
+  import { isOnline } from '$lib/sync';
 
   const VIEWS: { value: PhotoView; label: string; emoji: string }[] = [
     { value: 'front', label: 'Front', emoji: '🧍' },
@@ -35,7 +37,7 @@
   async function loadAllPhotoDates() {
     try {
       // Get all photos to extract unique dates
-      const allPhotos = await api.getPhotos(undefined, undefined, undefined, undefined);
+      const allPhotos = await offlineApi.getPhotos(undefined, undefined, undefined, undefined);
       const dates = [...new Set(allPhotos.map(p => p.date))].sort();
       allPhotoDates = dates;
       // Set default comparison dates
@@ -55,8 +57,8 @@
     loadingCompare = true;
     try {
       const [leftPhotos, rightPhotos] = await Promise.all([
-        api.getPhotosByDate(compareLeftDate, undefined),
-        api.getPhotosByDate(compareRightDate, undefined),
+        offlineApi.getPhotosByDate(compareLeftDate, undefined),
+        offlineApi.getPhotosByDate(compareRightDate, undefined),
       ]);
       compareLeftPhoto = leftPhotos.find(p => p.view === compareView) || null;
       compareRightPhoto = rightPhotos.find(p => p.view === compareView) || null;
@@ -91,7 +93,7 @@
   async function loadPhotos() {
     loading = true;
     try {
-      photos = await api.getPhotosByDate(selectedDate, undefined);
+      photos = await offlineApi.getPhotosByDate(selectedDate, undefined);
     } catch (err) {
       console.error('Failed to load photos:', err);
       photos = [];
@@ -128,10 +130,19 @@
     fileInputs[view]?.click();
   }
 
+  let offlineWarning = '';
+
   async function handleFileSelect(e: Event, view: PhotoView) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+
+    if (!$isOnline) {
+      offlineWarning = 'Upload requires an internet connection.';
+      setTimeout(() => (offlineWarning = ''), 3000);
+      input.value = '';
+      return;
+    }
 
     uploading = view;
     try {
@@ -146,6 +157,11 @@
   }
 
   async function deletePhoto(photo: ProgressPhoto) {
+    if (!$isOnline) {
+      offlineWarning = 'Deleting photos requires an internet connection.';
+      setTimeout(() => (offlineWarning = ''), 3000);
+      return;
+    }
     if (!confirm('Delete this photo?')) return;
     try {
       await api.deletePhoto(photo.id);
@@ -159,6 +175,15 @@
 <svelte:head>
   <title>Progress Photos - Askesis</title>
 </svelte:head>
+
+{#if offlineWarning}
+  <div class="fixed top-4 left-4 right-4 z-50 mx-auto max-w-md rounded-lg bg-amber-50 border border-amber-200 p-3 shadow-lg dark:bg-amber-900/50 dark:border-amber-700">
+    <div class="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+      <AlertTriangle class="h-4 w-4 flex-shrink-0" />
+      {offlineWarning}
+    </div>
+  </div>
+{/if}
 
 <div>
   <div class="flex items-center justify-between mb-6">
