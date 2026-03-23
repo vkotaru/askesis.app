@@ -228,32 +228,32 @@ export async function pullFromServer(): Promise<void> {
 async function mergeServerRecord(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: any,
-  serverRecord: { id: number; deleted_at?: string; [key: string]: unknown }
+  serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown }
 ): Promise<void> {
-  const existing = await table.where('serverId').equals(serverRecord.id).first();
+  // Look up by serverId first, then fall back to date (prevents duplicates
+  // when a local record was created before the server assigned an ID)
+  let existing = await table.where('serverId').equals(serverRecord.id).first();
+  if (!existing && serverRecord.date) {
+    existing = await table.where('date').equals(serverRecord.date).first();
+  }
 
   if (serverRecord.deleted_at) {
-    // Server says this record was deleted
     if (existing) {
       await table.delete(existing.localId);
     }
     return;
   }
 
+  const merged = {
+    ...serverRecord,
+    serverId: serverRecord.id,
+    updatedAt: serverRecord.updated_at || new Date().toISOString(),
+  };
+
   if (existing) {
-    // Update existing local record with server data
-    await table.update(existing.localId, {
-      ...serverRecord,
-      serverId: serverRecord.id,
-      updatedAt: serverRecord.updated_at || new Date().toISOString(),
-    });
+    await table.update(existing.localId, merged);
   } else {
-    // Insert new record from server
-    await table.add({
-      ...serverRecord,
-      serverId: serverRecord.id,
-      updatedAt: serverRecord.updated_at || new Date().toISOString(),
-    });
+    await table.add(merged);
   }
 }
 

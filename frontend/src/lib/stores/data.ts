@@ -223,7 +223,42 @@ async function hydrateTable<T>(
   }
 }
 
+/** Remove duplicate records for the same date, keeping the one with a serverId */
+async function deduplicateByDate(tableName: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const table = (db as any)[tableName];
+  const all = await table.orderBy('date').toArray();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const seen = new Map<string, any>();
+  const toDelete: number[] = [];
+
+  for (const row of all) {
+    const existing = seen.get(row.date);
+    if (!existing) {
+      seen.set(row.date, row);
+    } else {
+      // Keep the one with serverId; delete the other
+      if (row.serverId && !existing.serverId) {
+        toDelete.push(existing.localId);
+        seen.set(row.date, row);
+      } else {
+        toDelete.push(row.localId);
+      }
+    }
+  }
+
+  if (toDelete.length > 0) {
+    await table.bulkDelete(toDelete);
+  }
+}
+
 export async function hydrateFromServer(userId?: number): Promise<void> {
+  // Clean up any existing duplicates from prior sync issues
+  await Promise.all([
+    deduplicateByDate('dailyLogs'),
+    deduplicateByDate('measurements'),
+  ]);
+
   // Use max server limit (500) to get complete data for offline use
   await Promise.all([
     hydrateTable('dailyLogs', () => api.getDailyLogs(undefined, undefined, undefined, 500), (log) => toLocalDailyLog(log, userId)),
@@ -278,6 +313,17 @@ export const offlineApi = {
     }
 
     let results = await collection.toArray();
+
+    // Deduplicate by date (keep the one with serverId, or the latest localId)
+    const byDate = new Map<string, LocalDailyLog>();
+    for (const r of results) {
+      const existing = byDate.get(r.date);
+      if (!existing || (r.serverId && !existing.serverId) || (r.localId! > existing.localId!)) {
+        byDate.set(r.date, r);
+      }
+    }
+    results = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+
     if (limit) results = results.slice(0, limit);
 
     if (results.length > 0) {
