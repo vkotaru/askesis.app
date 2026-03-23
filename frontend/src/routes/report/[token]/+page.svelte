@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { format, parseISO, addDays } from 'date-fns';
+  import { weightFromMetric, measurementFromMetric, getWeightLabel, getMeasurementLabel } from '$lib/utils/units';
+  import type { WeightUnit, MeasurementUnit } from '$lib/api/client';
   import '../../../app.css';
 
   interface WeightPoint {
@@ -49,7 +51,8 @@
     today: string;
     latest_weight: number | null;
     latest_weight_date: string | null;
-    weight_unit: string;
+    weight_unit: WeightUnit;
+    measurement_unit: MeasurementUnit;
     weight_trend: WeightPoint[];
     week_activities: ActivityEntry[];
     week_start: string;
@@ -197,10 +200,10 @@
         <p class="text-sm text-gray-500 mb-1">Current Weight</p>
         <div class="flex items-baseline gap-2">
           <p class="text-4xl font-bold">
-            {report.latest_weight?.toFixed(1) ?? '—'}
+            {report.latest_weight ? weightFromMetric(report.latest_weight, report.weight_unit).toFixed(1) : '—'}
           </p>
           {#if report.latest_weight}
-            <span class="text-lg text-gray-400">kg</span>
+            <span class="text-lg text-gray-400">{getWeightLabel(report.weight_unit)}</span>
           {/if}
         </div>
         {#if report.latest_weight_date}
@@ -210,7 +213,7 @@
         {/if}
         {#if weightChange !== null}
           <p class="text-sm mt-2 {weightChange < 0 ? 'text-green-500' : weightChange > 0 ? 'text-red-500' : 'text-gray-400'}">
-            {weightChange > 0 ? '+' : ''}{weightChange.toFixed(2)} kg over 30 days
+            {weightChange > 0 ? '+' : ''}{weightFromMetric(weightChange, report.weight_unit).toFixed(2)} {getWeightLabel(report.weight_unit)} over 30 days
           </p>
         {/if}
       </div>
@@ -239,7 +242,7 @@
                   dominant-baseline="middle"
                   class="fill-gray-400 text-[10px]"
                 >
-                  {tick.value.toFixed(1)}
+                  {weightFromMetric(tick.value, report.weight_unit).toFixed(0)}
                 </text>
               {/each}
 
@@ -409,17 +412,21 @@
           </div>
           <!-- Rows -->
           {#each MEASUREMENT_FIELDS as [label, key]}
-            {@const latestVal = Number(latest[key]) || 0}
-            {@const prevVal = prev ? Number(prev[key]) || 0 : 0}
+            {@const mUnit = report.measurement_unit}
+            {@const mLabel = getMeasurementLabel(mUnit)}
+            {@const latestCm = Number(latest[key]) || 0}
+            {@const prevCm = prev ? Number(prev[key]) || 0 : 0}
+            {@const latestVal = latestCm > 0 ? measurementFromMetric(latestCm, mUnit) : 0}
+            {@const prevVal = prevCm > 0 ? measurementFromMetric(prevCm, mUnit) : 0}
             {#if latestVal > 0 || prevVal > 0}
               <div class="grid grid-cols-3 gap-2 py-1.5 border-b border-gray-50 dark:border-gray-700/50 last:border-0">
                 <span class="text-xs text-gray-500">{label}</span>
                 <span class="text-xs font-semibold text-right">
-                  {latestVal > 0 ? `${latestVal.toFixed(1)} cm` : '—'}
+                  {latestVal > 0 ? `${latestVal.toFixed(1)} ${mLabel}` : '—'}
                 </span>
                 {#if prev}
                   <span class="text-xs text-right text-gray-400">
-                    {prevVal > 0 ? `${prevVal.toFixed(1)} cm` : '—'}
+                    {prevVal > 0 ? `${prevVal.toFixed(1)} ${mLabel}` : '—'}
                     {#if latestVal > 0 && prevVal > 0}
                       {@const diff = latestVal - prevVal}
                       {#if diff !== 0}
