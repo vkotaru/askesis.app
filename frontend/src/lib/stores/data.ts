@@ -11,7 +11,7 @@
  * The return types match the existing API types so no component changes needed.
  */
 
-import { db, type LocalDailyLog, type LocalActivity, type LocalMeal, type LocalMeasurement } from '$lib/db';
+import { db, type LocalDailyLog, type LocalActivity, type LocalMeal, type LocalMeasurement, type LocalPhoto } from '$lib/db';
 import {
   api,
   type DailyLog,
@@ -25,6 +25,8 @@ import {
   type BodyMeasurementInput,
   type DailyNutrition,
   type DailyNutritionInput,
+  type ProgressPhoto,
+  type PhotoView,
 } from '$lib/api/client';
 import { queueSync } from '$lib/sync';
 
@@ -243,6 +245,15 @@ export async function hydrateFromServer(userId?: number): Promise<void> {
       updatedAt: now(),
     })),
     hydrateTable('measurements', () => api.getMeasurements(), (m) => toLocalMeasurement(m, userId)),
+    hydrateTable('photos', () => api.getPhotos(), (p) => ({
+      serverId: p.id,
+      date: p.date,
+      view: p.view,
+      drive_file_id: p.drive_file_id,
+      notes: p.notes,
+      url: p.url,
+      updatedAt: now(),
+    })),
   ]);
 }
 
@@ -699,6 +710,141 @@ export const offlineApi = {
   ): Promise<DailyNutrition[]> {
     try {
       return await api.getNutritionHistory(startDate, endDate, userId, limit);
+    } catch {
+      return [];
+    }
+  },
+
+  // ── Photos (metadata caching, images cached by SW) ─────────────────────
+
+  async getPhotos(
+    startDate?: string,
+    endDate?: string,
+    view?: PhotoView,
+    _userId?: number
+  ): Promise<ProgressPhoto[]> {
+    let results: LocalPhoto[];
+
+    if (startDate && endDate) {
+      results = await db.photos.where('date').between(startDate, endDate, true, true).toArray();
+    } else {
+      results = await db.photos.orderBy('date').toArray();
+    }
+
+    if (view) {
+      results = results.filter(p => p.view === view);
+    }
+
+    if (results.length > 0) {
+      // Background refresh
+      api.getPhotos(startDate, endDate, view, _userId)
+        .then(async (serverPhotos) => {
+          for (const p of serverPhotos) {
+            const existing = await db.photos.where('serverId').equals(p.id).first();
+            const local: LocalPhoto = {
+              serverId: p.id,
+              date: p.date,
+              view: p.view,
+              drive_file_id: p.drive_file_id,
+              notes: p.notes,
+              url: p.url,
+              updatedAt: now(),
+            };
+            if (existing) {
+              await db.photos.update(existing.localId!, local as UpdateSpec);
+            } else {
+              await db.photos.add(local);
+            }
+          }
+        })
+        .catch(() => {});
+
+      return results.map(p => ({
+        id: p.serverId ?? p.localId!,
+        date: p.date,
+        view: p.view,
+        drive_file_id: p.drive_file_id,
+        notes: p.notes,
+        url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+      }));
+    }
+
+    try {
+      const serverPhotos = await api.getPhotos(startDate, endDate, view, _userId);
+      for (const p of serverPhotos) {
+        const existing = await db.photos.where('serverId').equals(p.id).first();
+        if (!existing) {
+          await db.photos.add({
+            serverId: p.id,
+            date: p.date,
+            view: p.view,
+            drive_file_id: p.drive_file_id,
+            notes: p.notes,
+            url: p.url,
+            updatedAt: now(),
+          });
+        }
+      }
+      return serverPhotos;
+    } catch {
+      return [];
+    }
+  },
+
+  async getPhotosByDate(date: string, _userId?: number): Promise<ProgressPhoto[]> {
+    const local = await db.photos.where('date').equals(date).toArray();
+
+    if (local.length > 0) {
+      // Background refresh
+      api.getPhotosByDate(date, _userId)
+        .then(async (serverPhotos) => {
+          for (const p of serverPhotos) {
+            const existing = await db.photos.where('serverId').equals(p.id).first();
+            const record: LocalPhoto = {
+              serverId: p.id,
+              date: p.date,
+              view: p.view,
+              drive_file_id: p.drive_file_id,
+              notes: p.notes,
+              url: p.url,
+              updatedAt: now(),
+            };
+            if (existing) {
+              await db.photos.update(existing.localId!, record as UpdateSpec);
+            } else {
+              await db.photos.add(record);
+            }
+          }
+        })
+        .catch(() => {});
+
+      return local.map(p => ({
+        id: p.serverId ?? p.localId!,
+        date: p.date,
+        view: p.view,
+        drive_file_id: p.drive_file_id,
+        notes: p.notes,
+        url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+      }));
+    }
+
+    try {
+      const serverPhotos = await api.getPhotosByDate(date, _userId);
+      for (const p of serverPhotos) {
+        const existing = await db.photos.where('serverId').equals(p.id).first();
+        if (!existing) {
+          await db.photos.add({
+            serverId: p.id,
+            date: p.date,
+            view: p.view,
+            drive_file_id: p.drive_file_id,
+            notes: p.notes,
+            url: p.url,
+            updatedAt: now(),
+          });
+        }
+      }
+      return serverPhotos;
     } catch {
       return [];
     }

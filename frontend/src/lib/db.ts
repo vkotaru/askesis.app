@@ -137,6 +137,18 @@ export interface LocalMeasurement {
   updatedAt: string;
 }
 
+export interface LocalPhoto {
+  localId?: number;
+  serverId?: number;
+  date: string;
+  userId?: number;
+  view: 'front' | 'side' | 'back';
+  drive_file_id?: string;
+  notes?: string;
+  url?: string;
+  updatedAt: string;
+}
+
 export interface LocalSetting {
   key: string;
   value: unknown;
@@ -162,6 +174,7 @@ class AskesisDB extends Dexie {
   meals!: Table<LocalMeal, number>;
   foods!: Table<LocalFood, number>;
   measurements!: Table<LocalMeasurement, number>;
+  photos!: Table<LocalPhoto, number>;
   settings!: Table<LocalSetting, string>;
   pendingSync!: Table<PendingSyncEntry, number>;
 
@@ -179,14 +192,19 @@ class AskesisDB extends Dexie {
       pendingSync: '++id, table, operation, localId, serverId, timestamp',
     });
 
+    // ── Version 2: Add photos table ────────────────────────────────────────
+    this.version(2).stores({
+      dailyLogs: '++localId, serverId, date, userId, updatedAt',
+      activities: '++localId, serverId, date, userId, updatedAt',
+      meals: '++localId, serverId, date, userId, updatedAt',
+      foods: '++localId, serverId, name, updatedAt',
+      measurements: '++localId, serverId, date, userId, updatedAt',
+      photos: '++localId, serverId, date, userId, view, updatedAt',
+      settings: 'key',
+      pendingSync: '++id, table, operation, localId, serverId, timestamp',
+    });
+
     // ── Future versions go here ────────────────────────────────────────────
-    // Example:
-    // this.version(2).stores({
-    //   dailyLogs: '++localId, serverId, date, userId, updatedAt, [userId+date]',
-    //   // ... repeat ALL tables even if unchanged
-    // }).upgrade(tx => {
-    //   // migration logic
-    // });
   }
 }
 
