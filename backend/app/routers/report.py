@@ -240,60 +240,62 @@ def get_report(
         for a in week_activities_rows
     ]
 
-    # ── Steps this week ─────────────────────────────────────────────────
-    week_logs = (
+    # ── Steps & nutrition: last 7 days from today ──────────────────────
+    seven_days_ago = today - timedelta(days=6)  # inclusive: 7 days total
+
+    recent_logs = (
         db.query(DailyLog)
         .filter(
             DailyLog.user_id == user_id,
-            DailyLog.date >= week_start,
-            DailyLog.date <= week_end,
+            DailyLog.date >= seven_days_ago,
+            DailyLog.date <= today,
             DailyLog.deleted_at == None,
         )
         .all()
     )
-    steps_by_date = {log.date.isoformat(): log.steps for log in week_logs if log.steps}
+    steps_by_date = {log.date.isoformat(): log.steps for log in recent_logs}
 
     week_steps = []
     for i in range(7):
-        d = week_start + timedelta(days=i)
+        d = seven_days_ago + timedelta(days=i)
         ds = d.isoformat()
         week_steps.append(DailySteps(date=ds, steps=steps_by_date.get(ds)))
 
-    # ── Nutrition this week (daily bar chart data) ────────────────────────
-    week_meals = (
+    # ── Nutrition last 7 days (daily bar chart data) ──────────────────────
+    recent_meals = (
         db.query(Meal)
         .filter(
             Meal.user_id == user_id,
-            Meal.date >= week_start,
-            Meal.date <= week_end,
+            Meal.date >= seven_days_ago,
+            Meal.date <= today,
             Meal.deleted_at == None,
         )
         .all()
     )
-    week_daily_nutrition = (
+    recent_daily_nutrition = (
         db.query(DailyNutrition)
         .filter(
             DailyNutrition.user_id == user_id,
-            DailyNutrition.date >= week_start,
-            DailyNutrition.date <= week_end,
+            DailyNutrition.date >= seven_days_ago,
+            DailyNutrition.date <= today,
         )
         .all()
     )
 
     cals_by_date: dict[str, int] = {}
-    for m in week_meals:
+    for m in recent_meals:
         if m.calories:
             ds = m.date.isoformat()
             cals_by_date[ds] = cals_by_date.get(ds, 0) + m.calories
 
     protein_by_date: dict[str, float] = {}
-    for n in week_daily_nutrition:
+    for n in recent_daily_nutrition:
         if n.protein_g:
             protein_by_date[n.date.isoformat()] = n.protein_g
 
     week_nutrition_data = []
     for i in range(7):
-        d = week_start + timedelta(days=i)
+        d = seven_days_ago + timedelta(days=i)
         ds = d.isoformat()
         week_nutrition_data.append(DailyNutritionPoint(
             date=ds,
