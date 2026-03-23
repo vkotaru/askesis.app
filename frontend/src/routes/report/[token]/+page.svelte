@@ -34,12 +34,15 @@
     calf_right: number | null;
   }
 
-  interface NutritionAverage {
-    avg_calories: number | null;
-    avg_protein_g: number | null;
-    avg_carbs_g: number | null;
-    avg_fat_g: number | null;
-    days_tracked: number;
+  interface DailySteps {
+    date: string;
+    steps: number | null;
+  }
+
+  interface DailyNutritionPoint {
+    date: string;
+    calories: number;
+    protein_g: number;
   }
 
   interface Report {
@@ -51,8 +54,10 @@
     week_activities: ActivityEntry[];
     week_start: string;
     week_end: string;
+    week_steps: DailySteps[];
+    week_nutrition: DailyNutritionPoint[];
     latest_measurements: MeasurementSnapshot | null;
-    nutrition_avg: NutritionAverage | null;
+    previous_measurements: MeasurementSnapshot | null;
     generated_at: string;
   }
 
@@ -110,6 +115,29 @@
       };
     });
   })();
+
+  // Steps bar chart
+  $: maxSteps = Math.max(...(report?.week_steps ?? []).map(s => s.steps ?? 0), 1);
+
+  // Nutrition bar chart
+  $: maxCalories = Math.max(...(report?.week_nutrition ?? []).map(n => n.calories), 1);
+  $: maxProtein = Math.max(...(report?.week_nutrition ?? []).map(n => n.protein_g), 1);
+
+  // Measurement fields to display
+  const MEASUREMENT_FIELDS: [string, keyof MeasurementSnapshot][] = [
+    ['Chest', 'chest'],
+    ['Waist', 'waist'],
+    ['Hips', 'hips'],
+    ['Shoulders', 'shoulders'],
+    ['Neck', 'neck'],
+    ['Abdomen', 'abdomen'],
+    ['Bicep L', 'bicep_left'],
+    ['Bicep R', 'bicep_right'],
+    ['Thigh L', 'thigh_left'],
+    ['Thigh R', 'thigh_right'],
+    ['Calf L', 'calf_left'],
+    ['Calf R', 'calf_right'],
+  ];
 
   $: weightChange = (() => {
     if (weightData.length < 2) return null;
@@ -302,72 +330,111 @@
         {/if}
       </div>
 
-      <!-- Nutrition Averages -->
-      {#if report.nutrition_avg && report.nutrition_avg.days_tracked > 0}
+      <!-- Steps Bar Chart -->
+      {#if report.week_steps.some(s => s.steps)}
         <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
-          <h2 class="text-sm font-semibold text-gray-500 mb-4">
-            Nutrition
-            <span class="font-normal text-gray-400 ml-1">7-day average</span>
-          </h2>
-          <div class="grid grid-cols-4 gap-4">
-            <div>
-              <p class="text-xs text-gray-400">Calories</p>
-              <p class="text-xl font-bold">{report.nutrition_avg.avg_calories ?? '—'}</p>
-            </div>
-            <div>
-              <p class="text-xs text-gray-400">Protein</p>
-              <p class="text-xl font-bold">
-                {report.nutrition_avg.avg_protein_g ?? '—'}{#if report.nutrition_avg.avg_protein_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
-              </p>
-            </div>
-            <div>
-              <p class="text-xs text-gray-400">Carbs</p>
-              <p class="text-xl font-bold">
-                {report.nutrition_avg.avg_carbs_g ?? '—'}{#if report.nutrition_avg.avg_carbs_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
-              </p>
-            </div>
-            <div>
-              <p class="text-xs text-gray-400">Fat</p>
-              <p class="text-xl font-bold">
-                {report.nutrition_avg.avg_fat_g ?? '—'}{#if report.nutrition_avg.avg_fat_g}<span class="text-xs font-normal text-gray-400">g</span>{/if}
-              </p>
-            </div>
+          <h2 class="text-sm font-semibold text-gray-500 mb-4">Steps</h2>
+          <div class="flex items-end gap-2 h-32">
+            {#each report.week_steps as day, i}
+              {@const pct = day.steps ? (day.steps / maxSteps) * 100 : 0}
+              {@const isToday = day.date === report.today}
+              <div class="flex-1 flex flex-col items-center gap-1">
+                {#if day.steps}
+                  <span class="text-[9px] text-gray-400 font-medium">{(day.steps / 1000).toFixed(1)}k</span>
+                {/if}
+                <div class="w-full flex items-end" style="height: 96px;">
+                  <div
+                    class="w-full rounded-t-md transition-all {isToday ? 'bg-green-500' : 'bg-green-300 dark:bg-green-700'}"
+                    style="height: {Math.max(pct, day.steps ? 4 : 0)}%;"
+                  ></div>
+                </div>
+                <span class="text-[10px] {isToday ? 'text-green-600 font-semibold' : 'text-gray-400'}">
+                  {format(parseISO(day.date), 'EEE')}
+                </span>
+              </div>
+            {/each}
           </div>
-          <p class="text-xs text-gray-400 mt-3">Based on {report.nutrition_avg.days_tracked} day{report.nutrition_avg.days_tracked === 1 ? '' : 's'} tracked</p>
         </div>
       {/if}
 
-      <!-- Body Measurements -->
-      {#if report.latest_measurements}
-        {@const m = report.latest_measurements}
+      <!-- Nutrition Bar Chart -->
+      {#if report.week_nutrition.some(n => n.calories > 0)}
         <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
-          <h2 class="text-sm font-semibold text-gray-500 mb-4">
-            Body Measurements
-            <span class="font-normal text-gray-400 ml-1">{format(parseISO(m.date), 'MMM d, yyyy')}</span>
-          </h2>
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
-            {#each [
-              ['Chest', m.chest],
-              ['Waist', m.waist],
-              ['Hips', m.hips],
-              ['Shoulders', m.shoulders],
-              ['Neck', m.neck],
-              ['Abdomen', m.abdomen],
-              ['Bicep L', m.bicep_left],
-              ['Bicep R', m.bicep_right],
-              ['Thigh L', m.thigh_left],
-              ['Thigh R', m.thigh_right],
-              ['Calf L', m.calf_left],
-              ['Calf R', m.calf_right],
-            ] as [label, value]}
-              {#if value}
-                <div class="flex justify-between items-baseline">
-                  <span class="text-xs text-gray-400">{label}</span>
-                  <span class="text-sm font-semibold">{Number(value).toFixed(1)} <span class="text-xs font-normal text-gray-400">cm</span></span>
+          <h2 class="text-sm font-semibold text-gray-500 mb-1">Nutrition</h2>
+          <div class="flex items-center gap-4 mb-4">
+            <span class="flex items-center gap-1 text-[10px] text-gray-400">
+              <span class="inline-block w-2 h-2 rounded-sm bg-orange-400"></span> Calories
+            </span>
+            <span class="flex items-center gap-1 text-[10px] text-gray-400">
+              <span class="inline-block w-2 h-2 rounded-sm bg-blue-400"></span> Protein (g)
+            </span>
+          </div>
+          <div class="flex items-end gap-2 h-36">
+            {#each report.week_nutrition as day}
+              {@const calPct = maxCalories > 0 ? (day.calories / maxCalories) * 100 : 0}
+              {@const proPct = maxProtein > 0 ? (day.protein_g / maxProtein) * 100 : 0}
+              {@const isToday = day.date === report.today}
+              <div class="flex-1 flex flex-col items-center gap-1">
+                {#if day.calories > 0}
+                  <span class="text-[9px] text-gray-400 font-medium">{day.calories}</span>
+                {/if}
+                <div class="w-full flex items-end gap-0.5" style="height: 104px;">
+                  <div
+                    class="flex-1 rounded-t-sm {isToday ? 'bg-orange-500' : 'bg-orange-300 dark:bg-orange-700'}"
+                    style="height: {Math.max(calPct, day.calories ? 3 : 0)}%;"
+                  ></div>
+                  <div
+                    class="flex-1 rounded-t-sm {isToday ? 'bg-blue-500' : 'bg-blue-300 dark:bg-blue-700'}"
+                    style="height: {Math.max(proPct, day.protein_g ? 3 : 0)}%;"
+                  ></div>
                 </div>
-              {/if}
+                <span class="text-[10px] {isToday ? 'text-green-600 font-semibold' : 'text-gray-400'}">
+                  {format(parseISO(day.date), 'EEE')}
+                </span>
+              </div>
             {/each}
           </div>
+        </div>
+      {/if}
+
+      <!-- Body Measurements (latest vs previous) -->
+      {#if report.latest_measurements}
+        {@const latest = report.latest_measurements}
+        {@const prev = report.previous_measurements}
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-6 shadow-sm">
+          <h2 class="text-sm font-semibold text-gray-500 mb-4">Body Measurements</h2>
+          <!-- Column headers -->
+          <div class="grid grid-cols-3 gap-2 mb-3 text-[10px] text-gray-400 uppercase tracking-wide">
+            <span></span>
+            <span class="text-right">{format(parseISO(latest.date), 'MMM d')}</span>
+            {#if prev}
+              <span class="text-right">{format(parseISO(prev.date), 'MMM d')}</span>
+            {/if}
+          </div>
+          <!-- Rows -->
+          {#each MEASUREMENT_FIELDS as [label, key]}
+            {@const latestVal = Number(latest[key]) || 0}
+            {@const prevVal = prev ? Number(prev[key]) || 0 : 0}
+            {#if latestVal > 0 || prevVal > 0}
+              <div class="grid grid-cols-3 gap-2 py-1.5 border-b border-gray-50 dark:border-gray-700/50 last:border-0">
+                <span class="text-xs text-gray-500">{label}</span>
+                <span class="text-xs font-semibold text-right">
+                  {latestVal > 0 ? `${latestVal.toFixed(1)} cm` : '—'}
+                </span>
+                {#if prev}
+                  <span class="text-xs text-right text-gray-400">
+                    {prevVal > 0 ? `${prevVal.toFixed(1)} cm` : '—'}
+                    {#if latestVal > 0 && prevVal > 0}
+                      {@const diff = latestVal - prevVal}
+                      {#if diff !== 0}
+                        <span class="ml-1 {diff > 0 ? 'text-green-500' : 'text-red-500'}">{diff > 0 ? '+' : ''}{diff.toFixed(1)}</span>
+                      {/if}
+                    {/if}
+                  </span>
+                {/if}
+              </div>
+            {/if}
+          {/each}
         </div>
       {/if}
 

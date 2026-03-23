@@ -485,8 +485,8 @@
               {/if}
 
               <!-- Data points -->
-              {@const dotRadius = points.length > 90 ? 1.5 : points.length > 30 ? 2.5 : 4}
               {#each points as point, i}
+                {@const dotRadius = points.length > 90 ? 1.5 : points.length > 30 ? 2.5 : 4}
                 <circle
                   cx={point.x}
                   cy={point.y}
