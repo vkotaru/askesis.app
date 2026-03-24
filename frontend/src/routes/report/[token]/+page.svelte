@@ -200,7 +200,7 @@
         <p class="text-sm text-gray-500 mb-1">Current Weight</p>
         <div class="flex items-baseline gap-2">
           <p class="text-4xl font-bold">
-            {report.latest_weight ? weightFromMetric(report.latest_weight, report.weight_unit).toFixed(1) : '—'}
+            {report.latest_weight ? weightFromMetric(report.latest_weight, report.weight_unit).toFixed(2) : '—'}
           </p>
           {#if report.latest_weight}
             <span class="text-lg text-gray-400">{getWeightLabel(report.weight_unit)}</span>
