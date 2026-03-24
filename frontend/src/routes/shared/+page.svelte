@@ -25,12 +25,21 @@
   let availableUsers: SharedWithMe[] = [];
   let selectedUserId: number | null = null;
 
+  const CACHE_KEY = 'shared_dashboard_last_user';
+
   const today = format(new Date(), 'yyyy-MM-dd');
   const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
 
   onMount(async () => {
     try {
       availableUsers = await api.getSharedWithMe();
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const cachedId = Number(cached);
+        if (availableUsers.some(u => u.owner_id === cachedId && u.categories.includes('daily_logs'))) {
+          selectedUserId = cachedId;
+        }
+      }
     } catch {
       availableUsers = [];
     } finally {
@@ -57,6 +66,7 @@
   }
 
   $: if (selectedUserId !== null) {
+    localStorage.setItem(CACHE_KEY, String(selectedUserId));
     loadComparison();
   }
 
