@@ -140,13 +140,18 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
     daily_logs = (
         db.query(DailyLog)
         .filter(DailyLog.user_id == user_id)
-        .filter(DailyLog.deleted_at == None)
+        .filter(DailyLog.deleted_at.is_(None))
         .order_by(DailyLog.date.desc())
         .all()
     )
 
     # Get all meals grouped by date
-    meals = db.query(Meal).filter(Meal.user_id == user_id).filter(Meal.deleted_at == None).all()
+    meals = (
+        db.query(Meal)
+        .filter(Meal.user_id == user_id)
+        .filter(Meal.deleted_at.is_(None))
+        .all()
+    )
     meals_by_date: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     total_cals_by_date: dict[date, int] = defaultdict(int)
 
@@ -170,7 +175,12 @@ def _sync_daily_log(service, spreadsheet_id: str, user_id: int, db: Session) -> 
     nutrition_by_date: dict[date, DailyNutrition] = {n.date: n for n in nutrition}
 
     # Get activities for active calories
-    activities = db.query(Activity).filter(Activity.user_id == user_id).filter(Activity.deleted_at == None).all()
+    activities = (
+        db.query(Activity)
+        .filter(Activity.user_id == user_id)
+        .filter(Activity.deleted_at.is_(None))
+        .all()
+    )
     active_cals_by_date: dict[date, int] = defaultdict(int)
     for activity in activities:
         if activity.calories:
@@ -236,7 +246,7 @@ def _sync_activities(service, spreadsheet_id: str, user_id: int, db: Session) ->
     activities = (
         db.query(Activity)
         .filter(Activity.user_id == user_id)
-        .filter(Activity.deleted_at == None)
+        .filter(Activity.deleted_at.is_(None))
         .order_by(Activity.date.desc())
         .all()
     )
@@ -280,7 +290,7 @@ def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session) 
     measurements = (
         db.query(BodyMeasurement)
         .filter(BodyMeasurement.user_id == user_id)
-        .filter(BodyMeasurement.deleted_at == None)
+        .filter(BodyMeasurement.deleted_at.is_(None))
         .order_by(BodyMeasurement.date.desc())
         .all()
     )
@@ -373,7 +383,7 @@ def _sync_photos(
     photos = (
         db.query(ProgressPhoto)
         .filter(ProgressPhoto.user_id == user_id)
-        .filter(ProgressPhoto.deleted_at == None)
+        .filter(ProgressPhoto.deleted_at.is_(None))
         .order_by(ProgressPhoto.date.desc())
         .all()
     )

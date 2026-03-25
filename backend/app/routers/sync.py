@@ -21,7 +21,6 @@ from app.models import (
     Activity,
     Exercise,
     Meal,
-    MealFoodItem,
     FoodItem,
     BodyMeasurement,
     ProgressPhoto,
@@ -193,7 +192,9 @@ def push_changes(
             model = TABLE_MAP.get(change.table)
             if not model:
                 results.append(
-                    SyncPushResult(index=i, ok=False, error=f"Unknown table: {change.table}")
+                    SyncPushResult(
+                        index=i, ok=False, error=f"Unknown table: {change.table}"
+                    )
                 )
                 continue
 
@@ -211,7 +212,11 @@ def push_changes(
 
             else:
                 results.append(
-                    SyncPushResult(index=i, ok=False, error=f"Unknown operation: {change.operation}")
+                    SyncPushResult(
+                        index=i,
+                        ok=False,
+                        error=f"Unknown operation: {change.operation}",
+                    )
                 )
 
         except Exception as e:
@@ -244,9 +249,7 @@ def _clean_data(data: dict | None) -> dict:
     return {k: v for k, v in data.items() if k not in _EXCLUDE_FIELDS}
 
 
-def _handle_create(
-    db: Session, model: type, change: SyncChange, user: User
-) -> int:
+def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> int:
     """Create a new record from client data. Returns server ID."""
     data = _clean_data(change.data)
 
@@ -285,7 +288,7 @@ def _handle_create(
             .filter(
                 DailyLog.user_id == user.id,
                 DailyLog.date == data["date"],
-                DailyLog.deleted_at == None,
+                DailyLog.deleted_at.is_(None),
             )
             .first()
         )
@@ -318,19 +321,13 @@ def _handle_create(
     return obj.id
 
 
-def _handle_update(
-    db: Session, model: type, change: SyncChange, user: User
-) -> int:
+def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> int:
     """Update an existing record. Returns server ID."""
     if not change.serverId:
         # No server ID — might be a create that was queued as update
         return _handle_create(db, model, change, user)
 
-    obj = (
-        db.query(model)
-        .filter(model.id == change.serverId)
-        .first()
-    )
+    obj = db.query(model).filter(model.id == change.serverId).first()
 
     if not obj:
         # Record doesn't exist — create it
@@ -391,9 +388,7 @@ def _handle_update(
     return obj.id
 
 
-def _handle_delete(
-    db: Session, model: type, change: SyncChange, user: User
-) -> None:
+def _handle_delete(db: Session, model: type, change: SyncChange, user: User) -> None:
     """Soft-delete a record."""
     if not change.serverId:
         return  # Nothing to delete on server

@@ -408,7 +408,11 @@ def get_meals(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "nutrition", db, current_user)
-    query = db.query(Meal).filter(Meal.user_id == target_user.id).filter(Meal.deleted_at == None)
+    query = (
+        db.query(Meal)
+        .filter(Meal.user_id == target_user.id)
+        .filter(Meal.deleted_at.is_(None))
+    )
 
     if meal_date:
         query = query.filter(Meal.date == meal_date)
@@ -464,7 +468,7 @@ def update_meal(
     meal = (
         db.query(Meal)
         .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
-        .filter(Meal.deleted_at == None)
+        .filter(Meal.deleted_at.is_(None))
         .first()
     )
 
@@ -693,7 +697,7 @@ def delete_meal(
     meal = (
         db.query(Meal)
         .filter(Meal.id == meal_id, Meal.user_id == current_user.id)
-        .filter(Meal.deleted_at == None)
+        .filter(Meal.deleted_at.is_(None))
         .first()
     )
 
@@ -718,7 +722,7 @@ def copy_meals_from_yesterday(
     yesterday_meals = (
         db.query(Meal)
         .filter(Meal.user_id == current_user.id, Meal.date == yesterday)
-        .filter(Meal.deleted_at == None)
+        .filter(Meal.deleted_at.is_(None))
         .all()
     )
 
@@ -786,7 +790,7 @@ def search_foods(
     """Search food items. Returns shared items + user's own."""
     from sqlalchemy import or_
 
-    query = db.query(FoodItem).filter(FoodItem.deleted_at == None)
+    query = db.query(FoodItem).filter(FoodItem.deleted_at.is_(None))
 
     if user_only:
         query = query.filter(FoodItem.user_id == current_user.id)
@@ -899,7 +903,7 @@ def update_food_item(
     food = (
         db.query(FoodItem)
         .filter(FoodItem.id == food_id, FoodItem.user_id == current_user.id)
-        .filter(FoodItem.deleted_at == None)
+        .filter(FoodItem.deleted_at.is_(None))
         .first()
     )
     if not food:
@@ -922,7 +926,7 @@ def delete_food_item(
     food = (
         db.query(FoodItem)
         .filter(FoodItem.id == food_id, FoodItem.user_id == current_user.id)
-        .filter(FoodItem.deleted_at == None)
+        .filter(FoodItem.deleted_at.is_(None))
         .first()
     )
     if not food:
