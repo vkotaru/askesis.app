@@ -534,6 +534,7 @@ export const api = {
     fetchJSON(`/api/photos/${id}`, { method: 'DELETE' }),
   getPhotoUrl: (id: number) => `/api/photos/file/${id}`,
   getDriveStatus: () => fetchJSON<DriveStatus>('/api/photos/drive-status'),
+  disconnectDrive: () => fetchJSON<{ message: string }>('/api/photos/drive/disconnect', { method: 'POST' }),
 
   // Sharing
   getMyShares: () => fetchJSON<DataShare[]>('/api/sharing/my-shares'),

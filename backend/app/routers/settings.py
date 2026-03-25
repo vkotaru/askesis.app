@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models import User, UserSettings
 from app.routers.auth import get_current_user
 from app.config import get_settings as get_app_settings
+from app.encryption import get_refresh_token
 from app.google_drive import upload_backup
 
 logger = logging.getLogger("askesis.settings")
@@ -241,7 +242,7 @@ def backup_database(
 
         # Upload to Google Drive (overwrites existing)
         file_id = upload_backup(
-            refresh_token=current_user.google_refresh_token,
+            refresh_token=get_refresh_token(current_user),
             file_content=db_content,
             filename=filename,
             parent_folder_id=parent_folder_id,

@@ -36,6 +36,7 @@ from app.models import (
     MealFoodItem,
 )
 from app.routers.auth import get_current_user, check_view_permission
+from app.encryption import get_refresh_token
 from app import google_drive
 
 router = APIRouter()
@@ -555,7 +556,7 @@ async def upload_meal_photo(
     # Upload to Google Drive
     try:
         drive_file_id = google_drive.upload_meal_photo(
-            current_user.google_refresh_token,
+            get_refresh_token(current_user),
             processed_content,
             filename,
             parent_folder_id=parent_folder_id,
@@ -569,7 +570,7 @@ async def upload_meal_photo(
     if meal.drive_file_id:
         try:
             google_drive.delete_photo(
-                current_user.google_refresh_token, meal.drive_file_id
+                get_refresh_token(current_user), meal.drive_file_id
             )
         except Exception:
             pass  # Ignore errors deleting old file
@@ -632,7 +633,7 @@ def get_meal_photo(
 
         try:
             content = google_drive.download_photo(
-                owner.google_refresh_token, meal.drive_file_id
+                get_refresh_token(owner), meal.drive_file_id
             )
             return Response(content=content, media_type="image/jpeg")
         except Exception as e:

@@ -1,8 +1,10 @@
 import io
+import logging
 import uuid
 from datetime import date, datetime
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -21,7 +23,9 @@ from app.database import get_db
 from app.models import User, UserSettings, ProgressPhoto, PhotoView
 from app.routers.auth import get_current_user, check_view_permission
 from app import google_drive
+from app.encryption import get_refresh_token
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 DEFAULT_LIMIT = 100
@@ -159,7 +163,7 @@ def get_drive_status(
         }
 
     try:
-        working = google_drive.check_drive_access(current_user.google_refresh_token)
+        working = google_drive.check_drive_access(get_refresh_token(current_user))
         return {
             "configured": True,
             "working": working,
@@ -169,6 +173,36 @@ def get_drive_status(
         }
     except Exception as e:
         return {"configured": True, "working": False, "message": str(e)}
+
+
+@router.post("/drive/disconnect")
+def disconnect_drive(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke Google Drive access and clear the stored refresh token."""
+    token = get_refresh_token(current_user)
+    if token:
+        # Attempt to revoke the token with Google
+        try:
+            resp = httpx.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            if resp.status_code == 200:
+                logger.info(f"Revoked Google token for user {current_user.email}")
+            else:
+                logger.warning(
+                    f"Google revoke returned {resp.status_code} for user {current_user.email}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to revoke Google token: {e}")
+
+    # Clear token from database regardless of revoke result
+    current_user.google_refresh_token = None
+    db.commit()
+    return {"message": "Google Drive disconnected"}
 
 
 @router.post("/upload", response_model=PhotoResponse)
@@ -234,7 +268,7 @@ async def upload_photo(
     # Upload to Google Drive
     try:
         drive_file_id = google_drive.upload_photo(
-            current_user.google_refresh_token,
+            get_refresh_token(current_user),
             processed_content,
             filename,
             parent_folder_id=parent_folder_id,
@@ -248,7 +282,7 @@ async def upload_photo(
     if existing and existing.drive_file_id:
         try:
             google_drive.delete_photo(
-                current_user.google_refresh_token, existing.drive_file_id
+                get_refresh_token(current_user), existing.drive_file_id
             )
         except Exception:
             pass  # Ignore errors deleting old file
@@ -314,7 +348,7 @@ def get_photo_file(
 
         try:
             content = google_drive.download_photo(
-                owner.google_refresh_token, photo.drive_file_id
+                get_refresh_token(owner), photo.drive_file_id
             )
             return Response(content=content, media_type="image/jpeg")
         except Exception as e:

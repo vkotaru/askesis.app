@@ -12,6 +12,7 @@ import pytz
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import User, UserSettings
+from app.encryption import get_refresh_token
 from app.google_drive import upload_backup
 
 logger = logging.getLogger("askesis.scheduler")
@@ -69,7 +70,7 @@ def run_scheduled_backup():
 
                 # Upload backup for this user
                 file_id = upload_backup(
-                    refresh_token=user.google_refresh_token,
+                    refresh_token=get_refresh_token(user),
                     file_content=db_content,
                     filename="askesis_backup.db",
                     parent_folder_id=parent_folder_id,
