@@ -216,7 +216,7 @@
         type="date"
         value={selectedDate}
         on:change={handleDateChange}
-        class="input max-w-[180px] text-center"
+        class="input max-w-[160px] text-center flex-shrink"
       />
       <button
         type="button"

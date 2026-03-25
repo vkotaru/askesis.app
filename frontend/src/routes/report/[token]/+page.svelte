@@ -126,6 +126,25 @@
   $: maxCalories = Math.max(...(report?.week_nutrition ?? []).map(n => n.calories), 1);
   $: maxProtein = Math.max(...(report?.week_nutrition ?? []).map(n => n.protein_g), 1);
 
+  // Emoji map for activity icons
+  const ICON_EMOJI: Record<string, string> = {
+    activity: '🏃',
+    dumbbell: '🏋️',
+    bike: '🚴',
+    footprints: '👣',
+    heart: '❤️',
+    flame: '🔥',
+    timer: '⏱️',
+    mountain: '⛰️',
+    waves: '🏊',
+    trophy: '🏆',
+  };
+
+  function getActivityEmoji(icon: string | null, activityType: string): string {
+    if (icon && ICON_EMOJI[icon]) return ICON_EMOJI[icon];
+    return activityType === 'strength' ? '🏋️' : '🏃';
+  }
+
   // Measurement fields to display
   const MEASUREMENT_FIELDS: [string, keyof MeasurementSnapshot][] = [
     ['Chest', 'chest'],
@@ -306,11 +325,10 @@
                 </span>
                 {#each day.activities as activity}
                   <span
-                    class="w-full text-[9px] leading-tight text-center truncate px-0.5 py-0.5 rounded
-                      {activity.activity_type === 'cardio' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'}"
+                    class="text-base leading-none"
                     title="{activity.name}{activity.duration_mins ? ` — ${activity.duration_mins}min` : ''}"
                   >
-                    {activity.name}
+                    {getActivityEmoji(activity.icon, activity.activity_type)}
                   </span>
                 {/each}
                 {#if day.activities.length === 0}
