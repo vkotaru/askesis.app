@@ -140,6 +140,7 @@
   let exporting = false;
   let backingUp = false;
   let backupMessage = '';
+  let disconnecting = false;
   let restoring = false;
   let restoreMessage = '';
   let restoreFile: FileList | null = null;
@@ -214,6 +215,19 @@
       backupMessage = err instanceof Error ? err.message : 'Backup failed';
     } finally {
       backingUp = false;
+    }
+  }
+
+  async function disconnectDrive() {
+    if (!confirm('Disconnect Google Drive? You can reconnect by logging out and back in.')) return;
+    disconnecting = true;
+    try {
+      await api.disconnectDrive();
+      backupMessage = 'Google Drive disconnected.';
+    } catch (err) {
+      backupMessage = err instanceof Error ? err.message : 'Disconnect failed';
+    } finally {
+      disconnecting = false;
     }
   }
 
@@ -864,6 +878,26 @@
             {backupMessage}
           </p>
         {/if}
+      </div>
+
+      <!-- Disconnect Drive -->
+      <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h3 class="font-medium mb-2">Disconnect Google Drive</h3>
+        <p class="text-sm text-gray-500 mb-3">
+          Revoke Drive access and remove the stored token. You can reconnect by logging out and back in.
+        </p>
+        <button
+          on:click={disconnectDrive}
+          disabled={disconnecting}
+          class="btn-secondary text-red-600 dark:text-red-400 flex items-center gap-2"
+        >
+          {#if disconnecting}
+            <span class="animate-spin">...</span>
+            Disconnecting...
+          {:else}
+            Disconnect Drive
+          {/if}
+        </button>
       </div>
 
       <!-- Database Restore -->

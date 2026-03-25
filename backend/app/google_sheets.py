@@ -28,6 +28,7 @@ from app.models import (
     BodyMeasurement,
     ProgressPhoto,
 )
+from app.encryption import get_refresh_token
 from app.google_drive import get_drive_service, get_or_create_app_folder
 
 logger = logging.getLogger("askesis.google_sheets")
@@ -471,7 +472,7 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
     parent_folder_id = settings.drive_parent_folder_id if settings else None
 
     logger.info(f"Syncing to sheet ID: {sheet_id} for user {user.id}")
-    service = get_sheets_service(user.google_refresh_token)
+    service = get_sheets_service(get_refresh_token(user))
 
     try:
         # Sync each tab and capture row counts
@@ -483,7 +484,7 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
             sheet_id,
             user.id,
             db,
-            user.google_refresh_token,
+            get_refresh_token(user),
             parent_folder_id,
         )
 

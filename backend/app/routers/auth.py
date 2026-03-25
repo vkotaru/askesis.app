@@ -193,11 +193,13 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         )
         db.add(user)
 
-    # Store refresh token for Google Drive API access
+    # Store refresh token for Google Drive API access (encrypted)
     refresh_token = token.get("refresh_token")
     if refresh_token:
-        user.google_refresh_token = refresh_token
-        logger.info(f"Saved refresh token for user {email}")
+        from app.encryption import encrypt_token
+
+        user.google_refresh_token = encrypt_token(refresh_token)
+        logger.info(f"Saved encrypted refresh token for user {email}")
     else:
         logger.warning(f"No refresh token received for user {email}")
     db.commit()

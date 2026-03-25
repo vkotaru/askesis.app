@@ -6,6 +6,9 @@ from functools import lru_cache
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./askesis.db"
     secret_key: str = "change-me-in-production"
+    encryption_key: str = (
+        ""  # Separate key for encrypting tokens at rest; falls back to secret_key
+    )
     google_client_id: str = ""
     google_client_secret: str = ""
     allowed_emails: list[str] = []
