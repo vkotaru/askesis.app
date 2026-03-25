@@ -86,7 +86,11 @@ def get_photos(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "photos", db, current_user)
-    query = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == target_user.id).filter(ProgressPhoto.deleted_at == None)
+    query = (
+        db.query(ProgressPhoto)
+        .filter(ProgressPhoto.user_id == target_user.id)
+        .filter(ProgressPhoto.deleted_at.is_(None))
+    )
 
     if start_date:
         query = query.filter(ProgressPhoto.date >= start_date)
@@ -124,7 +128,7 @@ def get_photos_by_date(
         .filter(
             ProgressPhoto.user_id == target_user.id, ProgressPhoto.date == photo_date
         )
-        .filter(ProgressPhoto.deleted_at == None)
+        .filter(ProgressPhoto.deleted_at.is_(None))
         .all()
     )
 
@@ -208,7 +212,7 @@ async def upload_photo(
             ProgressPhoto.date == photo_date,
             ProgressPhoto.view == view,
         )
-        .filter(ProgressPhoto.deleted_at == None)
+        .filter(ProgressPhoto.deleted_at.is_(None))
         .first()
     )
 
@@ -336,7 +340,7 @@ def delete_photo(
     photo = (
         db.query(ProgressPhoto)
         .filter(ProgressPhoto.id == photo_id, ProgressPhoto.user_id == current_user.id)
-        .filter(ProgressPhoto.deleted_at == None)
+        .filter(ProgressPhoto.deleted_at.is_(None))
         .first()
     )
 

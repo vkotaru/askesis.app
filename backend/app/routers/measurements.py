@@ -54,7 +54,11 @@ def get_measurements(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "measurements", db, current_user)
-    query = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == target_user.id).filter(BodyMeasurement.deleted_at == None)
+    query = (
+        db.query(BodyMeasurement)
+        .filter(BodyMeasurement.user_id == target_user.id)
+        .filter(BodyMeasurement.deleted_at.is_(None))
+    )
 
     if start_date:
         query = query.filter(BodyMeasurement.date >= start_date)
@@ -74,7 +78,7 @@ def get_latest_measurement(
     return (
         db.query(BodyMeasurement)
         .filter(BodyMeasurement.user_id == target_user.id)
-        .filter(BodyMeasurement.deleted_at == None)
+        .filter(BodyMeasurement.deleted_at.is_(None))
         .order_by(BodyMeasurement.date.desc())
         .first()
     )
@@ -94,7 +98,7 @@ def get_measurement_by_date(
             BodyMeasurement.user_id == target_user.id,
             BodyMeasurement.date == measurement_date,
         )
-        .filter(BodyMeasurement.deleted_at == None)
+        .filter(BodyMeasurement.deleted_at.is_(None))
         .first()
     )
 
@@ -117,7 +121,7 @@ def create_or_update_measurement(
             BodyMeasurement.user_id == current_user.id,
             BodyMeasurement.date == data.date,
         )
-        .filter(BodyMeasurement.deleted_at == None)
+        .filter(BodyMeasurement.deleted_at.is_(None))
         .first()
     )
 
@@ -150,7 +154,7 @@ def delete_measurement(
             BodyMeasurement.id == measurement_id,
             BodyMeasurement.user_id == current_user.id,
         )
-        .filter(BodyMeasurement.deleted_at == None)
+        .filter(BodyMeasurement.deleted_at.is_(None))
         .first()
     )
 

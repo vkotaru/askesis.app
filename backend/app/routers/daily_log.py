@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from datetime import date, datetime
+from datetime import date
 
 from app.database import get_db
 from app.models import User, DailyLog
@@ -71,7 +71,11 @@ def get_logs(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "daily_logs", db, current_user)
-    query = db.query(DailyLog).filter(DailyLog.user_id == target_user.id).filter(DailyLog.deleted_at == None)
+    query = (
+        db.query(DailyLog)
+        .filter(DailyLog.user_id == target_user.id)
+        .filter(DailyLog.deleted_at.is_(None))
+    )
 
     if start_date:
         query = query.filter(DailyLog.date >= start_date)
@@ -93,7 +97,7 @@ def get_log_by_date(
     log = (
         db.query(DailyLog)
         .filter(DailyLog.user_id == target_user.id, DailyLog.date == log_date)
-        .filter(DailyLog.deleted_at == None)
+        .filter(DailyLog.deleted_at.is_(None))
         .first()
     )
 
@@ -118,7 +122,7 @@ def create_or_update_log(
     existing = (
         db.query(DailyLog)
         .filter(DailyLog.user_id == current_user.id, DailyLog.date == log_data.date)
-        .filter(DailyLog.deleted_at == None)
+        .filter(DailyLog.deleted_at.is_(None))
         .first()
     )
 

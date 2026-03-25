@@ -22,7 +22,13 @@ def upgrade() -> None:
     op.create_table(
         "report_tokens",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), unique=True, nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id"),
+            unique=True,
+            nullable=False,
+        ),
         sa.Column("token", sa.String(64), unique=True, nullable=False, index=True),
         sa.Column("created_at", sa.DateTime(), nullable=True),
     )

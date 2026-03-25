@@ -20,7 +20,6 @@ from app.models import (
     ReportToken,
     DailyLog,
     Activity,
-    ActivityType,
     BodyMeasurement,
     Meal,
     DailyNutrition,
@@ -106,9 +105,7 @@ def generate_token(
 ):
     """Generate or return existing report token."""
     existing = (
-        db.query(ReportToken)
-        .filter(ReportToken.user_id == current_user.id)
-        .first()
+        db.query(ReportToken).filter(ReportToken.user_id == current_user.id).first()
     )
 
     if existing:
@@ -128,9 +125,7 @@ def revoke_token(
 ):
     """Revoke report token — old links stop working."""
     existing = (
-        db.query(ReportToken)
-        .filter(ReportToken.user_id == current_user.id)
-        .first()
+        db.query(ReportToken).filter(ReportToken.user_id == current_user.id).first()
     )
 
     if not existing:
@@ -148,9 +143,7 @@ def regenerate_token(
 ):
     """Revoke old token and generate a new one."""
     existing = (
-        db.query(ReportToken)
-        .filter(ReportToken.user_id == current_user.id)
-        .first()
+        db.query(ReportToken).filter(ReportToken.user_id == current_user.id).first()
     )
 
     if existing:
@@ -187,8 +180,8 @@ def get_report(
         .filter(
             DailyLog.user_id == user_id,
             DailyLog.date >= thirty_days_ago,
-            DailyLog.weight != None,
-            DailyLog.deleted_at == None,
+            DailyLog.weight.is_not(None),
+            DailyLog.deleted_at.is_(None),
         )
         .order_by(DailyLog.date.asc())
         .all()
@@ -205,8 +198,8 @@ def get_report(
         db.query(DailyLog)
         .filter(
             DailyLog.user_id == user_id,
-            DailyLog.weight != None,
-            DailyLog.deleted_at == None,
+            DailyLog.weight.is_not(None),
+            DailyLog.deleted_at.is_(None),
         )
         .order_by(DailyLog.date.desc())
         .first()
@@ -224,7 +217,7 @@ def get_report(
             Activity.user_id == user_id,
             Activity.date >= week_start,
             Activity.date <= week_end,
-            Activity.deleted_at == None,
+            Activity.deleted_at.is_(None),
         )
         .order_by(Activity.date.asc())
         .all()
@@ -251,7 +244,7 @@ def get_report(
             DailyLog.user_id == user_id,
             DailyLog.date >= seven_days_ago,
             DailyLog.date <= today,
-            DailyLog.deleted_at == None,
+            DailyLog.deleted_at.is_(None),
         )
         .all()
     )
@@ -270,7 +263,7 @@ def get_report(
             Meal.user_id == user_id,
             Meal.date >= seven_days_ago,
             Meal.date <= today,
-            Meal.deleted_at == None,
+            Meal.deleted_at.is_(None),
         )
         .all()
     )
@@ -299,18 +292,20 @@ def get_report(
     for i in range(7):
         d = seven_days_ago + timedelta(days=i)
         ds = d.isoformat()
-        week_nutrition_data.append(DailyNutritionPoint(
-            date=ds,
-            calories=cals_by_date.get(ds, 0),
-            protein_g=protein_by_date.get(ds, 0),
-        ))
+        week_nutrition_data.append(
+            DailyNutritionPoint(
+                date=ds,
+                calories=cals_by_date.get(ds, 0),
+                protein_g=protein_by_date.get(ds, 0),
+            )
+        )
 
     # ── Body measurements (latest + previous) ────────────────────────────
     measurement_rows = (
         db.query(BodyMeasurement)
         .filter(
             BodyMeasurement.user_id == user_id,
-            BodyMeasurement.deleted_at == None,
+            BodyMeasurement.deleted_at.is_(None),
         )
         .order_by(BodyMeasurement.date.desc())
         .limit(2)
@@ -320,21 +315,30 @@ def get_report(
     def _to_snapshot(m: BodyMeasurement) -> MeasurementSnapshot:
         return MeasurementSnapshot(
             date=m.date.isoformat(),
-            neck=m.neck, shoulders=m.shoulders, chest=m.chest,
-            bicep_left=m.bicep_left, bicep_right=m.bicep_right,
-            waist=m.waist, abdomen=m.abdomen, hips=m.hips,
-            thigh_left=m.thigh_left, thigh_right=m.thigh_right,
-            calf_left=m.calf_left, calf_right=m.calf_right,
+            neck=m.neck,
+            shoulders=m.shoulders,
+            chest=m.chest,
+            bicep_left=m.bicep_left,
+            bicep_right=m.bicep_right,
+            waist=m.waist,
+            abdomen=m.abdomen,
+            hips=m.hips,
+            thigh_left=m.thigh_left,
+            thigh_right=m.thigh_right,
+            calf_left=m.calf_left,
+            calf_right=m.calf_right,
         )
 
-    latest_measurements = _to_snapshot(measurement_rows[0]) if len(measurement_rows) >= 1 else None
-    previous_measurements = _to_snapshot(measurement_rows[1]) if len(measurement_rows) >= 2 else None
+    latest_measurements = (
+        _to_snapshot(measurement_rows[0]) if len(measurement_rows) >= 1 else None
+    )
+    previous_measurements = (
+        _to_snapshot(measurement_rows[1]) if len(measurement_rows) >= 2 else None
+    )
 
     # ── User unit preferences ─────────────────────────────────────────────
     user_settings = (
-        db.query(UserSettings)
-        .filter(UserSettings.user_id == user_id)
-        .first()
+        db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     )
     weight_unit = user_settings.weight_unit if user_settings else "kg"
     measurement_unit = user_settings.measurement_unit if user_settings else "cm"
@@ -342,7 +346,9 @@ def get_report(
     return ReportResponse(
         today=today.isoformat(),
         latest_weight=latest_weight,
-        latest_weight_date=latest_weight_log.date.isoformat() if latest_weight_log else None,
+        latest_weight_date=latest_weight_log.date.isoformat()
+        if latest_weight_log
+        else None,
         weight_unit=weight_unit,
         measurement_unit=measurement_unit,
         weight_trend=weight_trend,

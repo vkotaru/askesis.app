@@ -79,7 +79,11 @@ def get_activities(
     current_user: User = Depends(get_current_user),
 ):
     target_user = check_view_permission(user_id, "activities", db, current_user)
-    query = db.query(Activity).filter(Activity.user_id == target_user.id).filter(Activity.deleted_at == None)
+    query = (
+        db.query(Activity)
+        .filter(Activity.user_id == target_user.id)
+        .filter(Activity.deleted_at.is_(None))
+    )
 
     if start_date:
         query = query.filter(Activity.date >= start_date)
@@ -102,7 +106,7 @@ def get_activity(
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.user_id == target_user.id)
-        .filter(Activity.deleted_at == None)
+        .filter(Activity.deleted_at.is_(None))
         .first()
     )
 
@@ -144,7 +148,7 @@ def update_activity(
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.user_id == current_user.id)
-        .filter(Activity.deleted_at == None)
+        .filter(Activity.deleted_at.is_(None))
         .first()
     )
 
@@ -175,7 +179,7 @@ def delete_activity(
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.user_id == current_user.id)
-        .filter(Activity.deleted_at == None)
+        .filter(Activity.deleted_at.is_(None))
         .first()
     )
 
@@ -209,7 +213,7 @@ def get_calendar(
             Activity.date >= start,
             Activity.date <= end,
         )
-        .filter(Activity.deleted_at == None)
+        .filter(Activity.deleted_at.is_(None))
         .all()
     )
 
