@@ -373,10 +373,10 @@
                   <div class="flex gap-2">
                     <select
                       class={clsx(
-                        'flex-1 px-3 py-2 rounded-lg border text-sm bg-white dark:bg-gray-800',
+                        'input flex-1 text-sm',
                         isMapped
-                          ? 'border-primary-300 dark:border-primary-700'
-                          : 'border-gray-300 dark:border-gray-600'
+                          ? '!border-primary-300 dark:!border-primary-700'
+                          : ''
                       )}
                       value={mapping.field}
                       on:change={(e) => {
@@ -398,7 +398,7 @@
 
                     {#if unitType}
                       <select
-                        class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm bg-white dark:bg-gray-800 min-w-[100px]"
+                        class="input text-sm min-w-[100px]"
                         value={mapping.unit}
                         on:change={(e) => {
                           mappings[col] = { ...mapping, unit: e.currentTarget.value };

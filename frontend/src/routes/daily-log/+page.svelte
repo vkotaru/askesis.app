@@ -424,7 +424,7 @@
 
 <!-- Recent Entries -->
   {#if recentLogs.length > 0}
-    <div class="card p-4 md:p-6 mt-6">
+    <div class="card p-6 mt-6">
       <div class="flex items-center gap-2 mb-4">
         <History size={20} class="text-primary-500" />
         <h2 class="text-lg font-semibold">Recent Entries</h2>

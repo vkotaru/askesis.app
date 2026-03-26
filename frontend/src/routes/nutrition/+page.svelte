@@ -407,24 +407,24 @@
               <div class="space-y-3">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
-                    <label class="label text-xs">Label</label>
-                    <select bind:value={editMealData.label} class="input text-sm">
+                    <label class="label">Label</label>
+                    <select bind:value={editMealData.label} class="input">
                       {#each MEAL_LABELS as label}
                         <option value={label}>{label}</option>
                       {/each}
                     </select>
                   </div>
                   <div>
-                    <label class="label text-xs">Time</label>
-                    <input type="time" bind:value={editMealData.time} class="input text-sm" />
+                    <label class="label">Time</label>
+                    <input type="time" bind:value={editMealData.time} class="input" />
                   </div>
                   <div>
-                    <label class="label text-xs">Calories</label>
-                    <input type="number" bind:value={editMealData.calories} class="input text-sm" />
+                    <label class="label">Calories</label>
+                    <input type="number" bind:value={editMealData.calories} class="input" />
                   </div>
                   <div>
-                    <label class="label text-xs">Description</label>
-                    <input type="text" bind:value={editMealData.description} class="input text-sm" />
+                    <label class="label">Description</label>
+                    <input type="text" bind:value={editMealData.description} class="input" />
                   </div>
                 </div>
                 <div class="flex justify-end gap-2">
