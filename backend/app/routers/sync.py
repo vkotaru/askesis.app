@@ -147,7 +147,9 @@ def get_changes(
 ):
     """Return all rows changed or deleted since the given timestamp."""
     try:
-        since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        since_dt = datetime.fromisoformat(since.replace("Z", "+00:00")).replace(
+            tzinfo=None
+        )
     except ValueError:
         since_dt = datetime(1970, 1, 1)
 
@@ -352,7 +354,9 @@ def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> 
     # Server-wins conflict resolution: compare timestamps
     client_ts = change.timestamp
     try:
-        client_dt = datetime.fromisoformat(client_ts.replace("Z", "+00:00"))
+        client_dt = datetime.fromisoformat(client_ts.replace("Z", "+00:00")).replace(
+            tzinfo=None
+        )
     except (ValueError, AttributeError):
         client_dt = datetime.utcnow()
 
