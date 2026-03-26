@@ -265,9 +265,21 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
         if "time_of_day" in data and data["time_of_day"]:
             data["time_of_day"] = TimeOfDay(data["time_of_day"])
 
+    if model == Meal:
+        data.pop("food_items", None)
+        data.pop("photo_url", None)
+        data.pop("computed_calories", None)
+        data.pop("computed_protein_g", None)
+        data.pop("computed_carbs_g", None)
+        data.pop("computed_fat_g", None)
+
     if model == ProgressPhoto:
         if "view" in data:
             data["view"] = PhotoView(data["view"])
+
+    # Strip any keys that aren't actual model columns to prevent constructor errors
+    model_columns = {c.name for c in model.__table__.columns}
+    data = {k: v for k, v in data.items() if k in model_columns}
 
     # Check for existing record with same serverId (dedup)
     if change.serverId:
@@ -375,12 +387,22 @@ def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> 
                 )
                 db.add(ex)
 
+    if model == Meal:
+        data.pop("food_items", None)
+        data.pop("photo_url", None)
+        data.pop("computed_calories", None)
+        data.pop("computed_protein_g", None)
+        data.pop("computed_carbs_g", None)
+        data.pop("computed_fat_g", None)
+
     if model == ProgressPhoto:
         if "view" in data:
             data["view"] = PhotoView(data["view"])
 
+    # Only set actual model columns
+    model_columns = {c.name for c in model.__table__.columns}
     for key, value in data.items():
-        if hasattr(obj, key):
+        if key in model_columns:
             setattr(obj, key, value)
 
     obj.updated_at = datetime.utcnow()

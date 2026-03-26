@@ -126,8 +126,12 @@ export async function flushPendingSync(): Promise<void> {
         setTimeout(() => syncErrors.set([]), 10000);
       }
     }
-  } catch {
+  } catch (err) {
     // Entries stay in the queue for next attempt.
+    // Surface non-network errors so the user knows what went wrong.
+    const msg = err instanceof Error ? err.message : String(err);
+    syncErrors.set([msg]);
+    setTimeout(() => syncErrors.set([]), 10000);
   } finally {
     isSyncing.set(false);
   }
