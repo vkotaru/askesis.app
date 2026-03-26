@@ -9,7 +9,7 @@
 
 {#if $syncErrors.length > 0}
   <div
-    class="fixed top-4 left-4 right-4 z-50 mx-auto max-w-md rounded-lg bg-red-50 border border-red-200 p-4 shadow-lg dark:bg-red-900/50 dark:border-red-700"
+    class="fixed top-4 left-4 right-4 z-50 mx-auto max-w-lg rounded-lg bg-red-50 border border-red-200 p-4 shadow-lg dark:bg-red-900/50 dark:border-red-700"
     role="alert"
   >
     <div class="flex items-start gap-3">
@@ -20,7 +20,7 @@
         </p>
         <ul class="mt-1 text-xs text-red-600 dark:text-red-300 space-y-0.5">
           {#each $syncErrors.slice(0, 3) as error}
-            <li class="truncate">{error}</li>
+            <li class="break-words">{error}</li>
           {/each}
           {#if $syncErrors.length > 3}
             <li>...and {$syncErrors.length - 3} more</li>
