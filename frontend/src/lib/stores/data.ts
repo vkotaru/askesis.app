@@ -305,43 +305,40 @@ export const offlineApi = {
     _userId?: number,
     limit?: number
   ): Promise<DailyLog[]> {
-    // Try local first
-    let collection = db.dailyLogs.orderBy('date').reverse();
-
-    if (startDate && endDate) {
-      collection = db.dailyLogs.where('date').between(startDate, endDate, true, true).reverse();
-    }
-
-    let results = await collection.toArray();
-
-    // Deduplicate by date (keep the one with serverId, or the latest localId)
-    const byDate = new Map<string, LocalDailyLog>();
-    for (const r of results) {
-      const existing = byDate.get(r.date);
-      if (!existing || (r.serverId && !existing.serverId) || (r.localId! > existing.localId!)) {
-        byDate.set(r.date, r);
-      }
-    }
-    results = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
-
-    if (limit) results = results.slice(0, limit);
-
-    if (results.length > 0) {
-      return results.map(fromLocalDailyLog);
-    }
-
-    // No local data — try server and cache
+    // Try server first (authoritative), fall back to local
     try {
       const serverLogs = await api.getDailyLogs(startDate, endDate, _userId, limit);
       for (const log of serverLogs) {
         const existing = await db.dailyLogs.where('serverId').equals(log.id).first();
-        if (!existing) {
+        if (existing) {
+          await db.dailyLogs.update(existing.localId!, toLocalDailyLog(log));
+        } else {
           await db.dailyLogs.add(toLocalDailyLog(log) as LocalDailyLog);
         }
       }
       return serverLogs;
     } catch {
-      return [];
+      // Offline — serve from Dexie
+      let collection = db.dailyLogs.orderBy('date').reverse();
+
+      if (startDate && endDate) {
+        collection = db.dailyLogs.where('date').between(startDate, endDate, true, true).reverse();
+      }
+
+      let results = await collection.toArray();
+
+      // Deduplicate by date (keep the one with serverId, or the latest localId)
+      const byDate = new Map<string, LocalDailyLog>();
+      for (const r of results) {
+        const existing = byDate.get(r.date);
+        if (!existing || (r.serverId && !existing.serverId) || (r.localId! > existing.localId!)) {
+          byDate.set(r.date, r);
+        }
+      }
+      results = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+
+      if (limit) results = results.slice(0, limit);
+      return results.map(fromLocalDailyLog);
     }
   },
 
@@ -392,31 +389,31 @@ export const offlineApi = {
     _userId?: number,
     limit?: number
   ): Promise<Activity[]> {
-    let results: LocalActivity[];
-
-    if (startDate && endDate) {
-      results = await db.activities.where('date').between(startDate, endDate, true, true).reverse().toArray();
-    } else {
-      results = await db.activities.orderBy('date').reverse().toArray();
-    }
-
-    if (limit) results = results.slice(0, limit);
-
-    if (results.length > 0) {
-      return results.map(fromLocalActivity);
-    }
-
+    // Try server first (authoritative), fall back to local
     try {
       const serverActivities = await api.getActivities(startDate, endDate, _userId, limit);
+      // Update Dexie cache
       for (const a of serverActivities) {
         const existing = await db.activities.where('serverId').equals(a.id).first();
-        if (!existing) {
+        if (existing) {
+          await db.activities.update(existing.localId!, toLocalActivity(a));
+        } else {
           await db.activities.add(toLocalActivity(a) as LocalActivity);
         }
       }
       return serverActivities;
     } catch {
-      return [];
+      // Offline — serve from Dexie
+      let results: LocalActivity[];
+
+      if (startDate && endDate) {
+        results = await db.activities.where('date').between(startDate, endDate, true, true).reverse().toArray();
+      } else {
+        results = await db.activities.orderBy('date').reverse().toArray();
+      }
+
+      if (limit) results = results.slice(0, limit);
+      return results.map(fromLocalActivity);
     }
   },
 
@@ -488,33 +485,32 @@ export const offlineApi = {
     endDate?: string,
     limit?: number
   ): Promise<Meal[]> {
-    let results: LocalMeal[];
-
-    if (date) {
-      results = await db.meals.where('date').equals(date).toArray();
-    } else if (startDate && endDate) {
-      results = await db.meals.where('date').between(startDate, endDate, true, true).reverse().toArray();
-    } else {
-      results = await db.meals.orderBy('date').reverse().toArray();
-    }
-
-    if (limit) results = results.slice(0, limit);
-
-    if (results.length > 0) {
-      return results.map(fromLocalMeal);
-    }
-
+    // Try server first, fall back to local
     try {
       const serverMeals = await api.getMeals(date, _userId, startDate, endDate, limit);
       for (const m of serverMeals) {
         const existing = await db.meals.where('serverId').equals(m.id).first();
-        if (!existing) {
+        if (existing) {
+          await db.meals.update(existing.localId!, toLocalMeal(m));
+        } else {
           await db.meals.add(toLocalMeal(m) as LocalMeal);
         }
       }
       return serverMeals;
     } catch {
-      return [];
+      // Offline — serve from Dexie
+      let results: LocalMeal[];
+
+      if (date) {
+        results = await db.meals.where('date').equals(date).toArray();
+      } else if (startDate && endDate) {
+        results = await db.meals.where('date').between(startDate, endDate, true, true).reverse().toArray();
+      } else {
+        results = await db.meals.orderBy('date').reverse().toArray();
+      }
+
+      if (limit) results = results.slice(0, limit);
+      return results.map(fromLocalMeal);
     }
   },
 
@@ -586,29 +582,29 @@ export const offlineApi = {
     endDate?: string,
     _userId?: number
   ): Promise<BodyMeasurement[]> {
-    let results: LocalMeasurement[];
-
-    if (startDate && endDate) {
-      results = await db.measurements.where('date').between(startDate, endDate, true, true).reverse().toArray();
-    } else {
-      results = await db.measurements.orderBy('date').reverse().toArray();
-    }
-
-    if (results.length > 0) {
-      return results.map(fromLocalMeasurement);
-    }
-
+    // Try server first, fall back to local
     try {
       const serverMeasurements = await api.getMeasurements(startDate, endDate, _userId);
       for (const m of serverMeasurements) {
         const existing = await db.measurements.where('serverId').equals(m.id).first();
-        if (!existing) {
+        if (existing) {
+          await db.measurements.update(existing.localId!, toLocalMeasurement(m));
+        } else {
           await db.measurements.add(toLocalMeasurement(m) as LocalMeasurement);
         }
       }
       return serverMeasurements;
     } catch {
-      return [];
+      // Offline — serve from Dexie
+      let results: LocalMeasurement[];
+
+      if (startDate && endDate) {
+        results = await db.measurements.where('date').between(startDate, endDate, true, true).reverse().toArray();
+      } else {
+        results = await db.measurements.orderBy('date').reverse().toArray();
+      }
+
+      return results.map(fromLocalMeasurement);
     }
   },
 
@@ -702,84 +698,67 @@ export const offlineApi = {
     view?: PhotoView,
     _userId?: number
   ): Promise<ProgressPhoto[]> {
-    let results: LocalPhoto[];
+    const toPhoto = (p: LocalPhoto): ProgressPhoto => ({
+      id: p.serverId ?? p.localId!,
+      date: p.date,
+      view: p.view,
+      drive_file_id: p.drive_file_id,
+      notes: p.notes,
+      url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+    });
 
-    if (startDate && endDate) {
-      results = await db.photos.where('date').between(startDate, endDate, true, true).toArray();
-    } else {
-      results = await db.photos.orderBy('date').toArray();
-    }
+    const cachePhoto = async (p: ProgressPhoto) => {
+      const existing = await db.photos.where('serverId').equals(p.id).first();
+      const local = { serverId: p.id, date: p.date, view: p.view, drive_file_id: p.drive_file_id, notes: p.notes, url: p.url, updatedAt: now() };
+      if (existing) {
+        await db.photos.update(existing.localId!, local);
+      } else {
+        await db.photos.add(local as LocalPhoto);
+      }
+    };
 
-    if (view) {
-      results = results.filter(p => p.view === view);
-    }
-
-    if (results.length > 0) {
-      return results.map(p => ({
-        id: p.serverId ?? p.localId!,
-        date: p.date,
-        view: p.view,
-        drive_file_id: p.drive_file_id,
-        notes: p.notes,
-        url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
-      }));
-    }
-
+    // Try server first, fall back to local
     try {
       const serverPhotos = await api.getPhotos(startDate, endDate, view, _userId);
-      for (const p of serverPhotos) {
-        const existing = await db.photos.where('serverId').equals(p.id).first();
-        if (!existing) {
-          await db.photos.add({
-            serverId: p.id,
-            date: p.date,
-            view: p.view,
-            drive_file_id: p.drive_file_id,
-            notes: p.notes,
-            url: p.url,
-            updatedAt: now(),
-          });
-        }
-      }
+      for (const p of serverPhotos) { await cachePhoto(p); }
       return serverPhotos;
     } catch {
-      return [];
+      let results: LocalPhoto[];
+      if (startDate && endDate) {
+        results = await db.photos.where('date').between(startDate, endDate, true, true).toArray();
+      } else {
+        results = await db.photos.orderBy('date').toArray();
+      }
+      if (view) results = results.filter(p => p.view === view);
+      return results.map(toPhoto);
     }
   },
 
   async getPhotosByDate(date: string, _userId?: number): Promise<ProgressPhoto[]> {
-    const local = await db.photos.where('date').equals(date).toArray();
-
-    if (local.length > 0) {
-      return local.map(p => ({
-        id: p.serverId ?? p.localId!,
-        date: p.date,
-        view: p.view,
-        drive_file_id: p.drive_file_id,
-        notes: p.notes,
-        url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
-      }));
-    }
+    const toPhoto = (p: LocalPhoto): ProgressPhoto => ({
+      id: p.serverId ?? p.localId!,
+      date: p.date,
+      view: p.view,
+      drive_file_id: p.drive_file_id,
+      notes: p.notes,
+      url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+    });
 
     try {
       const serverPhotos = await api.getPhotosByDate(date, _userId);
       for (const p of serverPhotos) {
         const existing = await db.photos.where('serverId').equals(p.id).first();
-        if (!existing) {
-          await db.photos.add({
-            serverId: p.id,
-            date: p.date,
-            view: p.view,
-            drive_file_id: p.drive_file_id,
-            notes: p.notes,
-            url: p.url,
-            updatedAt: now(),
-          });
+        const local = { serverId: p.id, date: p.date, view: p.view, drive_file_id: p.drive_file_id, notes: p.notes, url: p.url, updatedAt: now() };
+        if (existing) {
+          await db.photos.update(existing.localId!, local);
+        } else {
+          await db.photos.add(local as LocalPhoto);
         }
       }
       return serverPhotos;
     } catch {
-      return [];
+      const local = await db.photos.where('date').equals(date).toArray();
+      return local.map(toPhoto);
     }
   },
 };
