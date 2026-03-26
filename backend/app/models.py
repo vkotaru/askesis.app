@@ -25,6 +25,12 @@ class ActivityType(enum.Enum):
     STRENGTH = "strength"
 
 
+class TrainingPlanStatus(enum.Enum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class PhotoView(enum.Enum):
     FRONT = "front"
     SIDE = "side"
@@ -401,3 +407,57 @@ class DataShare(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "shared_with_id", name="unique_share"),
     )
+
+
+class TrainingPlan(Base):
+    __tablename__ = "training_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    plan_name: Mapped[str] = mapped_column(String(100))
+    plan_display_name: Mapped[str] = mapped_column(String(200))
+    race_date: Mapped[date] = mapped_column(Date)
+    race_distance_km: Mapped[float] = mapped_column(Float)
+    start_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[TrainingPlanStatus] = mapped_column(
+        Enum(TrainingPlanStatus), default=TrainingPlanStatus.ACTIVE
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User"] = relationship("User")
+    planned_workouts: Mapped[list["PlannedWorkout"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (Index("ix_training_plans_user", "user_id"),)
+
+
+class PlannedWorkout(Base):
+    __tablename__ = "planned_workouts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("training_plans.id", ondelete="CASCADE"), index=True
+    )
+    week_number: Mapped[int] = mapped_column(Integer)
+    day_of_week: Mapped[int] = mapped_column(Integer)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    workout_type: Mapped[str] = mapped_column(String(50))
+    description: Mapped[str] = mapped_column(String(500))
+    target_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_pace_description: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    activity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("activities.id"), nullable=True
+    )
+
+    plan: Mapped["TrainingPlan"] = relationship(back_populates="planned_workouts")
+    activity: Mapped["Activity | None"] = relationship("Activity")
+
+    __table_args__ = (Index("ix_planned_workouts_plan_date", "plan_id", "date"),)
