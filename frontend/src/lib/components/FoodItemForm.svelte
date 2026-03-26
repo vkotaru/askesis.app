@@ -163,23 +163,23 @@
           <p class="label mb-2">Nutrition (per serving)</p>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="text-xs text-gray-500">Calories</label>
+              <label class="label">Calories</label>
               <input type="number" bind:value={calories} class="input" min="0" />
             </div>
             <div>
-              <label class="text-xs text-gray-500">Protein (g)</label>
+              <label class="label">Protein (g)</label>
               <input type="number" bind:value={protein_g} class="input" min="0" step="0.1" />
             </div>
             <div>
-              <label class="text-xs text-gray-500">Carbs (g)</label>
+              <label class="label">Carbs (g)</label>
               <input type="number" bind:value={carbs_g} class="input" min="0" step="0.1" />
             </div>
             <div>
-              <label class="text-xs text-gray-500">Fat (g)</label>
+              <label class="label">Fat (g)</label>
               <input type="number" bind:value={fat_g} class="input" min="0" step="0.1" />
             </div>
             <div>
-              <label class="text-xs text-gray-500">Fiber (g)</label>
+              <label class="label">Fiber (g)</label>
               <input type="number" bind:value={fiber_g} class="input" min="0" step="0.1" />
             </div>
           </div>
