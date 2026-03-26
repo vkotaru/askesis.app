@@ -162,6 +162,53 @@ export interface CalendarEvent {
   icon?: string;
 }
 
+export interface RaceDistanceInfo {
+  id: string;
+  label: string;
+  km: number;
+  min_weeks: number;
+  max_weeks: number;
+}
+
+export interface TrainingPlan {
+  id: number;
+  plan_name: string;
+  plan_display_name: string;
+  race_date: string;
+  race_distance_km: number;
+  start_date: string;
+  status: 'active' | 'completed' | 'cancelled';
+  created_at: string;
+}
+
+export interface TrainingPlanDetail extends TrainingPlan {
+  planned_workouts: PlannedWorkout[];
+}
+
+export interface PlannedWorkout {
+  id: number;
+  plan_id: number;
+  week_number: number;
+  day_of_week: number;
+  date: string;
+  workout_type: string;
+  description: string;
+  target_distance_km?: number;
+  target_pace_description?: string;
+  completed: boolean;
+  activity_id?: number;
+  actual_distance_km?: number;
+}
+
+export interface WeeklyProgress {
+  week_number: number;
+  week_start: string;
+  planned_distance_km: number;
+  actual_distance_km: number;
+  workouts_planned: number;
+  workouts_completed: number;
+}
+
 export type ColorScheme = 'forest' | 'ocean' | 'sunset' | 'lavender' | 'slate';
 export type DistanceUnit = 'km' | 'mi';
 export type MeasurementUnit = 'cm' | 'in';
@@ -585,4 +632,37 @@ export const api = {
     fetchJSON<GSheetSyncResponse>('/api/export/gsheet/sync', {
       method: 'POST',
     }),
+
+  // Training Plans
+  getRaceDistances: () => fetchJSON<RaceDistanceInfo[]>('/api/training/distances'),
+  getTrainingPlans: () => fetchJSON<TrainingPlan[]>('/api/training/plans'),
+  getTrainingPlan: (id: number) => fetchJSON<TrainingPlanDetail>(`/api/training/plans/${id}`),
+  createTrainingPlan: (opts: { race_distance: string; race_date: string; total_weeks?: number; start_date?: string; terrain?: string; include_bike?: boolean; bike_intensity?: number; rest_days?: number }) =>
+    fetchJSON<TrainingPlan>('/api/training/plans', {
+      method: 'POST',
+      body: JSON.stringify(opts),
+    }),
+  deleteTrainingPlan: (id: number) =>
+    fetchJSON(`/api/training/plans/${id}`, { method: 'DELETE' }),
+  updatePlanStatus: (id: number, status: string) =>
+    fetchJSON<TrainingPlan>(`/api/training/plans/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  completeWorkout: (workoutId: number, activityId?: number) =>
+    fetchJSON<PlannedWorkout>(`/api/training/workouts/${workoutId}/complete`, {
+      method: 'PUT',
+      body: JSON.stringify({ activity_id: activityId }),
+    }),
+  uncompleteWorkout: (workoutId: number) =>
+    fetchJSON<PlannedWorkout>(`/api/training/workouts/${workoutId}/uncomplete`, { method: 'PUT' }),
+  updateWorkout: (workoutId: number, data: { workout_type?: string; description?: string; target_distance_km?: number; target_pace_description?: string }) =>
+    fetchJSON<PlannedWorkout>(`/api/training/workouts/${workoutId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getTrainingProgress: (planId: number) =>
+    fetchJSON<WeeklyProgress[]>(`/api/training/plans/${planId}/progress`),
+  getTrainingCalendar: (year: number, month: number) =>
+    fetchJSON<Record<string, PlannedWorkout[]>>(`/api/training/calendar/${year}/${month}`),
 };

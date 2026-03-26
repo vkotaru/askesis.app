@@ -3,7 +3,7 @@
   import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, startOfWeek, endOfWeek } from 'date-fns';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type CalendarEvent } from '$lib/api/client';
+  import { api, type CalendarEvent, type PlannedWorkout } from '$lib/api/client';
   import { ICON_MAP, LEGEND_ICONS } from '$lib/utils/activityIcons';
 
   function getIconComponent(iconName: string | undefined) {
@@ -69,6 +69,7 @@
 
   let currentDate = new Date();
   let calendar: Record<string, CalendarEvent[]> = {};
+  let planned: Record<string, PlannedWorkout[]> = {};
   let loading = true;
 
   $: year = currentDate.getFullYear();
@@ -84,7 +85,12 @@
   async function loadCalendar(y: number, m: number) {
     loading = true;
     try {
-      calendar = await api.getCalendar(y, m);
+      const [cal, plan] = await Promise.all([
+        api.getCalendar(y, m),
+        api.getTrainingCalendar(y, m).catch(() => ({})),
+      ]);
+      calendar = cal;
+      planned = plan;
     } catch (err) {
       console.error('Failed to load calendar:', err);
     } finally {
@@ -153,6 +159,7 @@
         {#each calendarDays as day, idx}
           {@const dateStr = format(day, 'yyyy-MM-dd')}
           {@const events = calendar[dateStr] || []}
+          {@const plannedEvents = planned[dateStr] || []}
           {@const isCurrentMonth = isSameMonth(day, currentDate)}
           {@const isTodayDate = isToday(day)}
           <div
@@ -173,6 +180,27 @@
             >
               {format(day, 'd')}
             </div>
+
+            <!-- Planned workouts -->
+            {#if plannedEvents.length > 0}
+              <div class="space-y-0.5 mb-1">
+                {#each plannedEvents as pw}
+                  <div
+                    class={clsx(
+                      'text-[10px] leading-tight px-1 py-0.5 rounded truncate',
+                      pw.completed
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                        : pw.workout_type === 'rest'
+                          ? 'text-gray-400 dark:text-gray-500'
+                          : 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 border border-dashed border-primary-300 dark:border-primary-700'
+                    )}
+                    title={pw.description}
+                  >
+                    {pw.completed ? '✓ ' : ''}{pw.description}
+                  </div>
+                {/each}
+              </div>
+            {/if}
 
             <!-- Activity icons/emojis -->
             {#if events.length > 0}

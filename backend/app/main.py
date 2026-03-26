@@ -22,6 +22,7 @@ from app.routers import (
     export,
     sync,
     report,
+    training,
 )
 
 # Configure logging
@@ -99,6 +100,7 @@ app.include_router(import_router.router, prefix="/api/import", tags=["import"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(report.router, prefix="/api/report", tags=["report"])
+app.include_router(training.router, prefix="/api/training", tags=["training"])
 
 
 @app.get("/health")
