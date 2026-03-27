@@ -16,7 +16,9 @@
   // Create plan form
   let selectedDistance: string = 'marathon';
   let raceDate: string = '';
-  let startMode: 'auto' | 'weeks' | 'date' = 'auto';
+  type StartMode = 'auto' | 'weeks' | 'date';
+  const START_MODE_OPTIONS: [StartMode, string][] = [['auto', 'Auto'], ['weeks', '# Weeks'], ['date', 'Start Date']];
+  let startMode: StartMode = 'auto';
   let totalWeeks: number = 16;
   let startDate: string = '';
   let selectedTerrain: string = 'road';
@@ -484,9 +486,9 @@
             <p class="text-xs text-gray-400 mb-3">{weeksAway} weeks away</p>
           {/if}
 
-          <label class="label">Training Start</label>
+          <span class="label">Training Start</span>
           <div class="flex gap-2 mb-2">
-            {#each [['auto', 'Auto'], ['weeks', '# Weeks'], ['date', 'Start Date']] as [val, label]}
+            {#each START_MODE_OPTIONS as [val, label]}
               <button
                 on:click={() => { startMode = val; }}
                 class={clsx('px-3 py-1 rounded text-xs', startMode === val ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-700')}
@@ -513,7 +515,7 @@
 
       <!-- Terrain -->
       <div class="mb-4">
-        <label class="label">Terrain</label>
+        <span class="label">Terrain</span>
         <div class="flex gap-2">
           {#each ['road', 'trail', 'mixed'] as t}
             <button
@@ -549,7 +551,7 @@
 
       <!-- Rest days -->
       <div class="mb-4">
-        <label class="label">Rest Days per Week</label>
+        <span class="label">Rest Days per Week</span>
         <div class="flex gap-2">
           {#each [1, 2, 3] as n}
             <button
