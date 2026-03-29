@@ -140,8 +140,10 @@
     });
   })();
 
-  // Progress chart
-  $: maxDistance = Math.max(...progress.map(w => Math.max(w.planned_distance_km, w.actual_distance_km)), 1);
+  // Progress chart — separate run and bike
+  $: maxRunKm = Math.max(...progress.map(w => Math.max(w.planned_run_km, w.actual_run_km)), 1);
+  $: maxBikeKm = Math.max(...progress.map(w => Math.max(w.planned_bike_km, w.actual_bike_km)), 1);
+  $: hasBikeData = progress.some(w => w.planned_bike_km > 0 || w.actual_bike_km > 0);
 
   const WORKOUT_COLORS: Record<string, string> = {
     road_run: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
@@ -313,18 +315,18 @@
       </div>
     </div>
 
-    <!-- Weekly Progress Chart -->
+    <!-- Weekly Progress Charts -->
     {#if progress.length > 0}
       <div class="card p-6 mb-6">
-        <h2 class="text-sm font-semibold text-gray-500 mb-4">Weekly Mileage</h2>
+        <h2 class="text-sm font-semibold text-gray-500 mb-4">Weekly Run Mileage</h2>
         <div class="flex items-center gap-4 mb-3 text-[10px] text-gray-400">
           <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-primary-300"></span> Planned</span>
           <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-green-500"></span> Actual</span>
         </div>
         <div class="flex items-end gap-1 h-32 overflow-x-auto">
           {#each progress as week}
-            {@const plannedH = maxDistance > 0 ? (week.planned_distance_km / maxDistance) * 100 : 0}
-            {@const actualH = maxDistance > 0 ? (week.actual_distance_km / maxDistance) * 100 : 0}
+            {@const plannedH = maxRunKm > 0 ? (week.planned_run_km / maxRunKm) * 100 : 0}
+            {@const actualH = maxRunKm > 0 ? (week.actual_run_km / maxRunKm) * 100 : 0}
             {@const isCurrent = week.week_number === currentWeek}
             <div class="flex-1 min-w-[28px] flex flex-col items-center gap-0.5">
               <div class="w-full flex items-end gap-0.5" style="height: 96px;">
@@ -334,7 +336,7 @@
                 ></div>
                 <div
                   class="flex-1 rounded-t-sm {isCurrent ? 'bg-green-500' : 'bg-green-300 dark:bg-green-800'}"
-                  style="height: {Math.max(actualH, week.actual_distance_km > 0 ? 2 : 0)}%;"
+                  style="height: {Math.max(actualH, week.actual_run_km > 0 ? 2 : 0)}%;"
                 ></div>
               </div>
               <span class="text-[9px] {isCurrent ? 'text-primary-500 font-bold' : 'text-gray-400'}">
@@ -344,6 +346,38 @@
           {/each}
         </div>
       </div>
+
+      {#if hasBikeData}
+        <div class="card p-6 mb-6">
+          <h2 class="text-sm font-semibold text-gray-500 mb-4">Weekly Bike Mileage</h2>
+          <div class="flex items-center gap-4 mb-3 text-[10px] text-gray-400">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-teal-300"></span> Planned</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-teal-600"></span> Actual</span>
+          </div>
+          <div class="flex items-end gap-1 h-32 overflow-x-auto">
+            {#each progress as week}
+              {@const plannedH = maxBikeKm > 0 ? (week.planned_bike_km / maxBikeKm) * 100 : 0}
+              {@const actualH = maxBikeKm > 0 ? (week.actual_bike_km / maxBikeKm) * 100 : 0}
+              {@const isCurrent = week.week_number === currentWeek}
+              <div class="flex-1 min-w-[28px] flex flex-col items-center gap-0.5">
+                <div class="w-full flex items-end gap-0.5" style="height: 96px;">
+                  <div
+                    class="flex-1 rounded-t-sm {isCurrent ? 'bg-teal-400' : 'bg-teal-200 dark:bg-teal-800'}"
+                    style="height: {Math.max(plannedH, 2)}%;"
+                  ></div>
+                  <div
+                    class="flex-1 rounded-t-sm {isCurrent ? 'bg-teal-600' : 'bg-teal-400 dark:bg-teal-700'}"
+                    style="height: {Math.max(actualH, week.actual_bike_km > 0 ? 2 : 0)}%;"
+                  ></div>
+                </div>
+                <span class="text-[9px] {isCurrent ? 'text-primary-500 font-bold' : 'text-gray-400'}">
+                  W{week.week_number}
+                </span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
     {/if}
 
     <!-- Full Schedule (collapsible weeks) -->
@@ -353,8 +387,11 @@
         {#each Array.from(new Set(activePlan.planned_workouts.map(w => w.week_number))).sort((a, b) => a - b) as weekNum}
           {@const weekWorkouts = activePlan.planned_workouts.filter(w => w.week_number === weekNum)}
           {@const completedCount = weekWorkouts.filter(w => w.completed).length}
-          {@const weekKm = weekWorkouts.reduce((s, w) => s + (w.target_distance_km || 0), 0)}
-          {@const actualKm = progress.find(p => p.week_number === weekNum)?.actual_distance_km || 0}
+          {@const weekRunKm = weekWorkouts.filter(w => w.workout_type !== 'bike').reduce((s, w) => s + (w.target_distance_km || 0), 0)}
+          {@const weekBikeKm = weekWorkouts.filter(w => w.workout_type === 'bike').reduce((s, w) => s + (w.target_distance_km || 0), 0)}
+          {@const weekProgress = progress.find(p => p.week_number === weekNum)}
+          {@const actualRunKm = weekProgress?.actual_run_km || 0}
+          {@const actualBikeKm = weekProgress?.actual_bike_km || 0}
           {@const isCurrent = weekNum === currentWeek}
           {@const isPast = weekNum < currentWeek}
           {@const weekStart = weekWorkouts.length > 0 ? format(parseISO(weekWorkouts[0].date), 'MMM d') : ''}
@@ -378,11 +415,19 @@
                 {/if}
               </div>
               <div class="flex items-center gap-3 text-xs">
-                <span class="text-gray-400" title="Planned">{distFmt(weekKm)}</span>
-                {#if actualKm > 0 || isPast}
-                  <span class={clsx('font-medium', actualKm >= weekKm * 0.8 ? 'text-green-500' : 'text-red-400')} title="Achieved">
-                    {distFmt(actualKm)}
+                <span class="text-gray-400" title="Planned run">{distFmt(weekRunKm)}</span>
+                {#if actualRunKm > 0 || isPast}
+                  <span class={clsx('font-medium', actualRunKm >= weekRunKm * 0.8 ? 'text-green-500' : 'text-red-400')} title="Achieved run">
+                    {distFmt(actualRunKm)}
                   </span>
+                {/if}
+                {#if weekBikeKm > 0}
+                  <span class="text-teal-400" title="Planned bike">{distFmt(weekBikeKm)}</span>
+                  {#if actualBikeKm > 0 || isPast}
+                    <span class={clsx('font-medium', actualBikeKm >= weekBikeKm * 0.8 ? 'text-teal-500' : 'text-red-400')} title="Achieved bike">
+                      {distFmt(actualBikeKm)}
+                    </span>
+                  {/if}
                 {/if}
                 <span class="text-gray-400">{completedCount}/{weekWorkouts.length}</span>
                 <ChevronDown size={14} class={clsx('text-gray-400 transition-transform', expandedWeek === weekNum ? 'rotate-180' : '')} />
