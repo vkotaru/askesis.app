@@ -400,24 +400,30 @@
             <button
               on:click={() => toggleWeekExpand(weekNum)}
               class={clsx(
-                'w-full flex items-center justify-between p-3 rounded-lg text-left',
+                'w-full p-3 rounded-lg text-left',
                 isCurrent ? 'bg-primary-50 dark:bg-primary-900/20' : 'bg-gray-50 dark:bg-gray-700/50',
                 'hover:bg-gray-100 dark:hover:bg-gray-700'
               )}
             >
-              <div class="flex items-center gap-2">
-                <span class={clsx('text-sm font-medium', isCurrent ? 'text-primary-600' : '')}>
-                  Week {weekNum}
-                </span>
-                <span class="text-[10px] text-gray-400">{weekStart} – {weekEnd}</span>
-                {#if isCurrent}
-                  <span class="text-[10px] bg-primary-500 text-white px-1.5 py-0.5 rounded-full">current</span>
-                {/if}
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class={clsx('text-sm font-medium', isCurrent ? 'text-primary-600' : '')}>
+                    Week {weekNum}
+                  </span>
+                  <span class="text-[10px] text-gray-400">{weekStart} – {weekEnd}</span>
+                  {#if isCurrent}
+                    <span class="text-[10px] bg-primary-500 text-white px-1.5 py-0.5 rounded-full">current</span>
+                  {/if}
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-gray-400">{completedCount}/{weekWorkouts.length}</span>
+                  <ChevronDown size={14} class={clsx('text-gray-400 transition-transform', expandedWeek === weekNum ? 'rotate-180' : '')} />
+                </div>
               </div>
-              <div class="flex items-center gap-2 text-xs">
-                <span class="flex items-center gap-1 text-gray-400" title="Run: planned / achieved">
-                  <PersonStanding size={12} />
-                  {distFmt(weekRunKm)}
+              <div class="flex items-center gap-4 mt-1.5 text-xs">
+                <span class="flex items-center gap-1.5 text-gray-400">
+                  <PersonStanding size={13} />
+                  <span>{distFmt(weekRunKm)}</span>
                   {#if actualRunKm > 0 || isPast}
                     <span class={clsx('font-medium', actualRunKm >= weekRunKm * 0.8 ? 'text-green-500' : 'text-red-400')}>
                       {distFmt(actualRunKm)}
@@ -425,9 +431,9 @@
                   {/if}
                 </span>
                 {#if weekBikeKm > 0}
-                  <span class="flex items-center gap-1 text-teal-400" title="Bike: planned / achieved">
-                    <Bike size={12} />
-                    {distFmt(weekBikeKm)}
+                  <span class="flex items-center gap-1.5 text-teal-400">
+                    <Bike size={13} />
+                    <span>{distFmt(weekBikeKm)}</span>
                     {#if actualBikeKm > 0 || isPast}
                       <span class={clsx('font-medium', actualBikeKm >= weekBikeKm * 0.8 ? 'text-teal-500' : 'text-red-400')}>
                         {distFmt(actualBikeKm)}
@@ -435,8 +441,6 @@
                     {/if}
                   </span>
                 {/if}
-                <span class="text-gray-400">{completedCount}/{weekWorkouts.length}</span>
-                <ChevronDown size={14} class={clsx('text-gray-400 transition-transform', expandedWeek === weekNum ? 'rotate-180' : '')} />
               </div>
             </button>
             {#if expandedWeek === weekNum}
