@@ -9,7 +9,7 @@
     WeightTrendCard,
     WeekCalendarCard,
     StepsBarCard,
-    NutritionBarsCard,
+    NutritionChartCard,
     MeasurementsCard,
   } from '$lib/components/cards';
 
@@ -135,8 +135,9 @@
       </div>
 
       <div class="mb-6">
-        <NutritionBarsCard
-          nutrition={report.week_nutrition}
+        <NutritionChartCard
+          data={report.week_nutrition.map(n => ({ date: n.date, calories: n.calories, protein: n.protein_g }))}
+          subtitle="Last 7 days"
           today={report.today}
         />
       </div>
