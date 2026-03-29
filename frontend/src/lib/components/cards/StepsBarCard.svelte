@@ -1,15 +1,40 @@
 <script lang="ts">
   import { format, parseISO } from 'date-fns';
+  import { Footprints } from 'lucide-svelte';
 
   export let steps: { date: string; steps: number | null }[] = [];
   export let today: string = format(new Date(), 'yyyy-MM-dd');
 
   $: maxSteps = Math.max(...steps.map(s => s.steps ?? 0), 1);
+
+  $: daysWithSteps = steps.filter(s => (s.steps ?? 0) > 0);
+  $: avgSteps = daysWithSteps.length > 0
+    ? Math.round(daysWithSteps.reduce((sum, s) => sum + (s.steps ?? 0), 0) / daysWithSteps.length)
+    : 0;
+  $: avgPct = maxSteps > 0 ? (avgSteps / maxSteps) * 100 : 0;
 </script>
 
 <div class="card p-6">
-  <h2 class="text-sm font-semibold text-gray-500 mb-4">Steps <span class="font-normal text-gray-400 ml-1">last 7 days</span></h2>
-  <div class="flex items-end gap-2 h-32">
+  <div class="flex items-center gap-2 mb-1">
+    <Footprints size={20} class="text-cardio-500" />
+    <h2 class="text-lg font-semibold">Steps</h2>
+    <span class="text-xs text-gray-400 ml-auto">last 7 days</span>
+  </div>
+  {#if avgSteps > 0}
+    <div class="flex items-center gap-2 mb-3 text-[10px] text-gray-400">
+      <span class="inline-block w-4 h-0 border-t-2 border-dashed border-green-400"></span>
+      <span>Avg: <span class="font-medium text-green-500">{(avgSteps / 1000).toFixed(1)}k</span>/day</span>
+    </div>
+  {/if}
+  <div class="flex items-end gap-2 h-32 relative">
+    <!-- Average line -->
+    {#if avgSteps > 0}
+      <div
+        class="absolute left-0 right-0 border-t-2 border-dashed border-green-400/60 pointer-events-none z-10"
+        style="bottom: {(avgPct / 100) * 96 + 0}px;"
+      ></div>
+    {/if}
+
     {#each steps as day}
       {@const pct = day.steps ? (day.steps / maxSteps) * 100 : 0}
       {@const isToday = day.date === today}

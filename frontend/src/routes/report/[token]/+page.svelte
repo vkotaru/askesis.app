@@ -115,6 +115,7 @@
           <WeightTrendCard
             weightPoints={report.weight_trend}
             weightUnit={report.weight_unit}
+            showMovingAverage={true}
           />
         </div>
       {/if}
@@ -136,7 +137,7 @@
 
       <div class="mb-6">
         <NutritionChartCard
-          data={report.week_nutrition.map(n => ({ date: n.date, calories: n.calories, protein: n.protein_g }))}
+          data={report.week_nutrition.map(n => ({ date: n.date, calories: n.calories, protein: n.protein_g, burnedCalories: 0 }))}
           subtitle="Last 7 days"
           today={report.today}
         />

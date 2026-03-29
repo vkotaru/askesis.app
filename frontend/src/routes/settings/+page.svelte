@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload, FileSpreadsheet, RefreshCw, Link, Copy, RotateCw } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload, FileSpreadsheet, RefreshCw, Link, Copy, RotateCw, Flame } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
@@ -491,6 +491,31 @@
             {/each}
           </select>
         </div>
+      </div>
+    </div>
+
+    <!-- Nutrition Goals -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <Flame size={20} class="text-nutrition-500" />
+        <h2 class="text-lg font-semibold">Nutrition Goals</h2>
+      </div>
+      <div class="max-w-xs">
+        <label for="calorie-target" class="label">Daily Calorie Target</label>
+        <input
+          id="calorie-target"
+          type="number"
+          class="input"
+          min="0"
+          step="50"
+          placeholder="e.g. 2000"
+          value={$settings.calorie_target || ''}
+          on:blur={(e) => {
+            const val = parseInt(e.currentTarget.value);
+            settings.updateSetting('calorie_target', val > 0 ? val : null);
+          }}
+        />
+        <p class="text-xs text-gray-400 mt-1">Shown as a target line on the nutrition chart</p>
       </div>
     </div>
 
