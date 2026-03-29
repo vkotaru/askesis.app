@@ -10,7 +10,7 @@
     TodayNutritionCard,
     WeightTrendCard,
     RecentActivitiesCard,
-    NutritionTrendCard,
+    NutritionChartCard,
     RaceCountdownCard,
     WeeklyTrainingCard,
   } from '$lib/components/cards';
@@ -180,7 +180,7 @@
         distanceUnit={$settings.distance_unit}
       />
 
-      <NutritionTrendCard chartData={nutritionChartData} />
+      <NutritionChartCard data={nutritionChartData} subtitle="Last 30 days" />
 
       {#if activePlanData}
         <RaceCountdownCard plan={activePlanData} />
