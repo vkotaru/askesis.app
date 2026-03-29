@@ -205,6 +205,10 @@ export interface WeeklyProgress {
   week_start: string;
   planned_distance_km: number;
   actual_distance_km: number;
+  planned_run_km: number;
+  actual_run_km: number;
+  planned_bike_km: number;
+  actual_bike_km: number;
   workouts_planned: number;
   workouts_completed: number;
 }

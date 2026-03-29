@@ -361,6 +361,10 @@ class WeeklyProgress(BaseModel):
     week_start: date
     planned_distance_km: float
     actual_distance_km: float
+    planned_run_km: float = 0
+    actual_run_km: float = 0
+    planned_bike_km: float = 0
+    actual_bike_km: float = 0
     workouts_planned: int
     workouts_completed: int
 
@@ -654,26 +658,43 @@ def get_progress(
         activities = db.query(Activity).filter(Activity.id.in_(activity_ids)).all()
         activities_by_id = {a.id: a for a in activities}
 
+    bike_types = {"bike"}
+
     result = []
     for week_num in sorted(weeks.keys()):
         week_workouts = weeks[week_num]
         week_start = min(pw.date for pw in week_workouts)
-        planned_km = sum(pw.target_distance_km or 0 for pw in week_workouts)
-        actual_km = 0.0
+        planned_run_km = 0.0
+        planned_bike_km = 0.0
+        actual_run_km = 0.0
+        actual_bike_km = 0.0
         completed = 0
         for pw in week_workouts:
+            dist = pw.target_distance_km or 0
+            if pw.workout_type in bike_types:
+                planned_bike_km += dist
+            else:
+                planned_run_km += dist
             if pw.completed:
                 completed += 1
             if pw.activity_id and pw.activity_id in activities_by_id:
                 act = activities_by_id[pw.activity_id]
-                actual_km += act.distance_km or 0
+                act_dist = act.distance_km or 0
+                if pw.workout_type in bike_types:
+                    actual_bike_km += act_dist
+                else:
+                    actual_run_km += act_dist
 
         result.append(
             WeeklyProgress(
                 week_number=week_num,
                 week_start=week_start,
-                planned_distance_km=round(planned_km, 2),
-                actual_distance_km=round(actual_km, 2),
+                planned_distance_km=round(planned_run_km + planned_bike_km, 2),
+                actual_distance_km=round(actual_run_km + actual_bike_km, 2),
+                planned_run_km=round(planned_run_km, 2),
+                actual_run_km=round(actual_run_km, 2),
+                planned_bike_km=round(planned_bike_km, 2),
+                actual_bike_km=round(actual_bike_km, 2),
                 workouts_planned=len(week_workouts),
                 workouts_completed=completed,
             )
