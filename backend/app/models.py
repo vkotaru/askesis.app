@@ -91,6 +91,8 @@ class UserSettings(Base):
     measurement_unit: Mapped[str] = mapped_column(String(10), default="cm")  # cm, in
     weight_unit: Mapped[str] = mapped_column(String(10), default="kg")  # kg, lb
     water_unit: Mapped[str] = mapped_column(String(10), default="ml")  # ml, L, oz, cups
+    # Nutrition targets
+    calorie_target: Mapped[int | None] = mapped_column(Integer)  # Daily calorie goal
     # Google Drive settings
     drive_parent_folder_id: Mapped[str | None] = mapped_column(
         String(100)

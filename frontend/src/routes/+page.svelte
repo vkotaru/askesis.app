@@ -13,6 +13,7 @@
     NutritionChartCard,
     RaceCountdownCard,
     WeeklyTrainingCard,
+    StepsBarCard,
   } from '$lib/components/cards';
 
   let logs: DailyLog[] = [];
@@ -85,13 +86,27 @@
   }, {} as Record<string, number>);
 
   $: nutritionDates = [...new Set([...Object.keys(dailyCaloriesMap), ...Object.keys(dailyProteinMap)])]
-    .sort().slice(-30);
+    .sort().slice(-7);
+
+  // Activity calories burned per day
+  $: dailyBurnedMap = allActivities.reduce((acc, a) => {
+    if (a.calories) acc[a.date] = (acc[a.date] || 0) + a.calories;
+    return acc;
+  }, {} as Record<string, number>);
 
   $: nutritionChartData = nutritionDates.map(date => ({
     date,
     calories: dailyCaloriesMap[date] || 0,
     protein: dailyProteinMap[date] || 0,
+    burnedCalories: dailyBurnedMap[date] || 0,
   }));
+
+  // Steps data (last 7 days)
+  $: stepsData = Array.from({ length: 7 }, (_, i) => {
+    const date = format(subDays(new Date(), 6 - i), 'yyyy-MM-dd');
+    const log = logs.find(l => l.date === date);
+    return { date, steps: log?.steps ?? null };
+  });
 
   // Weekly training data
   function isBikeActivity(name: string): boolean {
@@ -180,7 +195,13 @@
         distanceUnit={$settings.distance_unit}
       />
 
-      <NutritionChartCard data={nutritionChartData} subtitle="Last 30 days" />
+      <NutritionChartCard
+        data={nutritionChartData}
+        subtitle="Last 7 days"
+        calorieTarget={$settings.calorie_target}
+      />
+
+      <StepsBarCard steps={stepsData} />
 
       {#if activePlanData}
         <RaceCountdownCard plan={activePlanData} />
