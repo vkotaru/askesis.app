@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { format, parseISO, differenceInDays, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns';
-  import { Target, Calendar, CheckCircle, Circle, Trophy, ChevronDown } from 'lucide-svelte';
+  import { Target, Calendar, CheckCircle, Circle, Trophy, ChevronDown, Bike, PersonStanding } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type TrainingPlan, type RaceDistanceInfo, type TrainingPlanDetail, type PlannedWorkout, type WeeklyProgress } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
@@ -414,20 +414,26 @@
                   <span class="text-[10px] bg-primary-500 text-white px-1.5 py-0.5 rounded-full">current</span>
                 {/if}
               </div>
-              <div class="flex items-center gap-3 text-xs">
-                <span class="text-gray-400" title="Planned run">{distFmt(weekRunKm)}</span>
-                {#if actualRunKm > 0 || isPast}
-                  <span class={clsx('font-medium', actualRunKm >= weekRunKm * 0.8 ? 'text-green-500' : 'text-red-400')} title="Achieved run">
-                    {distFmt(actualRunKm)}
-                  </span>
-                {/if}
-                {#if weekBikeKm > 0}
-                  <span class="text-teal-400" title="Planned bike">{distFmt(weekBikeKm)}</span>
-                  {#if actualBikeKm > 0 || isPast}
-                    <span class={clsx('font-medium', actualBikeKm >= weekBikeKm * 0.8 ? 'text-teal-500' : 'text-red-400')} title="Achieved bike">
-                      {distFmt(actualBikeKm)}
+              <div class="flex items-center gap-2 text-xs">
+                <span class="flex items-center gap-1 text-gray-400" title="Run: planned / achieved">
+                  <PersonStanding size={12} />
+                  {distFmt(weekRunKm)}
+                  {#if actualRunKm > 0 || isPast}
+                    <span class={clsx('font-medium', actualRunKm >= weekRunKm * 0.8 ? 'text-green-500' : 'text-red-400')}>
+                      {distFmt(actualRunKm)}
                     </span>
                   {/if}
+                </span>
+                {#if weekBikeKm > 0}
+                  <span class="flex items-center gap-1 text-teal-400" title="Bike: planned / achieved">
+                    <Bike size={12} />
+                    {distFmt(weekBikeKm)}
+                    {#if actualBikeKm > 0 || isPast}
+                      <span class={clsx('font-medium', actualBikeKm >= weekBikeKm * 0.8 ? 'text-teal-500' : 'text-red-400')}>
+                        {distFmt(actualBikeKm)}
+                      </span>
+                    {/if}
+                  </span>
                 {/if}
                 <span class="text-gray-400">{completedCount}/{weekWorkouts.length}</span>
                 <ChevronDown size={14} class={clsx('text-gray-400 transition-transform', expandedWeek === weekNum ? 'rotate-180' : '')} />
