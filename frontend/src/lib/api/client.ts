@@ -230,6 +230,7 @@ export interface UserSettings {
   weight_unit: WeightUnit;
   water_unit: WaterUnit;
   calorie_target?: number | null;
+  protein_target?: number | null;
   drive_parent_folder_id?: string | null;
   google_sheet_id?: string | null;
   gsheet_sync_interval_hours?: number | null;

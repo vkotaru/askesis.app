@@ -26,12 +26,12 @@
       <span>Avg: <span class="font-medium text-green-500">{(avgSteps / 1000).toFixed(1)}k</span>/day</span>
     </div>
   {/if}
-  <div class="flex items-end gap-2 h-32 relative">
+  <div class="flex items-end gap-2 relative" style="height: 240px;">
     <!-- Average line -->
     {#if avgSteps > 0}
       <div
         class="absolute left-0 right-0 border-t-2 border-dashed border-green-400/60 pointer-events-none z-10"
-        style="bottom: {(avgPct / 100) * 96 + 0}px;"
+        style="bottom: {(avgPct / 100) * 200 + 24}px;"
       ></div>
     {/if}
 
@@ -42,7 +42,7 @@
         {#if day.steps}
           <span class="text-[9px] text-gray-400 font-medium">{(day.steps / 1000).toFixed(1)}k</span>
         {/if}
-        <div class="w-full flex items-end" style="height: 96px;">
+        <div class="w-full flex items-end" style="height: 200px;">
           <div
             class="w-full rounded-t-md transition-all {isToday ? 'bg-green-500' : 'bg-green-300 dark:bg-green-700'}"
             style="height: {Math.max(pct, day.steps ? 4 : 0)}%;"

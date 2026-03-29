@@ -6,9 +6,10 @@
   export let subtitle: string = '';
   export let today: string = format(new Date(), 'yyyy-MM-dd');
   export let calorieTarget: number | null = null;
+  export let proteinTarget: number | null = null;
 
   $: maxCalories = Math.max(...data.map(d => d.calories), calorieTarget || 0, 1);
-  $: maxProtein = Math.max(...data.map(d => d.protein), 1);
+  $: maxProtein = Math.max(...data.map(d => d.protein), proteinTarget || 0, 1);
   $: maxBurned = Math.max(...data.map(d => d.burnedCalories || 0), 0);
   $: hasBurned = data.some(d => (d.burnedCalories || 0) > 0);
 
@@ -47,7 +48,12 @@
     {/if}
     {#if calorieTarget}
       <span class="flex items-center gap-1 text-[10px] text-gray-400">
-        <span class="inline-block w-4 h-0 border-t-2 border-dashed border-amber-400"></span> Target
+        <span class="inline-block w-4 h-0 border-t-2 border-dashed border-amber-400"></span> Cal Target
+      </span>
+    {/if}
+    {#if proteinTarget}
+      <span class="flex items-center gap-1 text-[10px] text-gray-400">
+        <span class="inline-block w-4 h-0 border-t-2 border-dashed border-blue-400"></span> Pro Target
       </span>
     {/if}
   </div>
@@ -57,7 +63,10 @@
     <div class="flex items-center gap-3 mb-3 text-[10px] text-gray-400">
       <span>Avg: <span class="font-medium text-orange-400">{avgCalories}</span> cal/day</span>
       {#if calorieTarget}
-        <span>Target: <span class="font-medium text-amber-400">{calorieTarget}</span></span>
+        <span>Target: <span class="font-medium text-amber-400">{calorieTarget}</span> cal</span>
+      {/if}
+      {#if proteinTarget}
+        <span>Target: <span class="font-medium text-blue-400">{proteinTarget}g</span> protein</span>
       {/if}
     </div>
   {/if}
@@ -70,6 +79,15 @@
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-amber-400/60 pointer-events-none z-10"
           style="bottom: {burnHeight + 24 + (targetPct / 100) * intakeHeight}px;"
+        ></div>
+      {/if}
+
+      <!-- Protein target line -->
+      {#if proteinTarget && maxProtein > 0}
+        {@const proTargetPct = (proteinTarget / maxProtein) * 100}
+        <div
+          class="absolute left-0 right-0 border-t-2 border-dashed border-blue-400/60 pointer-events-none z-10"
+          style="bottom: {burnHeight + 24 + (proTargetPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 

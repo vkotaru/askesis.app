@@ -30,6 +30,9 @@ class UserSettingsSchema(BaseModel):
     measurement_unit: str = "cm"
     weight_unit: str = "kg"
     water_unit: str = "ml"
+    # Nutrition targets
+    calorie_target: int | None = None
+    protein_target: int | None = None
     # Google Drive settings
     drive_parent_folder_id: str | None = None
     # Google Sheets sync settings
@@ -51,6 +54,8 @@ class UserSettingsUpdate(BaseModel):
     measurement_unit: str | None = None
     weight_unit: str | None = None
     water_unit: str | None = None
+    calorie_target: int | None = None
+    protein_target: int | None = None
     drive_parent_folder_id: str | None = None
     google_sheet_id: str | None = None
     gsheet_sync_interval_hours: int | None = None
@@ -136,6 +141,10 @@ def update_settings(
         settings.google_sheet_id = settings_data.google_sheet_id
     if settings_data.gsheet_sync_interval_hours is not None:
         settings.gsheet_sync_interval_hours = settings_data.gsheet_sync_interval_hours
+    if settings_data.calorie_target is not None:
+        settings.calorie_target = settings_data.calorie_target
+    if settings_data.protein_target is not None:
+        settings.protein_target = settings_data.protein_target
 
     db.commit()
     db.refresh(settings)

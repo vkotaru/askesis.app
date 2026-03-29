@@ -199,6 +199,7 @@
         data={nutritionChartData}
         subtitle="Last 7 days"
         calorieTarget={$settings.calorie_target}
+        proteinTarget={$settings.protein_target}
       />
 
       <StepsBarCard steps={stepsData} />
