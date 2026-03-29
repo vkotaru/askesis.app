@@ -500,22 +500,40 @@
         <Flame size={20} class="text-nutrition-500" />
         <h2 class="text-lg font-semibold">Nutrition Goals</h2>
       </div>
-      <div class="max-w-xs">
-        <label for="calorie-target" class="label">Daily Calorie Target</label>
-        <input
-          id="calorie-target"
-          type="number"
-          class="input"
-          min="0"
-          step="50"
-          placeholder="e.g. 2000"
-          value={$settings.calorie_target || ''}
-          on:blur={(e) => {
-            const val = parseInt(e.currentTarget.value);
-            settings.updateSetting('calorie_target', val > 0 ? val : null);
-          }}
-        />
-        <p class="text-xs text-gray-400 mt-1">Shown as a target line on the nutrition chart</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+        <div>
+          <label for="calorie-target" class="label">Daily Calorie Target</label>
+          <input
+            id="calorie-target"
+            type="number"
+            class="input"
+            min="0"
+            step="50"
+            placeholder="e.g. 2000"
+            value={$settings.calorie_target || ''}
+            on:blur={(e) => {
+              const val = parseInt(e.currentTarget.value);
+              settings.updateSetting('calorie_target', val > 0 ? val : null);
+            }}
+          />
+        </div>
+        <div>
+          <label for="protein-target" class="label">Daily Protein Target (g)</label>
+          <input
+            id="protein-target"
+            type="number"
+            class="input"
+            min="0"
+            step="5"
+            placeholder="e.g. 150"
+            value={$settings.protein_target || ''}
+            on:blur={(e) => {
+              const val = parseInt(e.currentTarget.value);
+              settings.updateSetting('protein_target', val > 0 ? val : null);
+            }}
+          />
+        </div>
+        <p class="text-xs text-gray-400 sm:col-span-2">Shown as target lines on the nutrition chart</p>
       </div>
     </div>
 
