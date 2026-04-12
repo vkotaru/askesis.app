@@ -100,6 +100,9 @@ class UserSettings(Base):
     drive_parent_folder_id: Mapped[str | None] = mapped_column(
         String(100)
     )  # Optional: parent folder ID in user's Drive
+    drive_askesis_folder_id: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # Cached ID of the resolved "Askesis" folder; pinned after first resolve
     # Google Sheets sync settings
     google_sheet_id: Mapped[str | None] = mapped_column(
         String(100)

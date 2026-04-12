@@ -30,7 +30,6 @@ from app.models import (
     User,
     Meal,
     MealTemplate,
-    UserSettings,
     DailyNutrition,
     FoodItem,
     MealFoodItem,
@@ -547,11 +546,13 @@ async def upload_meal_photo(
     # Generate unique filename for Drive
     filename = f"meal_{current_user.id}_{meal_id}_{uuid.uuid4().hex[:8]}.jpg"
 
-    # Get user's Drive folder setting
-    user_settings = (
-        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
-    )
-    parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
+    # Resolve the pinned Askesis folder once (creates + caches on first use)
+    try:
+        askesis_folder_id = google_drive.resolve_askesis_folder_id(db, current_user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to resolve Askesis folder: {e}"
+        )
 
     # Upload to Google Drive
     try:
@@ -559,7 +560,7 @@ async def upload_meal_photo(
             get_refresh_token(current_user),
             processed_content,
             filename,
-            parent_folder_id=parent_folder_id,
+            askesis_folder_id=askesis_folder_id,
         )
     except Exception as e:
         raise HTTPException(
