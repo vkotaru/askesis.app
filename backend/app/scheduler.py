@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models import User, UserSettings
 from app.encryption import get_refresh_token
+from app import google_drive
 from app.google_drive import upload_backup
 
 logger = logging.getLogger("askesis.scheduler")
@@ -58,22 +59,15 @@ def run_scheduled_backup():
         success_count = 0
         for user in users:
             try:
-                # Get user's parent folder setting
-                user_settings = (
-                    db.query(UserSettings)
-                    .filter(UserSettings.user_id == user.id)
-                    .first()
-                )
-                parent_folder_id = (
-                    user_settings.drive_parent_folder_id if user_settings else None
-                )
+                # Resolve pinned Askesis folder (creates + caches on first use)
+                askesis_folder_id = google_drive.resolve_askesis_folder_id(db, user)
 
                 # Upload backup for this user
                 file_id = upload_backup(
                     refresh_token=get_refresh_token(user),
                     file_content=db_content,
                     filename="askesis_backup.db",
-                    parent_folder_id=parent_folder_id,
+                    askesis_folder_id=askesis_folder_id,
                 )
                 logger.info(f"Backup successful for user {user.email}: {file_id}")
                 success_count += 1

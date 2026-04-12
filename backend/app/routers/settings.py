@@ -12,6 +12,7 @@ from app.models import User, UserSettings
 from app.routers.auth import get_current_user
 from app.config import get_settings as get_app_settings
 from app.encryption import get_refresh_token
+from app import google_drive
 from app.google_drive import upload_backup
 
 logger = logging.getLogger("askesis.settings")
@@ -227,12 +228,6 @@ def backup_database(
             detail="Google Drive access not configured. Please re-login to grant Drive access.",
         )
 
-    # Get user's settings for parent folder
-    user_settings = (
-        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
-    )
-    parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
-
     # Get database URL from config
     app_settings = get_app_settings()
     db_url = app_settings.database_url
@@ -249,12 +244,15 @@ def backup_database(
                 detail="Backup only supported for SQLite and PostgreSQL databases.",
             )
 
+        # Resolve the pinned Askesis folder (creates + caches on first use)
+        askesis_folder_id = google_drive.resolve_askesis_folder_id(db, current_user)
+
         # Upload to Google Drive (overwrites existing)
         file_id = upload_backup(
             refresh_token=get_refresh_token(current_user),
             file_content=db_content,
             filename=filename,
-            parent_folder_id=parent_folder_id,
+            askesis_folder_id=askesis_folder_id,
         )
 
         return BackupResponse(

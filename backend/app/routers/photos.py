@@ -20,7 +20,7 @@ except ImportError:
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import User, UserSettings, ProgressPhoto, PhotoView
+from app.models import User, ProgressPhoto, PhotoView
 from app.routers.auth import get_current_user, check_view_permission
 from app import google_drive
 from app.encryption import get_refresh_token
@@ -259,11 +259,13 @@ async def upload_photo(
     # Generate unique filename for Drive
     filename = f"askesis_{current_user.id}_{photo_date.isoformat()}_{view.value}_{uuid.uuid4().hex[:8]}.jpg"
 
-    # Get user's Drive folder setting
-    user_settings = (
-        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
-    )
-    parent_folder_id = user_settings.drive_parent_folder_id if user_settings else None
+    # Resolve the pinned Askesis folder once (creates + caches on first use)
+    try:
+        askesis_folder_id = google_drive.resolve_askesis_folder_id(db, current_user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to resolve Askesis folder: {e}"
+        )
 
     # Upload to Google Drive
     try:
@@ -271,7 +273,7 @@ async def upload_photo(
             get_refresh_token(current_user),
             processed_content,
             filename,
-            parent_folder_id=parent_folder_id,
+            askesis_folder_id=askesis_folder_id,
         )
     except Exception as e:
         raise HTTPException(

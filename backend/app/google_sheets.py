@@ -29,7 +29,12 @@ from app.models import (
     ProgressPhoto,
 )
 from app.encryption import get_refresh_token
-from app.google_drive import get_drive_service, get_or_create_app_folder
+from app.google_drive import (
+    get_drive_service,
+    resolve_askesis_folder_id,
+    _get_or_create_subfolder,
+    PROGRESS_PHOTOS_FOLDER,
+)
 
 logger = logging.getLogger("askesis.google_sheets")
 
@@ -319,7 +324,7 @@ def _sync_measurements(service, spreadsheet_id: str, user_id: int, db: Session) 
 def _upload_local_photo_to_drive(
     refresh_token: str,
     file_path: str,
-    parent_folder_id: str | None = None,
+    askesis_folder_id: str,
 ) -> str | None:
     """Upload a local photo to Drive and return the file_id."""
     if not os.path.exists(file_path):
@@ -328,7 +333,9 @@ def _upload_local_photo_to_drive(
 
     try:
         drive_service = get_drive_service(refresh_token)
-        folder_id = get_or_create_app_folder(drive_service, parent_folder_id)
+        folder_id = _get_or_create_subfolder(
+            drive_service, PROGRESS_PHOTOS_FOLDER, askesis_folder_id
+        )
 
         filename = os.path.basename(file_path)
         file_metadata = {
@@ -374,7 +381,7 @@ def _sync_photos(
     user_id: int,
     db: Session,
     refresh_token: str,
-    parent_folder_id: str | None = None,
+    askesis_folder_id: str,
 ) -> int:
     """Sync Photos tab with embedded IMAGE formulas. Returns row count."""
     _ensure_worksheet(service, spreadsheet_id, PHOTOS_TAB)
@@ -400,7 +407,7 @@ def _sync_photos(
         if not drive_file_id and photo.file_path:
             logger.info(f"Photo {photo.id} has local path, uploading to Drive...")
             drive_file_id = _upload_local_photo_to_drive(
-                refresh_token, photo.file_path, parent_folder_id
+                refresh_token, photo.file_path, askesis_folder_id
             )
             if drive_file_id:
                 # Save the drive_file_id to the database
@@ -462,14 +469,11 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
     Returns:
         Dict with sync results
     """
-    from app.models import UserSettings
-
     if not user.google_refresh_token:
         raise ValueError("User has no Google refresh token")
 
-    # Get user settings for Drive parent folder
-    settings = db.query(UserSettings).filter(UserSettings.user_id == user.id).first()
-    parent_folder_id = settings.drive_parent_folder_id if settings else None
+    # Resolve pinned Askesis folder (creates + caches on first use)
+    askesis_folder_id = resolve_askesis_folder_id(db, user)
 
     logger.info(f"Syncing to sheet ID: {sheet_id} for user {user.id}")
     service = get_sheets_service(get_refresh_token(user))
@@ -485,7 +489,7 @@ def sync_to_sheet(sheet_id: str, user: User, db: Session) -> dict:
             user.id,
             db,
             get_refresh_token(user),
-            parent_folder_id,
+            askesis_folder_id,
         )
 
         total_rows = daily_rows + activity_rows + measurement_rows + photo_rows
