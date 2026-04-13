@@ -1,5 +1,6 @@
 <script lang="ts">
   import { format, parseISO } from 'date-fns';
+  import { createEventDispatcher } from 'svelte';
   import { Flame } from 'lucide-svelte';
 
   export let data: { date: string; calories: number; protein: number; burnedCalories?: number }[] = [];
@@ -7,6 +8,8 @@
   export let today: string = format(new Date(), 'yyyy-MM-dd');
   export let calorieTarget: number | null = null;
   export let proteinTarget: number | null = null;
+
+  const dispatch = createEventDispatcher<{ dayClick: string }>();
 
   $: maxCalories = Math.max(...data.map(d => d.calories), calorieTarget || 0, 1);
   $: maxProtein = Math.max(...data.map(d => d.protein), proteinTarget || 0, 1);
@@ -105,7 +108,11 @@
         {@const proPct = maxProtein > 0 ? (day.protein / maxProtein) * 100 : 0}
         {@const burnPct = maxBurned > 0 ? ((day.burnedCalories || 0) / maxBurned) * 100 : 0}
         {@const isToday = day.date === today}
-        <div class="flex-1 min-w-[20px] flex flex-col items-center gap-0">
+        <button
+          type="button"
+          class="flex-1 min-w-[20px] flex flex-col items-center gap-0 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors cursor-pointer p-0"
+          on:click={() => dispatch('dayClick', day.date)}
+        >
           <!-- Values above bars -->
           <div class="flex gap-1 justify-center h-4">
             {#if day.calories > 0}
@@ -148,7 +155,7 @@
           {#if (day.burnedCalories || 0) > 0}
             <span class="text-[8px] text-red-400 -mt-0.5">{day.burnedCalories}</span>
           {/if}
-        </div>
+        </button>
       {/each}
     </div>
   {:else}

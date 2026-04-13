@@ -5,12 +5,13 @@
   export let protein_g: number | undefined = undefined;
   export let carbs_g: number | undefined = undefined;
   export let fat_g: number | undefined = undefined;
+  export let title: string = "Today's Nutrition";
 </script>
 
 <div class="card p-4">
   <div class="flex items-center gap-2 mb-3">
     <Flame size={18} class="text-nutrition-500" />
-    <h3 class="text-sm font-medium text-gray-500">Today's Nutrition</h3>
+    <h3 class="text-sm font-medium text-gray-500">{title}</h3>
   </div>
   <div class="grid grid-cols-4 gap-4">
     <div>
