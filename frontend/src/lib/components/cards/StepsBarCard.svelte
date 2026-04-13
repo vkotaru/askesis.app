@@ -1,9 +1,13 @@
 <script lang="ts">
   import { format, parseISO } from 'date-fns';
+  import { createEventDispatcher } from 'svelte';
   import { Footprints } from 'lucide-svelte';
 
   export let steps: { date: string; steps: number | null }[] = [];
   export let today: string = format(new Date(), 'yyyy-MM-dd');
+  export let subtitle: string = 'last 7 days';
+
+  const dispatch = createEventDispatcher<{ dayClick: string }>();
 
   $: maxSteps = Math.max(...steps.map(s => s.steps ?? 0), 1);
 
@@ -18,7 +22,7 @@
   <div class="flex items-center gap-2 mb-1">
     <Footprints size={20} class="text-cardio-500" />
     <h2 class="text-lg font-semibold">Steps</h2>
-    <span class="text-xs text-gray-400 ml-auto">last 7 days</span>
+    <span class="text-xs text-gray-400 ml-auto">{subtitle}</span>
   </div>
   {#if avgSteps > 0}
     <div class="flex items-center gap-2 mb-3 text-[10px] text-gray-400">
@@ -38,7 +42,11 @@
     {#each steps as day}
       {@const pct = day.steps ? (day.steps / maxSteps) * 100 : 0}
       {@const isToday = day.date === today}
-      <div class="flex-1 flex flex-col items-center gap-1">
+      <button
+        type="button"
+        class="flex-1 flex flex-col items-center gap-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors cursor-pointer p-0"
+        on:click={() => dispatch('dayClick', day.date)}
+      >
         {#if day.steps}
           <span class="text-[9px] text-gray-400 font-medium">{(day.steps / 1000).toFixed(1)}k</span>
         {/if}
@@ -51,7 +59,7 @@
         <span class="text-[10px] {isToday ? 'text-green-600 font-semibold' : 'text-gray-400'}">
           {format(parseISO(day.date), 'EEE')}
         </span>
-      </div>
+      </button>
     {/each}
   </div>
 </div>
