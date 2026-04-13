@@ -13,20 +13,18 @@
 
   $: maxCalories = Math.max(...data.map(d => d.calories), calorieTarget || 0, 1);
   $: maxProtein = Math.max(...data.map(d => d.protein), proteinTarget || 0, 1);
-  $: maxBurned = Math.max(...data.map(d => d.burnedCalories || 0), 0);
   $: hasBurned = data.some(d => (d.burnedCalories || 0) > 0);
 
-  // Weekly average calories
+  // Weekly averages
   $: avgCalories = data.length > 0
     ? Math.round(data.reduce((sum, d) => sum + d.calories, 0) / data.length)
     : 0;
+  $: proteinDays = data.filter(d => d.protein > 0);
+  $: avgProtein = proteinDays.length > 0
+    ? Math.round(proteinDays.reduce((sum, d) => sum + d.protein, 0) / proteinDays.length)
+    : 0;
 
-  // Scale: top portion for intake bars, bottom portion for burn bars
-  // burn section is proportional to max burn vs max calories
-  $: burnRatio = hasBurned && maxBurned > 0 ? Math.min(maxBurned / maxCalories, 0.4) : 0;
   $: intakeHeight = 200; // px
-  $: burnHeight = hasBurned ? Math.round(intakeHeight * burnRatio) : 0;
-  $: totalBarHeight = intakeHeight + burnHeight;
 </script>
 
 <div class="card p-6">
@@ -37,7 +35,7 @@
       <span class="text-xs text-gray-400 ml-auto">{subtitle}</span>
     {/if}
   </div>
-  <div class="flex items-center gap-4 mb-2">
+  <div class="flex items-center gap-4 mb-2 flex-wrap">
     <span class="flex items-center gap-1 text-[10px] text-gray-400">
       <span class="inline-block w-2 h-2 rounded-sm bg-orange-400"></span> Calories
     </span>
@@ -46,7 +44,7 @@
     </span>
     {#if hasBurned}
       <span class="flex items-center gap-1 text-[10px] text-gray-400">
-        <span class="inline-block w-2 h-2 rounded-sm bg-red-400"></span> Burned
+        <span class="inline-block w-2 h-2 rounded-sm bg-red-400"></span> Burned (active)
       </span>
     {/if}
     {#if calorieTarget}
@@ -62,9 +60,14 @@
   </div>
 
   <!-- Average summary -->
-  {#if avgCalories > 0}
-    <div class="flex items-center gap-3 mb-3 text-[10px] text-gray-400">
-      <span>Avg: <span class="font-medium text-orange-400">{avgCalories}</span> cal/day</span>
+  {#if avgCalories > 0 || avgProtein > 0}
+    <div class="flex items-center gap-3 mb-3 text-[10px] text-gray-400 flex-wrap">
+      {#if avgCalories > 0}
+        <span>Avg: <span class="font-medium text-orange-400">{avgCalories}</span> cal/day</span>
+      {/if}
+      {#if avgProtein > 0}
+        <span>Avg: <span class="font-medium text-blue-400">{avgProtein}g</span> protein/day</span>
+      {/if}
       {#if calorieTarget}
         <span>Target: <span class="font-medium text-amber-400">{calorieTarget}</span> cal</span>
       {/if}
@@ -75,13 +78,13 @@
   {/if}
 
   {#if data.length > 0}
-    <div class="flex items-end gap-2 relative" style="height: {totalBarHeight + 40}px;">
+    <div class="flex items-end gap-2 relative" style="height: {intakeHeight + 40}px;">
       <!-- Calorie target line -->
       {#if calorieTarget && maxCalories > 0}
         {@const targetPct = (calorieTarget / maxCalories) * 100}
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-amber-400/60 pointer-events-none z-10"
-          style="bottom: {burnHeight + 24 + (targetPct / 100) * intakeHeight}px;"
+          style="bottom: {24 + (targetPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
@@ -90,23 +93,35 @@
         {@const proTargetPct = (proteinTarget / maxProtein) * 100}
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-blue-400/60 pointer-events-none z-10"
-          style="bottom: {burnHeight + 24 + (proTargetPct / 100) * intakeHeight}px;"
+          style="bottom: {24 + (proTargetPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
-      <!-- Weekly average line -->
+      <!-- Weekly calorie average line -->
       {#if avgCalories > 0 && maxCalories > 0}
         {@const avgPct = (avgCalories / maxCalories) * 100}
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-orange-400/60 pointer-events-none z-10"
-          style="bottom: {burnHeight + 24 + (avgPct / 100) * intakeHeight}px;"
+          style="bottom: {24 + (avgPct / 100) * intakeHeight}px;"
+        ></div>
+      {/if}
+
+      <!-- Weekly protein average line -->
+      {#if avgProtein > 0 && maxProtein > 0}
+        {@const avgProPct = (avgProtein / maxProtein) * 100}
+        <div
+          class="absolute left-0 right-0 border-t border-dotted border-blue-400/50 pointer-events-none z-10"
+          style="bottom: {24 + (avgProPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
       {#each data as day}
-        {@const calPct = maxCalories > 0 ? (day.calories / maxCalories) * 100 : 0}
+        {@const burned = day.burnedCalories || 0}
+        {@const effectiveBurned = Math.min(burned, day.calories)}
+        {@const netCals = Math.max(day.calories - effectiveBurned, 0)}
+        {@const netPct = maxCalories > 0 ? (netCals / maxCalories) * 100 : 0}
+        {@const burnPct = maxCalories > 0 ? (effectiveBurned / maxCalories) * 100 : 0}
         {@const proPct = maxProtein > 0 ? (day.protein / maxProtein) * 100 : 0}
-        {@const burnPct = maxBurned > 0 ? ((day.burnedCalories || 0) / maxBurned) * 100 : 0}
         {@const isToday = day.date === today}
         <button
           type="button"
@@ -123,28 +138,28 @@
             {/if}
           </div>
 
-          <!-- Intake bars (positive axis) -->
+          <!-- Stacked calorie bar + protein bar, side by side -->
           <div class="w-full flex items-end gap-0.5" style="height: {intakeHeight}px;">
-            <div
-              class="flex-1 rounded-t-sm {isToday ? 'bg-orange-500' : 'bg-orange-300 dark:bg-orange-700'}"
-              style="height: {Math.max(calPct, day.calories ? 3 : 0)}%;"
-            ></div>
+            <!-- Calorie column: net (orange) stacked under burned (red) -->
+            <div class="flex-1 h-full flex flex-col justify-end">
+              {#if effectiveBurned > 0}
+                <div
+                  class="w-full rounded-t-sm {isToday ? 'bg-red-500' : 'bg-red-300 dark:bg-red-700'}"
+                  style="height: {Math.max(burnPct, 2)}%;"
+                  title="Burned: {burned} cal"
+                ></div>
+              {/if}
+              <div
+                class="w-full {effectiveBurned > 0 ? '' : 'rounded-t-sm'} {isToday ? 'bg-orange-500' : 'bg-orange-300 dark:bg-orange-700'}"
+                style="height: {Math.max(netPct, day.calories && effectiveBurned === 0 ? 3 : 0)}%;"
+              ></div>
+            </div>
+            <!-- Protein column -->
             <div
               class="flex-1 rounded-t-sm {isToday ? 'bg-blue-500' : 'bg-blue-300 dark:bg-blue-700'}"
               style="height: {Math.max(proPct, day.protein ? 3 : 0)}%;"
             ></div>
           </div>
-
-          <!-- Burn bars (negative axis, below baseline, aligned under calories only) -->
-          {#if hasBurned}
-            <div class="w-full flex items-start gap-0.5" style="height: {burnHeight}px;">
-              <div
-                class="flex-1 rounded-b-sm {(day.burnedCalories || 0) > 0 ? (isToday ? 'bg-red-500' : 'bg-red-300 dark:bg-red-700') : ''}"
-                style="height: {(day.burnedCalories || 0) > 0 ? Math.max(burnPct, 3) + '%' : '0'};"
-              ></div>
-              <div class="flex-1"></div>
-            </div>
-          {/if}
 
           <!-- Day label -->
           <span class="text-[10px] mt-1 {isToday ? 'text-green-600 font-semibold' : 'text-gray-400'}">
@@ -152,8 +167,8 @@
           </span>
 
           <!-- Burn value below day label -->
-          {#if (day.burnedCalories || 0) > 0}
-            <span class="text-[8px] text-red-400 -mt-0.5">{day.burnedCalories}</span>
+          {#if burned > 0}
+            <span class="text-[8px] text-red-400 -mt-0.5">−{burned}</span>
           {/if}
         </button>
       {/each}
