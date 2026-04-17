@@ -11,8 +11,8 @@
 
   const dispatch = createEventDispatcher<{ dayClick: string }>();
 
-  $: maxCalories = Math.max(...data.map(d => d.calories), calorieTarget || 0, 1);
-  $: maxProtein = Math.max(...data.map(d => d.protein), proteinTarget || 0, 1);
+  $: maxCalories = Math.max(...data.map(d => d.calories), (calorieTarget || 0) * 1.2, 1);
+  $: maxProtein = Math.max(...data.map(d => d.protein) , (proteinTarget || 0) * 1.2, 1);
   $: hasBurned = data.some(d => (d.burnedCalories || 0) > 0);
 
   // Weekly averages
