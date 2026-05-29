@@ -1,0 +1,154 @@
+name: Android Release
+
+# Build and ship a signed Android App Bundle (.aab) to Google Play whenever
+# a tag like v1.2.3 is pushed. The first release for a Play Console app must
+# be uploaded manually through the Console — Google does not allow the API
+# to create the listing. After that, this workflow handles every subsequent
+# release on the "internal" testing track; promote to production manually.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allow manual runs for ad-hoc builds (won't upload unless a tag is also
+  # checked out — versionCode derivation needs the tag name).
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play Store track"
+        required: true
+        default: "internal"
+        type: choice
+        options: [internal, alpha, beta, production]
+
+permissions:
+  contents: write # to attach the .aab to a GitHub release
+
+jobs:
+  android:
+    name: Build & upload Android bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the tag annotation to derive versionName.
+          fetch-depth: 0
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          # Strip the leading "v" — "v1.2.3" → "1.2.3"
+          REF="${GITHUB_REF##*/}"
+          NAME="${REF#v}"
+          if [[ ! "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must be vMAJOR.MINOR.PATCH (got: $REF). Falling back to 0.0.0." >&2
+            NAME="0.0.0"
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$NAME"
+          # Encode as MAJOR*10000 + MINOR*100 + PATCH so each component has two
+          # digits of headroom. 1.2.3 → 10203.
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Building versionName=$NAME versionCode=$CODE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build SvelteKit bundle
+        working-directory: frontend
+        env:
+          # Inlined at build time. Override via repo secret to target staging.
+          VITE_API_BASE: ${{ secrets.VITE_API_BASE || 'https://askesisapp-production.up.railway.app' }}
+        run: npm run build
+
+      - name: Sync Capacitor → Android project
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Stamp versionName / versionCode
+        working-directory: frontend/android/app
+        run: |
+          sed -i "s/versionCode 1/versionCode ${{ steps.version.outputs.code }}/" build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"${{ steps.version.outputs.name }}\"/" build.gradle
+          grep -E "versionCode|versionName" build.gradle
+
+      - name: Decode signing keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/signing"
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/signing/release.keystore"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/signing/release.keystore" >> "$GITHUB_ENV"
+
+      - name: Build release AAB
+        working-directory: frontend/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bundleRelease
+
+      - name: Sign AAB with jarsigner
+        if: ${{ env.KEYSTORE_PATH != '' }}
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        working-directory: frontend/android/app/build/outputs/bundle/release
+        run: |
+          cp app-release.aab app-release-signed.aab
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -keystore "$KEYSTORE_PATH" \
+            app-release-signed.aab "$KEY_ALIAS"
+          jarsigner -verify -verbose -certs app-release-signed.aab | tail -5
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ steps.version.outputs.name }}.aab
+          path: frontend/android/app/build/outputs/bundle/release/app-release-signed.aab
+          if-no-files-found: warn
+
+      - name: Attach AAB to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: frontend/android/app/build/outputs/bundle/release/app-release-signed.aab
+          generate_release_notes: true
+
+      - name: Publish to Google Play
+        # Only on real tag pushes, and only when both the service-account key
+        # and a signed bundle are available. Manual dispatch builds artifact
+        # only — promotion to Play happens with the next tag.
+        if: |
+          startsWith(github.ref, 'refs/tags/v')
+          && secrets.PLAY_SERVICE_ACCOUNT_JSON != ''
+          && env.KEYSTORE_PATH != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.askesis.app
+          releaseFiles: frontend/android/app/build/outputs/bundle/release/app-release-signed.aab
+          track: ${{ github.event.inputs.track || 'internal' }}
+          status: completed
+          inAppUpdatePriority: 2
