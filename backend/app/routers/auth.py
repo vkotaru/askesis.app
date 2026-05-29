@@ -1,7 +1,7 @@
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from jose import jwt
 from datetime import datetime, timedelta
@@ -260,9 +260,7 @@ async def mobile_auth_callback(request: Request, db: Session = Depends(get_db)):
     access_token = create_access_token({"sub": user.email})
     # Hand the JWT to the app via deep link. Fragment (#) keeps the token out of
     # server logs / browser history more reliably than a query string.
-    return RedirectResponse(
-        url=f"{settings.mobile_redirect_uri}#token={access_token}"
-    )
+    return RedirectResponse(url=f"{settings.mobile_redirect_uri}#token={access_token}")
 
 
 @router.get("/me")
@@ -273,6 +271,68 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "picture": current_user.picture,
     }
+
+
+# Accept tokens that expired up to this long ago, as long as the signature is
+# still valid and the user still exists. Lets a mobile client that's been
+# offline for a few days come back online and silently refresh instead of
+# bouncing the user to a full re-login.
+_REFRESH_GRACE_DAYS = 7
+
+
+@router.post("/refresh")
+async def refresh_token(request: Request, db: Session = Depends(get_db)):
+    """Re-issue an access token from a still-valid-or-recently-expired one.
+
+    Accepts the token from the Authorization header (mobile) or the
+    access_token cookie (web). On success returns {"access_token": "..."} and
+    also refreshes the cookie for web callers.
+    """
+    if settings.dev_mode:
+        user = get_or_create_dev_user(db)
+        new_token = create_access_token({"sub": user.email})
+        response = JSONResponse({"access_token": new_token})
+        set_auth_cookie(response, new_token)
+        return response
+
+    token: str | None = None
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="No token to refresh")
+
+    try:
+        # Decode with leeway so a token that expired within the grace window
+        # is still accepted. Signature validation is the real authentication.
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=["HS256"],
+            options={"verify_exp": False},
+        )
+        email = payload.get("sub")
+        exp = payload.get("exp")
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not email or not isinstance(exp, int):
+        raise HTTPException(status_code=401, detail="Malformed token")
+
+    expired_at = datetime.utcfromtimestamp(exp)
+    if datetime.utcnow() - expired_at > timedelta(days=_REFRESH_GRACE_DAYS):
+        raise HTTPException(status_code=401, detail="Token expired beyond grace window")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    new_token = create_access_token({"sub": email})
+    response = JSONResponse({"access_token": new_token})
+    set_auth_cookie(response, new_token)
+    return response
 
 
 @router.get("/logout")
