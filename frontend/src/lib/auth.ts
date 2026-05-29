@@ -68,3 +68,39 @@ export async function authHeaders(): Promise<Record<string, string>> {
   const token = await getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+/**
+ * Ask the server for a fresh access token. On web, the new cookie is set
+ * server-side; on native, we cache the returned token. Returns true on
+ * success, false on failure (caller should treat as logged-out).
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+export async function tryRefreshToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async (): Promise<boolean> => {
+    const { apiUrl } = await import('./config');
+    try {
+      const res = await fetch(apiUrl('/auth/refresh'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: await authHeaders(),
+      });
+      if (!res.ok) return false;
+      if (IS_NATIVE) {
+        const data = await res.json().catch(() => null);
+        if (data?.access_token) {
+          await setAuthToken(data.access_token as string);
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}

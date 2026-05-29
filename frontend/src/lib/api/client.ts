@@ -340,10 +340,10 @@ export interface ImportResult {
 
 // API Client
 import { apiUrl } from '$lib/config';
-import { authHeaders } from '$lib/auth';
+import { authHeaders, tryRefreshToken } from '$lib/auth';
 
-async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(url), {
+async function doFetch(url: string, options?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(url), {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -352,6 +352,19 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
     },
     credentials: 'include',
   });
+}
+
+async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  let res = await doFetch(url, options);
+
+  // One transparent refresh attempt on 401. /auth/refresh itself never
+  // re-enters this branch (relative URL match) so we avoid an infinite loop.
+  if (res.status === 401 && !url.startsWith('/auth/refresh')) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      res = await doFetch(url, options);
+    }
+  }
 
   if (!res.ok) {
     if (res.status === 401) {
