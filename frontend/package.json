@@ -10,6 +10,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.4",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "2.0.6",
     "@sveltejs/vite-plugin-svelte": "^3.0.0",
@@ -24,6 +25,11 @@
     "vite-plugin-pwa": "^1.2.0"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/preferences": "^8.0.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.0",
     "dexie": "^4.3.0",

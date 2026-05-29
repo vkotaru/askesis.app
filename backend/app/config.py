@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]  # Override in production
     token_expire_hours: int = 720  # 30 days - stay logged in longer
 
+    # Mobile (Capacitor) deep-link redirect for OAuth token handoff.
+    # The mobile callback redirects here with a `#token=<jwt>` fragment.
+    mobile_redirect_uri: str = "app.askesis.app://auth/callback"
+
     # External food databases
     usda_api_key: str = (
         ""  # Get free key at https://fdc.nal.usda.gov/api-key-signup.html

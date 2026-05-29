@@ -8,6 +8,8 @@ import { writable, derived, get } from 'svelte/store';
 import { type Table } from 'dexie';
 import { db, type PendingSyncEntry, type SyncOperation } from './db';
 import { browser } from '$app/environment';
+import { apiUrl } from './config';
+import { authHeaders } from './auth';
 
 // ── Stores ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +103,7 @@ export async function queueSync(
 // ── Flush pending sync queue ─────────────────────────────────────────────────
 
 export async function flushPendingSync(): Promise<void> {
+  if (localStorage.getItem('askesis_local_user')) return;
   if (!get(isOnline)) return;
   if (get(isSyncing)) return;
 
@@ -147,9 +150,9 @@ interface PushResult {
 
 async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
   try {
-    const res = await fetch('/api/sync/push', {
+    const res = await fetch(apiUrl('/api/sync/push'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       credentials: 'include',
       body: JSON.stringify({ changes: entries }),
     });
@@ -188,13 +191,18 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
 }
 
 export async function pullFromServer(): Promise<void> {
+  if (localStorage.getItem('askesis_local_user')) return;
   if (!get(isOnline)) return;
 
   try {
     const lastSync = get(lastSyncTime) || '1970-01-01T00:00:00Z';
-    const res = await fetch(`/api/sync/changes?since=${encodeURIComponent(lastSync)}`, {
-      credentials: 'include',
-    });
+    const res = await fetch(
+      apiUrl(`/api/sync/changes?since=${encodeURIComponent(lastSync)}`),
+      {
+        headers: await authHeaders(),
+        credentials: 'include',
+      },
+    );
 
     if (res.status === 404) {
       return;
@@ -277,6 +285,7 @@ async function mergeServerRecord(
 // ── Full sync cycle ──────────────────────────────────────────────────────────
 
 export async function sync(): Promise<void> {
+  if (localStorage.getItem('askesis_local_user')) return;
   await pullFromServer();
   await flushPendingSync();
 }
