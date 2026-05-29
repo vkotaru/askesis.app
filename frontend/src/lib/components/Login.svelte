@@ -6,7 +6,7 @@
   import { api } from '$lib/api/client';
   import { setAuthToken } from '$lib/auth';
   import { apiUrl, IS_NATIVE } from '$lib/config';
-  import { sync } from '$lib/sync';
+  import { sync, countLocalProfileData, migrateLocalToCloud } from '$lib/sync';
 
   interface LocalProfile {
     id: number;
@@ -92,6 +92,35 @@
     userStore.set(me);
     await settings.load();
     hydrateFromServer(me.id).catch(() => {});
+
+    // If this device has data from a previous local profile session, offer
+    // to push it up to the freshly-signed-in cloud account. Confirm before
+    // moving anything since it's a one-way operation.
+    try {
+      const pending = await countLocalProfileData(me.id);
+      const total =
+        pending.dailyLogs +
+        pending.activities +
+        pending.meals +
+        pending.foods +
+        pending.measurements;
+      if (total > 0) {
+        const photoNote =
+          pending.photosSkipped > 0
+            ? `\n\n(${pending.photosSkipped} progress photos won't migrate automatically — please re-upload them after.)`
+            : '';
+        const ok = confirm(
+          `Found ${total} entries from a previous local profile on this device. ` +
+            `Push them into your cloud account?${photoNote}`,
+        );
+        if (ok) {
+          await migrateLocalToCloud(me.id);
+        }
+      }
+    } catch (err) {
+      console.warn('Migration check failed:', err);
+    }
+
     sync().catch(() => {});
   }
 

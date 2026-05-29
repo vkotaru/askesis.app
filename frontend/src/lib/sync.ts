@@ -289,3 +289,110 @@ export async function sync(): Promise<void> {
   await pullFromServer();
   await flushPendingSync();
 }
+
+// ── Local profile → cloud account migration ──────────────────────────────────
+
+interface MigrationCounts {
+  dailyLogs: number;
+  activities: number;
+  meals: number;
+  foods: number;
+  measurements: number;
+  photosSkipped: number;
+}
+
+/**
+ * Detect Dexie rows owned by an old local profile and re-target them at the
+ * current cloud user. Returns the per-table count of rows that will be
+ * pushed on the next sync.
+ *
+ * "Local profile rows" = rows with a userId that doesn't match the current
+ * cloud user AND no serverId (never synced). Photos are intentionally
+ * counted but not migrated — they need a real file upload, not a sync-queue
+ * entry, which we defer to a follow-up.
+ */
+export async function countLocalProfileData(currentUserId: number): Promise<MigrationCounts> {
+  const matches = (row: { userId?: number; serverId?: number }) =>
+    row.serverId == null && row.userId != null && row.userId !== currentUserId;
+
+  const [dailyLogs, activities, meals, foods, measurements, photos] = await Promise.all([
+    db.dailyLogs.filter(matches).count(),
+    db.activities.filter(matches).count(),
+    db.meals.filter(matches).count(),
+    db.foods.filter((r) => r.serverId == null).count(),
+    db.measurements.filter(matches).count(),
+    db.photos.filter(matches).count(),
+  ]);
+
+  return {
+    dailyLogs,
+    activities,
+    meals,
+    foods,
+    measurements,
+    photosSkipped: photos,
+  };
+}
+
+/**
+ * Reassign every local-profile row to currentUserId and queue it as a create.
+ * The server-side push handler upserts on (user_id, date) so re-importing
+ * the same data twice is safe.
+ *
+ * Returns the totals migrated.
+ */
+export async function migrateLocalToCloud(currentUserId: number): Promise<MigrationCounts> {
+  if (localStorage.getItem('askesis_local_user')) {
+    throw new Error('Sign in to a cloud account before migrating local data');
+  }
+
+  const counts: MigrationCounts = {
+    dailyLogs: 0,
+    activities: 0,
+    meals: 0,
+    foods: 0,
+    measurements: 0,
+    photosSkipped: 0,
+  };
+
+  type MigratableTable = 'dailyLogs' | 'activities' | 'meals' | 'foods' | 'measurements';
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tables: Array<{ name: MigratableTable; table: Table<any, number> }> = [
+    { name: 'dailyLogs', table: db.dailyLogs },
+    { name: 'activities', table: db.activities },
+    { name: 'meals', table: db.meals },
+    { name: 'foods', table: db.foods },
+    { name: 'measurements', table: db.measurements },
+  ];
+
+  for (const { name, table } of tables) {
+    const rows = await table.toArray();
+    for (const row of rows) {
+      // Foods don't have userId in the local schema, but they still need a
+      // server-side create if they weren't synced. Everything else gets the
+      // old-userId check.
+      if (row.serverId != null) continue;
+      if (name !== 'foods' && (row.userId == null || row.userId === currentUserId)) continue;
+
+      row.userId = currentUserId;
+      row.updatedAt = new Date().toISOString();
+      await table.put(row);
+
+      // Re-queue as create. The sync engine will assign serverIds on push.
+      await queueSync(name, 'create', row.localId!, undefined, row as Record<string, unknown>);
+      counts[name] += 1;
+    }
+  }
+
+  // Photos: count but don't queue. Photo bytes have to round-trip through
+  // /api/photos/upload, which isn't a sync-queue operation. Follow-up.
+  counts.photosSkipped = await db.photos
+    .filter((r) => r.serverId == null && r.userId != null && r.userId !== currentUserId)
+    .count();
+
+  // Kick the push immediately so the user sees progress.
+  flushPendingSync().catch(() => {});
+
+  return counts;
+}
