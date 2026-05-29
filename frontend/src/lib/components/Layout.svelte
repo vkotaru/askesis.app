@@ -4,6 +4,9 @@
   import { clsx } from 'clsx';
   import type { User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
+  import { user as userStore } from '$lib/stores/user';
+  import { clearAuthToken } from '$lib/auth';
+  import { IS_NATIVE, apiUrl } from '$lib/config';
   import SyncStatus from './SyncStatus.svelte';
 
   export let user: User;
@@ -22,6 +25,33 @@
     { href: '/nutrition/foods', icon: Apple, label: 'Foods', color: 'text-nutrition-500' },
     { href: '/settings', icon: Settings, label: 'Settings', color: 'text-gray-500' },
   ];
+
+  $: isLocalUser = user.email === 'local@askesis.local';
+  $: filteredNavItems = navItems.filter(item => !(isLocalUser && item.href === '/shared'));
+
+  async function handleSignout(e: MouseEvent) {
+    // Local profile: never hit the server.
+    if (localStorage.getItem('askesis_local_user')) {
+      e.preventDefault();
+      localStorage.removeItem('askesis_local_user');
+      userStore.set(null);
+      return;
+    }
+
+    // Native (bearer-token) sign-out: clear the stored JWT and bounce back to login.
+    // The default <a href="/auth/logout"> only clears a cookie, which we don't have here.
+    if (IS_NATIVE) {
+      e.preventDefault();
+      await clearAuthToken();
+      // Best-effort tell the server (in case it wants to log the event) — ignore errors.
+      try {
+        await fetch(apiUrl('/auth/logout'), { credentials: 'include' });
+      } catch {
+        // offline or unreachable — local sign-out is what matters
+      }
+      userStore.set(null);
+    }
+  }
 
   let showMobileMenu = false;
 
@@ -97,7 +127,7 @@
           </div>
         </div>
         <nav class="p-3">
-          {#each navItems as { href, icon: Icon, label, color }}
+          {#each filteredNavItems as { href, icon: Icon, label, color }}
             {@const isActive = currentPath === href}
             <a
               {href}
@@ -119,6 +149,7 @@
         <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700">
           <a
             href="/auth/logout"
+            on:click={handleSignout}
             class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors px-2"
           >
             <LogOut size={16} />
@@ -139,7 +170,7 @@
     </div>
 
     <nav class="flex-1 px-3 overflow-y-auto">
-      {#each navItems as { href, icon: Icon, label, color }}
+      {#each filteredNavItems as { href, icon: Icon, label, color }}
         {@const isActive = currentPath === href}
         <a
           {href}
@@ -190,6 +221,7 @@
       <div class="flex items-center justify-between px-2">
         <a
           href="/auth/logout"
+          on:click={handleSignout}
           class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors"
         >
           <LogOut size={16} />
@@ -210,7 +242,7 @@
   <!-- Mobile Bottom Navigation (horizontally scrollable) -->
   <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 pb-safe">
     <div class="flex overflow-x-auto scrollbar-hide py-2 px-1">
-      {#each navItems as { href, icon: Icon, label, color }}
+      {#each filteredNavItems as { href, icon: Icon, label, color }}
         {@const isActive = currentPath === href}
         <a
           {href}

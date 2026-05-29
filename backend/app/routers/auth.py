@@ -72,7 +72,13 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if settings.dev_mode:
         return get_or_create_dev_user(db)
 
-    token = request.cookies.get("access_token")
+    # Bearer header takes precedence (mobile clients); fall back to cookie (web)
+    token: str | None = None
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -165,25 +171,18 @@ async def login(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/callback")
-async def auth_callback(request: Request, db: Session = Depends(get_db)):
-    if settings.dev_mode:
-        return RedirectResponse(url="/")
+def _upsert_user_from_google(db: Session, token: dict) -> User:
+    """Apply a Google OAuth token to the users table. Returns the user."""
+    user_info = token.get("userinfo") or {}
 
-    token = await oauth.google.authorize_access_token(request)
-    user_info = token.get("userinfo")
-
-    # Debug: log what we received from Google
     logger.info(f"OAuth token keys: {list(token.keys())}")
     logger.info(f"Refresh token present: {'refresh_token' in token}")
 
     email = user_info["email"]
 
-    # Check if email is allowed
     if settings.allowed_emails and email not in settings.allowed_emails:
         raise HTTPException(status_code=403, detail="Email not authorized")
 
-    # Get or create user
     user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(
@@ -193,7 +192,6 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         )
         db.add(user)
 
-    # Store refresh token for Google Drive API access (encrypted)
     refresh_token = token.get("refresh_token")
     if refresh_token:
         from app.encryption import encrypt_token
@@ -202,13 +200,69 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Saved encrypted refresh token for user {email}")
     else:
         logger.warning(f"No refresh token received for user {email}")
-    db.commit()
 
-    # Create JWT and set cookie
-    access_token = create_access_token({"sub": email})
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.get("/callback")
+async def auth_callback(request: Request, db: Session = Depends(get_db)):
+    if settings.dev_mode:
+        return RedirectResponse(url="/")
+
+    token = await oauth.google.authorize_access_token(request)
+    user = _upsert_user_from_google(db, token)
+
+    access_token = create_access_token({"sub": user.email})
     response = RedirectResponse(url="/")
     set_auth_cookie(response, access_token)
     return response
+
+
+@router.get("/mobile/login")
+async def mobile_login(request: Request, db: Session = Depends(get_db)):
+    """Start OAuth from a Capacitor/native client.
+
+    On success, the callback redirects to the app's deep link with a
+    `#token=<jwt>` fragment instead of setting a cookie.
+    """
+    if settings.dev_mode:
+        # In dev, hand back a token immediately so we can test the deep-link flow.
+        user = get_or_create_dev_user(db)
+        access_token = create_access_token({"sub": user.email})
+        return RedirectResponse(
+            url=f"{settings.mobile_redirect_uri}#token={access_token}"
+        )
+
+    redirect_uri = request.url_for("mobile_auth_callback")
+    redirect_uri = str(redirect_uri).replace("http://", "https://")
+
+    return await oauth.google.authorize_redirect(
+        request,
+        redirect_uri,
+        access_type="offline",
+    )
+
+
+@router.get("/mobile/callback", name="mobile_auth_callback")
+async def mobile_auth_callback(request: Request, db: Session = Depends(get_db)):
+    if settings.dev_mode:
+        user = get_or_create_dev_user(db)
+        access_token = create_access_token({"sub": user.email})
+        return RedirectResponse(
+            url=f"{settings.mobile_redirect_uri}#token={access_token}"
+        )
+
+    token = await oauth.google.authorize_access_token(request)
+    user = _upsert_user_from_google(db, token)
+
+    access_token = create_access_token({"sub": user.email})
+    # Hand the JWT to the app via deep link. Fragment (#) keeps the token out of
+    # server logs / browser history more reliably than a query string.
+    return RedirectResponse(
+        url=f"{settings.mobile_redirect_uri}#token={access_token}"
+    )
 
 
 @router.get("/me")
