@@ -6,6 +6,7 @@
   import { api, type ProgressPhoto, type PhotoView, type DriveStatus } from '$lib/api/client';
   import { offlineApi } from '$lib/stores/data';
   import { isOnline } from '$lib/sync';
+  import AuthImage from '$lib/components/AuthImage.svelte';
 
   const VIEWS: { value: PhotoView; label: string; emoji: string }[] = [
     { value: 'front', label: 'Front', emoji: '🧍' },
@@ -309,7 +310,7 @@
                   <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
                 </div>
               {:else if compareLeftPhoto}
-                <img
+                <AuthImage
                   src={api.getPhotoUrl(compareLeftPhoto.id)}
                   alt="Before - {compareView} view"
                   class="w-full h-full object-cover"
@@ -345,7 +346,7 @@
                   <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
                 </div>
               {:else if compareRightPhoto}
-                <img
+                <AuthImage
                   src={api.getPhotoUrl(compareRightPhoto.id)}
                   alt="After - {compareView} view"
                   class="w-full h-full object-cover"
@@ -401,7 +402,7 @@
 
           <div class="aspect-[3/4] relative bg-gray-50 dark:bg-gray-800">
             {#if photo}
-              <img
+              <AuthImage
                 src={api.getPhotoUrl(photo.id)}
                 alt="{label} view"
                 class="w-full h-full object-cover"

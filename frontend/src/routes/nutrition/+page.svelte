@@ -5,6 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import FoodSearch from '$lib/components/FoodSearch.svelte';
   import FoodItemForm from '$lib/components/FoodItemForm.svelte';
+  import AuthImage from '$lib/components/AuthImage.svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition, type FoodItem, type MealFoodItemInput } from '$lib/api/client';
   import { offlineApi } from '$lib/stores/data';
@@ -441,7 +442,7 @@
               <div class="flex items-start gap-4">
                 <!-- Photo thumbnail -->
                 {#if meal.photo_url}
-                  <img
+                  <AuthImage
                     src={api.getMealPhotoUrl(meal.id)}
                     alt={meal.label}
                     class="w-16 h-16 rounded-lg object-cover flex-shrink-0"
