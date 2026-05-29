@@ -22,12 +22,13 @@ A personal fitness tracking app for daily logs, nutrition, progress photos, and 
 
 ## Tech Stack
 
-- **Frontend**: SvelteKit + TailwindCSS
+- **Frontend**: SvelteKit + TailwindCSS, offline-first via Dexie/IndexedDB
 - **Backend**: FastAPI + SQLAlchemy + Alembic
 - **Database**: PostgreSQL (SQLite for local dev)
-- **Auth**: Google OAuth
+- **Auth**: Google OAuth (cookie on web, bearer token on native)
 - **Photo Storage**: Google Drive API
-- **Deployment**: Railway
+- **Web Deployment**: Railway
+- **Mobile**: Capacitor → Android App Bundle published via GitHub Actions to Google Play
 
 ## Local Development
 
@@ -103,7 +104,37 @@ The app uses `nixpacks.toml` and `railway.json` for build configuration - no Doc
 3. Configure OAuth consent screen:
    - Add scope: `https://www.googleapis.com/auth/drive.file`
 4. Create OAuth 2.0 credentials (Web application)
-5. Add authorized redirect URI: `https://your-domain.com/auth/callback`
+5. Add authorized redirect URIs:
+   - `https://your-domain.com/auth/callback` (web)
+   - `https://your-domain.com/auth/mobile/callback` (Capacitor/Android)
+
+## Android App
+
+The native Android app is a Capacitor wrapper around the same SvelteKit
+frontend. It signs in with the same Google account as the web app and syncs
+to the same backend, so a user can log a meal on the phone offline, plug in,
+and see it in the web UI.
+
+### Local Android build
+
+```bash
+# One-time
+cp frontend/.env.example frontend/.env.local
+# (edit if you want to target staging instead of prod)
+
+# Each build
+./build-android.sh        # debug APK for sideloading
+./build-release.sh        # signed AAB for Play Store upload
+```
+
+### Continuous delivery
+
+Pushing a tag named `vMAJOR.MINOR.PATCH` runs
+[.github/workflows/android-release.yml](.github/workflows/android-release.yml),
+which derives `versionCode`/`versionName` from the tag, builds, signs, attaches
+the AAB to the GitHub release, and uploads to the Play Console internal-test
+track. See [docs/RELEASE.md](docs/RELEASE.md) for the first-time setup
+checklist (Google Cloud, Play Console, signing keystore, repo secrets).
 
 ## License
 
