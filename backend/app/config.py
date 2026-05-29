@@ -13,7 +13,14 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     allowed_emails: list[str] = []
     dev_mode: bool = False  # Must explicitly enable in .env for development
-    cors_origins: list[str] = ["http://localhost:5173"]  # Override in production
+    # CORS allowed origins. Defaults cover local web dev (Vite) and the two
+    # origins a Capacitor app loads from on Android/iOS. Production must
+    # extend this via CORS_ORIGINS env var to include the deployed web host.
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "https://localhost",  # Capacitor Android (androidScheme: 'https')
+        "capacitor://localhost",  # Capacitor iOS
+    ]
     token_expire_hours: int = 720  # 30 days - stay logged in longer
 
     # Mobile (Capacitor) deep-link redirect for OAuth token handoff.
