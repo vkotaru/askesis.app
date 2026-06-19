@@ -1,0 +1,47 @@
+# Self-hosted Askesis for your home server (reachable over Tailscale).
+# Railway is left untouched (railway.json / nixpacks.toml) — this is a parallel,
+# independent way to run the same app.
+#
+#   cp .env.example .env   # then fill it in (BIND_ADDR / APP_PORT / secrets)
+#   ./deploy.sh            # publishes on $BIND_ADDR:$APP_PORT
+#   tailscale serve --bg --https <port> http://<bind_addr>:<port>   # HTTPS for login
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: askesis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: askesis
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U askesis -d askesis"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    # App secrets / config come from .env (read into the container as env vars).
+    env_file: .env
+    # DATABASE_URL is fixed to the bundled db service and overrides any value in
+    # .env. To use an external Postgres instead, drop the db service + this line
+    # and set DATABASE_URL in .env.
+    environment:
+      DATABASE_URL: postgresql://askesis:${POSTGRES_PASSWORD}@db:5432/askesis
+    # Bind host/port come from .env (BIND_ADDR / APP_PORT); container listens on 8000.
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Legacy local upload dir (current builds store photos on Google Drive).
+    volumes:
+      - uploads:/app/backend/uploads
+
+volumes:
+  pgdata:
+  uploads:

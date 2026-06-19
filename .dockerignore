@@ -1,0 +1,23 @@
+# Keep the build context small and avoid copying host-only artifacts.
+.git/
+**/__pycache__/
+**/*.pyc
+*.log
+
+# Python (host venv + local SQLite + legacy local uploads)
+backend/venv/
+backend/.venv/
+backend/*.db
+backend/uploads/
+
+# Node / SvelteKit (rebuilt inside the image)
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+backend/static/
+
+# Native app — not part of the server image
+android-native/
+
+# Local env
+.env
