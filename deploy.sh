@@ -3,9 +3,9 @@
 # Pulls the latest code, rebuilds the image, and restarts the stack.
 #
 # First-time setup:
-#   cp .env.example .env && $EDITOR .env     # fill in secrets + host/port
+#   cp .env.example .env && $EDITOR .env     # fill in secrets + TS_AUTHKEY
 #   ./deploy.sh
-#   tailscale serve --bg --https <port> http://<bind_addr>:<port>   # HTTPS for login
+#   # → https://askesis.<your-tailnet>.ts.net  (the Tailscale sidecar serves HTTPS)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,6 +36,6 @@ $DC up -d --build
 echo "==> Status"
 $DC ps
 echo
-echo "Up on http://\${BIND_ADDR}:\${APP_PORT} (see .env)"
-echo "For HTTPS (required for Google login), front it with Tailscale Serve, e.g.:"
-echo "  tailscale serve --bg --https <port> http://<bind_addr>:<port>"
+echo "App is served on the tailnet by the Tailscale sidecar (hostname 'askesis')."
+echo "Open:  https://askesis.<your-tailnet>.ts.net"
+echo "First run: check 'docker compose logs tailscale' to confirm it joined + got a cert."

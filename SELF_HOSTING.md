@@ -3,13 +3,24 @@
 This runs the same web app/API that's on Railway, in Docker, on your own box,
 reachable over your tailnet. Railway is left untouched — this is independent.
 
-Files: `Dockerfile`, `docker-compose.yml`, `deploy.sh`, `.env.example`.
+Files: `Dockerfile`, `docker-compose.yml`, `deploy.sh`, `.env.example`,
+`tailscale/serve.json`.
 
 ## What runs
-One container builds the SvelteKit SPA and serves it **same-origin** with the
-FastAPI API (so no API hostname is baked into the frontend). A bundled
-`postgres:16` container holds the data. Progress/meal photos and DB backups
-live in **Google Drive** (unchanged), so there's no photo data to migrate.
+Three containers:
+- **app** — builds the SvelteKit SPA and serves it **same-origin** with the
+  FastAPI API (no API hostname baked into the frontend).
+- **db** — bundled `postgres:16`.
+- **tailscale** — a Tailscale **sidecar** that joins your tailnet as its own
+  host (`askesis.<tailnet>.ts.net`), terminates HTTPS via Tailscale Serve, and
+  proxies to the app. The app shares this container's network namespace, so it's
+  reachable **only on the tailnet** (no host ports exposed).
+
+Giving Askesis its **own hostname** (not just a different port on a shared host)
+matters: Android associates an installed PWA with its *host*, so two PWAs on the
+same host but different ports collide — a distinct hostname installs cleanly.
+
+Progress/meal photos and DB backups live in **Google Drive** (unchanged).
 
 ## First-time setup (on the server)
 
@@ -17,35 +28,32 @@ live in **Google Drive** (unchanged), so there's no photo data to migrate.
    ```bash
    git clone <repo> askesis && cd askesis
    cp .env.example .env
-   $EDITOR .env            # secrets + your ts.net hostname (see notes below)
+   $EDITOR .env            # secrets + TS_AUTHKEY (see notes below)
    ```
+   Generate a Tailscale **auth key**: Admin console → Settings → Keys →
+   Generate auth key (reusable recommended) → put it in `.env` as `TS_AUTHKEY`.
 
 2. **Deploy**
    ```bash
    ./deploy.sh             # git pull, docker compose down, up --build
    ```
-   App is published on the Tailscale IP: `http://<bind_addr>:<port>`
-   (container listens on 8000; compose maps `<bind_addr>:<port> -> 8000`).
+   The sidecar joins the tailnet as **`askesis`** and serves HTTPS. Open:
+   **`https://askesis.<your-tailnet>.ts.net`**
+   (First run, confirm it came up: `docker compose logs tailscale` — look for it
+   authenticating and obtaining a cert. If a device named `askesis` already
+   exists in your tailnet it'll be renamed `askesis-1`; rename in the admin
+   console or change `hostname:` in `docker-compose.yml`.)
 
-3. **HTTPS — required for Google login.** Google rejects non-localhost `http`
-   OAuth redirect URIs, and the app's session cookies are HTTPS-only when
-   `DEV_MODE=false`. So put TLS in front via Tailscale Serve (gives a real cert
-   on your `*.ts.net` name); uvicorn honors its `X-Forwarded-Proto` via
-   `--proxy-headers`:
-   ```bash
-   tailscale serve --bg --https <port> http://<bind_addr>:<port>
-   # -> https://<this-machine>.<your-tailnet>.ts.net:<port>
-   ```
-   Then use that `https://…ts.net:<port>` URL to access the app and to log in.
-   (Plain `http://<bind_addr>:<port>` works for poking at it, but Google login
-   won't — see Gotchas.)
-
-4. **Google OAuth**: in the Google Cloud console, add an authorized redirect
-   URI matching the HTTPS URL above:
-   `https://<this-machine>.<your-tailnet>.ts.net:<port>/auth/callback`
+3. **Google OAuth**: in the Google Cloud console, add the authorized redirect URI:
+   `https://askesis.<your-tailnet>.ts.net/auth/callback`
    (the existing `app.askesis.app://auth/callback` for the mobile app stays.)
+   HTTPS + `--proxy-headers` mean the secure cookies and OAuth redirect work.
 
 Updating later is just `./deploy.sh` again.
+
+> Migrating from a port-based setup? Remove the old manual mapping first:
+> `sudo tailscale serve --https=8443 off` (on the host), then deploy — the
+> sidecar owns serving now.
 
 ## Gotchas / migration notes
 
@@ -63,11 +71,12 @@ Updating later is just `./deploy.sh` again.
   Skip this for a fresh start (Alembic creates the schema on first boot).
 - **`SECRET_KEY`** must not stay the placeholder — the app refuses to start in
   production mode otherwise.
-- **Plain `http://<bind_addr>:<port>` and Google login don't mix.** Google
-  only allows `http` redirect URIs for localhost, and `DEV_MODE=false` makes
-  cookies HTTPS-only. Use the Tailscale Serve HTTPS URL for anything involving
-  login. (Only set `DEV_MODE=true` for throwaway local http testing — login
-  still won't get a valid Google redirect that way.)
+- **Always use the `https://askesis.<tailnet>.ts.net` URL.** The sidecar serves
+  HTTPS with a real cert; Google OAuth and the `DEV_MODE=false` HTTPS-only
+  cookies require it. There are no plain-HTTP host ports anymore.
+- **`TS_ACCEPT_DNS=false`** is set on the sidecar on purpose — it stops Tailscale
+  from overriding the container's DNS, so the app can still resolve the `db`
+  service. Don't remove it.
 - **CORS_ORIGINS** only matters for the Capacitor apps / cross-origin clients;
   the web app is same-origin. Put your `ts.net` host there anyway.
 - Native Kotlin Android app is **not** affected — it talks to Google

@@ -1,10 +1,11 @@
-# Self-hosted Askesis for your home server (reachable over Tailscale).
-# Railway is left untouched (railway.json / nixpacks.toml) — this is a parallel,
-# independent way to run the same app.
+# Self-hosted Askesis for your home server, exposed on the tailnet under its OWN
+# hostname via a Tailscale sidecar (so it installs as its own PWA — a different
+# port on a shared host collides with other PWAs on Android). Railway is left
+# untouched (railway.json / nixpacks.toml).
 #
-#   cp .env.example .env   # then fill it in (BIND_ADDR / APP_PORT / secrets)
-#   ./deploy.sh            # publishes on $BIND_ADDR:$APP_PORT
-#   tailscale serve --bg --https <port> http://<bind_addr>:<port>   # HTTPS for login
+#   cp .env.example .env   # fill in secrets + TS_AUTHKEY
+#   ./deploy.sh
+#   # → https://askesis.<your-tailnet>.ts.net   (HTTPS via Tailscale Serve)
 
 services:
   db:
@@ -22,22 +23,42 @@ services:
       timeout: 5s
       retries: 12
 
+  # Tailscale sidecar: joins the tailnet as "askesis" -> askesis.<tailnet>.ts.net,
+  # terminates HTTPS via Tailscale Serve, and proxies to the app on 127.0.0.1:8000
+  # (the app shares this container's network namespace). Userspace mode = no extra
+  # host caps/devices needed. TS_ACCEPT_DNS=false keeps Docker's DNS so the app can
+  # still resolve the `db` service.
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: askesis
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_HOSTNAME: askesis
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    restart: unless-stopped
+
   app:
     build: .
     restart: unless-stopped
     # App secrets / config come from .env (read into the container as env vars).
     env_file: .env
-    # DATABASE_URL is fixed to the bundled db service and overrides any value in
-    # .env. To use an external Postgres instead, drop the db service + this line
-    # and set DATABASE_URL in .env.
+    # DATABASE_URL is fixed to the bundled db service and overrides any value in .env.
     environment:
       DATABASE_URL: postgresql://askesis:${POSTGRES_PASSWORD}@db:5432/askesis
-    # Bind host/port come from .env (BIND_ADDR / APP_PORT); container listens on 8000.
-    ports:
-      - "${BIND_ADDR:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    # Share the Tailscale sidecar's network namespace: the app is reachable only on
+    # the tailnet (no host ports published), and Serve proxies to 127.0.0.1:8000.
+    network_mode: service:tailscale
     depends_on:
       db:
         condition: service_healthy
+      tailscale:
+        condition: service_started
     # Legacy local upload dir (current builds store photos on Google Drive).
     volumes:
       - uploads:/app/backend/uploads
@@ -45,3 +66,4 @@ services:
 volumes:
   pgdata:
   uploads:
+  tailscale-state:
