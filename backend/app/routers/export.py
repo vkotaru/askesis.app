@@ -3,10 +3,10 @@
 import logging
 import sqlite3
 import tempfile
-from datetime import datetime
+from datetime import datetime, date as date_type
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -17,6 +17,8 @@ from app.models import (
     DailyLog,
     Meal,
     Activity,
+    ActivityType,
+    TimeOfDay,
     Exercise,
     BodyMeasurement,
     ProgressPhoto,
@@ -387,6 +389,221 @@ def export_sqlite(
         filename=filename,
         media_type="application/x-sqlite3",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _pdate(s: str | None):
+    return date_type.fromisoformat(s) if s else None
+
+
+def import_sqlite_export(db: Session, user: User, sqlite_path: Path) -> dict:
+    """Import an Askesis '.db' analysis export into the current user's account.
+
+    The export is a flattened, per-user SQLite file (see create_sqlite_export).
+    Rows are inserted as NEW records owned by `user` (old IDs are not reused;
+    exercise->activity links are remapped). This is ADDITIVE — intended for a
+    fresh account. Foods, meal-food links, training plans, sharing and photo
+    files are not part of the export and are skipped.
+    """
+    conn = sqlite3.connect(str(sqlite_path))
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    present = {
+        r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    summary: dict[str, int] = {}
+
+    if "daily_logs" in present:
+        n = 0
+        for r in cur.execute("SELECT * FROM daily_logs"):
+            db.add(
+                DailyLog(
+                    user_id=user.id,
+                    date=_pdate(r["date"]),
+                    weight=r["weight"],
+                    sleep_hours=r["sleep_hours"],
+                    steps=r["steps"],
+                    water_ml=r["water_ml"],
+                    feelings=r["feelings"],
+                    caffeine_mg=r["caffeine_mg"],
+                    ate_outside=bool(r["ate_outside"])
+                    if r["ate_outside"] is not None
+                    else None,
+                    notes=r["notes"],
+                )
+            )
+            n += 1
+        summary["daily_logs"] = n
+
+    if "meals" in present:
+        n = 0
+        for r in cur.execute("SELECT * FROM meals"):
+            db.add(
+                Meal(
+                    user_id=user.id,
+                    date=_pdate(r["date"]),
+                    label=r["label"] or "Meal",
+                    time=r["time"],
+                    calories=r["calories"],
+                    description=r["description"],
+                    ai_analysis=r["ai_analysis"],
+                )
+            )
+            n += 1
+        summary["meals"] = n
+
+    if "activities" in present:
+        n = 0
+        old_to_new: dict[int, int] = {}
+        for r in cur.execute("SELECT * FROM activities"):
+            act = Activity(
+                user_id=user.id,
+                date=_pdate(r["date"]),
+                name=r["name"] or "Activity",
+                activity_type=ActivityType(r["activity_type"])
+                if r["activity_type"]
+                else ActivityType.CARDIO,
+                time_of_day=TimeOfDay(r["time_of_day"]) if r["time_of_day"] else None,
+                duration_mins=r["duration_mins"],
+                calories=r["calories"],
+                distance_km=r["distance_km"],
+                url=r["url"],
+                notes=r["notes"],
+                tags=r["tags"],
+            )
+            db.add(act)
+            db.flush()  # assign new id
+            old_to_new[r["id"]] = act.id
+            n += 1
+        summary["activities"] = n
+
+        if "exercises" in present:
+            en = 0
+            for r in cur.execute("SELECT * FROM exercises"):
+                new_aid = old_to_new.get(r["activity_id"])
+                if new_aid is None:
+                    continue
+                db.add(
+                    Exercise(
+                        activity_id=new_aid,
+                        name=r["name"] or "",
+                        sets=r["sets"],
+                        reps=r["reps"],
+                        weight_kg=r["weight_kg"],
+                        notes=r["notes"],
+                    )
+                )
+                en += 1
+            summary["exercises"] = en
+
+    if "body_measurements" in present:
+        n = 0
+        for r in cur.execute("SELECT * FROM body_measurements"):
+            db.add(
+                BodyMeasurement(
+                    user_id=user.id,
+                    date=_pdate(r["date"]),
+                    neck=r["neck"],
+                    shoulders=r["shoulders"],
+                    chest=r["chest"],
+                    bicep_left=r["bicep_left"],
+                    bicep_right=r["bicep_right"],
+                    forearm_left=r["forearm_left"],
+                    forearm_right=r["forearm_right"],
+                    waist=r["waist"],
+                    abdomen=r["abdomen"],
+                    hips=r["hips"],
+                    thigh_left=r["thigh_left"],
+                    thigh_right=r["thigh_right"],
+                    calf_left=r["calf_left"],
+                    calf_right=r["calf_right"],
+                    notes=r["notes"],
+                )
+            )
+            n += 1
+        summary["body_measurements"] = n
+
+    if "user_settings" in present:
+        row = cur.execute("SELECT * FROM user_settings LIMIT 1").fetchone()
+        if row:
+            s = get_or_create_settings(db, user.id)
+            for f in (
+                "theme",
+                "font_size",
+                "font_family",
+                "content_width",
+                "color_scheme",
+                "distance_unit",
+                "measurement_unit",
+                "weight_unit",
+                "water_unit",
+            ):
+                if f in row.keys() and row[f] is not None:
+                    setattr(s, f, row[f])
+            summary["user_settings"] = 1
+
+    db.commit()
+    conn.close()
+    return summary
+
+
+class ImportDbResponse(BaseModel):
+    success: bool
+    message: str
+    imported: dict[str, int] = {}
+
+
+@router.post("/import-db", response_model=ImportDbResponse)
+async def import_db(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore from an Askesis '.db' export (additive — use on a fresh account)."""
+    if not file.filename or not file.filename.endswith(".db"):
+        raise HTTPException(
+            status_code=400, detail="Please upload an Askesis .db export file."
+        )
+
+    content = await file.read()
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=".db", prefix="askesis-import-", delete=False
+    )
+    tmp.write(content)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+    try:
+        try:
+            check = sqlite3.connect(str(tmp_path))
+            names = {
+                r[0]
+                for r in check.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            check.close()
+        except sqlite3.DatabaseError:
+            raise HTTPException(
+                status_code=400, detail="File is not a valid SQLite database."
+            )
+        if "daily_logs" not in names and "_export_meta" not in names:
+            raise HTTPException(
+                status_code=400, detail="This doesn't look like an Askesis .db export."
+            )
+
+        try:
+            imported = import_sqlite_export(db, current_user, tmp_path)
+        except Exception as e:
+            db.rollback()
+            logger.exception("Import failed")
+            raise HTTPException(status_code=500, detail=f"Import failed: {e}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    total = sum(imported.values())
+    parts = ", ".join(f"{k}: {v}" for k, v in imported.items())
+    return ImportDbResponse(
+        success=True, message=f"Imported {total} records ({parts}).", imported=imported
     )
 
 
