@@ -235,12 +235,16 @@
     if (!restoreFile || restoreFile.length === 0) return;
 
     const file = restoreFile[0];
-    if (!file.name.endsWith('.json')) {
-      restoreMessage = 'Please select a JSON backup file';
+    const isDb = file.name.endsWith('.db');
+    const isJson = file.name.endsWith('.json');
+    if (!isJson && !isDb) {
+      restoreMessage = 'Please select a .json backup or a .db export file';
       return;
     }
 
-    if (!confirm('This will restore data from the backup. Existing records with the same ID will be skipped. Continue?')) {
+    if (!confirm(isDb
+      ? 'Import data from this .db export? It adds records to your account (best on a fresh account). Continue?'
+      : 'This will restore data from the backup. Existing records with the same ID will be skipped. Continue?')) {
       return;
     }
 
@@ -250,7 +254,7 @@
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('/api/settings/restore', {
+      const response = await fetch(isDb ? '/api/export/import-db' : '/api/settings/restore', {
         method: 'POST',
         credentials: 'include',
         body: formData,
@@ -262,7 +266,9 @@
       }
 
       const result = await response.json();
-      restoreMessage = `${result.message} Tables: ${result.tables_restored.join(', ')}`;
+      restoreMessage = isDb
+        ? result.message
+        : `${result.message} Tables: ${result.tables_restored.join(', ')}`;
       restoreFile = null;
     } catch (err) {
       restoreMessage = err instanceof Error ? err.message : 'Restore failed';
@@ -947,12 +953,13 @@
       <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
         <h3 class="font-medium mb-2">Restore from Backup</h3>
         <p class="text-sm text-gray-500 mb-3">
-          Restore data from a JSON backup file. Records with existing IDs will be skipped.
+          Restore from a <strong>.json</strong> backup (IDs that already exist are skipped), or
+          import a <strong>.db</strong> data export (adds records — best on a fresh account).
         </p>
         <div class="flex flex-wrap items-center gap-3">
           <input
             type="file"
-            accept=".json"
+            accept=".json,.db"
             bind:files={restoreFile}
             class="text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-100 dark:file:bg-gray-700 file:text-gray-700 dark:file:text-gray-300 hover:file:bg-gray-200 dark:hover:file:bg-gray-600"
           />
@@ -973,7 +980,7 @@
         {#if restoreMessage}
           <p class={clsx(
             'text-sm mt-2',
-            restoreMessage.includes('completed') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+            (restoreMessage.includes('completed') || restoreMessage.includes('Imported')) ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
           )}>
             {restoreMessage}
           </p>
