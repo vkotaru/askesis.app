@@ -59,7 +59,9 @@ class ServerAuthManager(
     }
 
     companion object {
-        const val REDIRECT_SCHEME = "app.askesis"
+        // Must match the server's MOBILE_REDIRECT_URI (default app.askesis.app://auth/callback)
+        // and the deep-link intent-filter in AndroidManifest.xml.
+        const val REDIRECT_SCHEME = "app.askesis.app"
         const val REDIRECT_HOST = "auth"
     }
 }
