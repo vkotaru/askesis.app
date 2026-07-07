@@ -12,9 +12,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         return when (val r = repo.runSync()) {
             is SyncEngine.Result.Success -> Result.success()
             is SyncEngine.Result.Failure -> {
-                // Retry transient failures; give up only after WorkManager's backoff cap.
+                // Retry transient failures; give up on terminal config/auth errors.
                 if (r.message.contains("denied") || r.message.contains("No spreadsheet") ||
-                    r.message.contains("Not signed in")
+                    r.message.contains("No server") || r.message.contains("Not signed in")
                 ) Result.failure() else Result.retry()
             }
         }

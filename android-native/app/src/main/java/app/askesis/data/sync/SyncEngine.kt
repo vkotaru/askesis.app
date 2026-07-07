@@ -28,7 +28,7 @@ class SyncEngine(
     private val auth: GoogleAuthManager,
     private val settings: SettingsStore,
     private val photosDir: File,
-) {
+) : SyncBackend {
 
     sealed interface Result {
         data class Success(val syncedAt: Long) : Result
@@ -203,7 +203,7 @@ class SyncEngine(
     )
 
     /** Run a full sync of every tab. Now-timestamped by the caller-provided [nowMillis]. */
-    suspend fun sync(nowMillis: Long): Result {
+    override suspend fun sync(nowMillis: Long): Result {
         val cfg = settings.settings.first()
         if (cfg.spreadsheetId.isBlank()) {
             return Result.Failure("No spreadsheet configured. Add a Sheet ID in Settings.")
@@ -330,7 +330,7 @@ class SyncEngine(
     }
 
     /** Download a photo's bytes from Drive into the local cache; returns the cached path. */
-    suspend fun fetchPhotoBytes(uid: String): String? {
+    override suspend fun fetchPhotoBytes(uid: String): String? {
         val p = db.photoDao().byUid(uid) ?: return null
         if (p.localPath != null && File(p.localPath).exists()) return p.localPath
         val fileId = p.driveFileId ?: return null

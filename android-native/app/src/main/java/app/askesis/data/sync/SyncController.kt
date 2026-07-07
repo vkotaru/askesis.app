@@ -7,11 +7,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Wraps [SyncEngine] with an observable [state] so any screen can show sync progress and
- * the result of the last run. A [Mutex] serializes runs so a manual "Sync now" and the
- * background [SyncWorker] can never overlap and clobber each other's sheet writes.
+ * Wraps the active [SyncBackend] with an observable [state] so any screen can show sync progress
+ * and the result of the last run. A [Mutex] serializes runs so a manual "Sync now" and the
+ * background [SyncWorker] can never overlap and clobber each other's writes.
+ *
+ * [resolveBackend] is evaluated on every call so the backend can be switched at run time (e.g.
+ * the user configures the FastAPI server) without rebuilding the controller.
  */
-class SyncController(private val engine: SyncEngine) {
+class SyncController(private val resolveBackend: suspend () -> SyncBackend) {
 
     sealed interface State {
         data object Idle : State
@@ -27,7 +30,7 @@ class SyncController(private val engine: SyncEngine) {
 
     suspend fun sync(nowMillis: Long): SyncEngine.Result = mutex.withLock {
         _state.value = State.Syncing
-        val result = engine.sync(nowMillis)
+        val result = resolveBackend().sync(nowMillis)
         _state.value = when (result) {
             is SyncEngine.Result.Success -> State.Done(result.syncedAt)
             is SyncEngine.Result.Failure -> State.Error(result.message)
@@ -36,5 +39,5 @@ class SyncController(private val engine: SyncEngine) {
     }
 
     /** Pass-through for callers that only need byte fetching (photo display). */
-    suspend fun fetchPhotoBytes(uid: String): String? = engine.fetchPhotoBytes(uid)
+    suspend fun fetchPhotoBytes(uid: String): String? = resolveBackend().fetchPhotoBytes(uid)
 }

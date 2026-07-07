@@ -28,7 +28,7 @@ import app.askesis.data.local.entity.PhotoEntity
         FoodEntity::class,
         PhotoEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -64,13 +64,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 → v3 adds a nullable serverId to every syncable table (FastAPI server sync). */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf(
+                    "daily_logs", "measurements", "activities", "meals", "foods", "photos"
+                )) {
+                    db.execSQL("ALTER TABLE $table ADD COLUMN serverId INTEGER")
+                }
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "askesis.db"
-                ).addMigrations(MIGRATION_1_2)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build().also { INSTANCE = it }
             }
