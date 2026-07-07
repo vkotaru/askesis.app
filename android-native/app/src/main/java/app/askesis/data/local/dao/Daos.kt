@@ -32,6 +32,18 @@ interface DailyLogDao {
 
     @Query("UPDATE daily_logs SET dirty = 0")
     suspend fun markAllClean()
+
+    @Query("SELECT * FROM daily_logs WHERE dirty = 1")
+    suspend fun dirtyRows(): List<DailyLogEntity>
+
+    @Query("SELECT * FROM daily_logs WHERE serverId = :sid LIMIT 1")
+    suspend fun byServerId(sid: Long): DailyLogEntity?
+
+    @Query("UPDATE daily_logs SET serverId = :sid WHERE uid = :uid")
+    suspend fun setServerId(uid: String, sid: Long)
+
+    @Query("UPDATE daily_logs SET dirty = 0 WHERE uid IN (:uids)")
+    suspend fun clearDirty(uids: List<String>)
 }
 
 @Dao
@@ -53,6 +65,18 @@ interface MeasurementDao {
 
     @Query("UPDATE measurements SET dirty = 0")
     suspend fun markAllClean()
+
+    @Query("SELECT * FROM measurements WHERE dirty = 1")
+    suspend fun dirtyRows(): List<MeasurementEntity>
+
+    @Query("SELECT * FROM measurements WHERE serverId = :sid LIMIT 1")
+    suspend fun byServerId(sid: Long): MeasurementEntity?
+
+    @Query("UPDATE measurements SET serverId = :sid WHERE uid = :uid")
+    suspend fun setServerId(uid: String, sid: Long)
+
+    @Query("UPDATE measurements SET dirty = 0 WHERE uid IN (:uids)")
+    suspend fun clearDirty(uids: List<String>)
 }
 
 @Dao
@@ -74,6 +98,18 @@ interface ActivityDao {
 
     @Query("UPDATE activities SET dirty = 0")
     suspend fun markAllClean()
+
+    @Query("SELECT * FROM activities WHERE dirty = 1")
+    suspend fun dirtyRows(): List<ActivityEntity>
+
+    @Query("SELECT * FROM activities WHERE serverId = :sid LIMIT 1")
+    suspend fun byServerId(sid: Long): ActivityEntity?
+
+    @Query("UPDATE activities SET serverId = :sid WHERE uid = :uid")
+    suspend fun setServerId(uid: String, sid: Long)
+
+    @Query("UPDATE activities SET dirty = 0 WHERE uid IN (:uids)")
+    suspend fun clearDirty(uids: List<String>)
 }
 
 @Dao
@@ -98,6 +134,18 @@ interface MealDao {
 
     @Query("UPDATE meals SET dirty = 0")
     suspend fun markAllClean()
+
+    @Query("SELECT * FROM meals WHERE dirty = 1")
+    suspend fun dirtyRows(): List<MealEntity>
+
+    @Query("SELECT * FROM meals WHERE serverId = :sid LIMIT 1")
+    suspend fun byServerId(sid: Long): MealEntity?
+
+    @Query("UPDATE meals SET serverId = :sid WHERE uid = :uid")
+    suspend fun setServerId(uid: String, sid: Long)
+
+    @Query("UPDATE meals SET dirty = 0 WHERE uid IN (:uids)")
+    suspend fun clearDirty(uids: List<String>)
 }
 
 @Dao
@@ -125,6 +173,18 @@ interface FoodDao {
 
     @Query("UPDATE foods SET dirty = 0")
     suspend fun markAllClean()
+
+    @Query("SELECT * FROM foods WHERE dirty = 1")
+    suspend fun dirtyRows(): List<FoodEntity>
+
+    @Query("SELECT * FROM foods WHERE serverId = :sid LIMIT 1")
+    suspend fun byServerId(sid: Long): FoodEntity?
+
+    @Query("UPDATE foods SET serverId = :sid WHERE uid = :uid")
+    suspend fun setServerId(uid: String, sid: Long)
+
+    @Query("UPDATE foods SET dirty = 0 WHERE uid IN (:uids)")
+    suspend fun clearDirty(uids: List<String>)
 }
 
 @Dao
@@ -149,4 +209,16 @@ interface PhotoDao {
 
     @Query("UPDATE photos SET dirty = 0")
     suspend fun markAllClean()
+
+    @Query("SELECT * FROM photos WHERE dirty = 1")
+    suspend fun dirtyRows(): List<PhotoEntity>
+
+    @Query("SELECT * FROM photos WHERE serverId = :sid LIMIT 1")
+    suspend fun byServerId(sid: Long): PhotoEntity?
+
+    @Query("UPDATE photos SET serverId = :sid WHERE uid = :uid")
+    suspend fun setServerId(uid: String, sid: Long)
+
+    @Query("UPDATE photos SET dirty = 0 WHERE uid IN (:uids)")
+    suspend fun clearDirty(uids: List<String>)
 }

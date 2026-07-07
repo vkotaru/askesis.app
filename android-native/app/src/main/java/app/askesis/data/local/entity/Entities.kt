@@ -11,6 +11,8 @@ import androidx.room.PrimaryKey
  * - [updatedAt] epoch millis of the last local edit; drives last-write-wins on sync
  * - [dirty]     true when the row has local changes not yet pushed to the sheet
  * - [deleted]   tombstone — kept locally and written to the sheet so other devices delete too
+ * - [serverId]  primary key of the matching row on the FastAPI server (null until first pushed);
+ *               used to correlate local uid ⇄ server int id when the server sync backend is active
  */
 
 @Entity(
@@ -31,6 +33,7 @@ data class DailyLogEntity(
     val updatedAt: Long = 0,
     val dirty: Boolean = false,
     val deleted: Boolean = false,
+    val serverId: Long? = null,
 )
 
 @Entity(
@@ -58,6 +61,7 @@ data class MeasurementEntity(
     val updatedAt: Long = 0,
     val dirty: Boolean = false,
     val deleted: Boolean = false,
+    val serverId: Long? = null,
 )
 
 @Entity(
@@ -81,6 +85,7 @@ data class ActivityEntity(
     val updatedAt: Long = 0,
     val dirty: Boolean = false,
     val deleted: Boolean = false,
+    val serverId: Long? = null,
 )
 
 @Entity(
@@ -102,6 +107,7 @@ data class MealEntity(
     val updatedAt: Long = 0,
     val dirty: Boolean = false,
     val deleted: Boolean = false,
+    val serverId: Long? = null,
 )
 
 @Entity(
@@ -118,6 +124,7 @@ data class PhotoEntity(
     val updatedAt: Long = 0,
     val dirty: Boolean = false,
     val deleted: Boolean = false,
+    val serverId: Long? = null,
 )
 
 @Entity(tableName = "foods")
@@ -138,4 +145,5 @@ data class FoodEntity(
     val updatedAt: Long = 0,
     val dirty: Boolean = false,
     val deleted: Boolean = false,
+    val serverId: Long? = null,
 )
