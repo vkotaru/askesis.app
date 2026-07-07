@@ -24,12 +24,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Server OAuth callback: app.askesis://auth/callback#token=<jwt> -->
+            <!-- Server OAuth callback: app.askesis.app://auth/callback#token=<jwt> -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="app.askesis" android:host="auth" />
+                <data android:scheme="app.askesis.app" android:host="auth" />
             </intent-filter>
         </activity>
 

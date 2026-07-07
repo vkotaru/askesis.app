@@ -1,10 +1,15 @@
 name: Android Release
 
-# Build and ship a signed Android App Bundle (.aab) to Google Play whenever
-# a tag like v1.2.3 is pushed. The first release for a Play Console app must
-# be uploaded manually through the Console — Google does not allow the API
-# to create the listing. After that, this workflow handles every subsequent
-# release on the "internal" testing track; promote to production manually.
+# Build and ship a signed Android App Bundle (.aab) of the NATIVE Kotlin app
+# (android-native/, applicationId app.askesis.app) to Google Play whenever a tag
+# like v1.2.3 is pushed. The first release for a Play Console app must be uploaded
+# manually through the Console — Google does not allow the API to create the
+# listing. After that, this workflow handles every subsequent release on the
+# "internal" testing track; promote to production manually. See docs/RELEASE.md.
+#
+# NOTE: the native app is backend-agnostic — the user picks the server URL
+# (Tailscale) or a Google Sheet at runtime in Settings, so nothing backend-
+# specific is baked into the build.
 
 on:
   push:
@@ -32,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Need the tag annotation to derive versionName.
+          # Need the tag to derive versionName/versionCode.
           fetch-depth: 0
 
       - name: Derive version from tag
@@ -53,13 +58,6 @@ jobs:
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "Building versionName=$NAME versionCode=$CODE"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -69,27 +67,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build SvelteKit bundle
-        working-directory: frontend
-        env:
-          # Inlined at build time. Override via repo secret to target staging.
-          VITE_API_BASE: ${{ secrets.VITE_API_BASE || 'https://askesisapp-production.up.railway.app' }}
-        run: npm run build
-
-      - name: Sync Capacitor → Android project
-        working-directory: frontend
-        run: npx cap sync android
-
       - name: Stamp versionName / versionCode
-        working-directory: frontend/android/app
+        working-directory: android-native/app
         run: |
-          sed -i "s/versionCode 1/versionCode ${{ steps.version.outputs.code }}/" build.gradle
-          sed -i "s/versionName \"1.0\"/versionName \"${{ steps.version.outputs.name }}\"/" build.gradle
-          grep -E "versionCode|versionName" build.gradle
+          sed -i "s/versionCode = 1/versionCode = ${{ steps.version.outputs.code }}/" build.gradle.kts
+          sed -i "s/versionName = \"1.0\"/versionName = \"${{ steps.version.outputs.name }}\"/" build.gradle.kts
+          grep -E "versionCode|versionName" build.gradle.kts
 
       - name: Decode signing keystore
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
@@ -101,10 +84,10 @@ jobs:
           echo "KEYSTORE_PATH=$RUNNER_TEMP/signing/release.keystore" >> "$GITHUB_ENV"
 
       - name: Build release AAB
-        working-directory: frontend/android
+        working-directory: android-native
         run: |
           chmod +x ./gradlew
-          ./gradlew bundleRelease
+          ./gradlew :app:bundleRelease
 
       - name: Sign AAB with jarsigner
         if: ${{ env.KEYSTORE_PATH != '' }}
@@ -112,7 +95,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        working-directory: frontend/android/app/build/outputs/bundle/release
+        working-directory: android-native/app/build/outputs/bundle/release
         run: |
           cp app-release.aab app-release-signed.aab
           jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
@@ -126,14 +109,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release-${{ steps.version.outputs.name }}.aab
-          path: frontend/android/app/build/outputs/bundle/release/app-release-signed.aab
+          path: android-native/app/build/outputs/bundle/release/app-release-signed.aab
           if-no-files-found: warn
 
       - name: Attach AAB to GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: frontend/android/app/build/outputs/bundle/release/app-release-signed.aab
+          files: android-native/app/build/outputs/bundle/release/app-release-signed.aab
           generate_release_notes: true
 
       - name: Publish to Google Play
@@ -148,7 +131,7 @@ jobs:
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: app.askesis.app
-          releaseFiles: frontend/android/app/build/outputs/bundle/release/app-release-signed.aab
+          releaseFiles: android-native/app/build/outputs/bundle/release/app-release-signed.aab
           track: ${{ github.event.inputs.track || 'internal' }}
           status: completed
           inAppUpdatePriority: 2

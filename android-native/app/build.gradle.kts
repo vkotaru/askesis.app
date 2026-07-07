@@ -10,7 +10,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "app.askesis.native"
+        applicationId = "app.askesis.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
