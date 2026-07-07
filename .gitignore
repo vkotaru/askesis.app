@@ -32,3 +32,9 @@ backend/static/
 
 # OS
 .DS_Store
+
+# Claude Code local config
+.claude/
+
+# Generated Capacitor native project (regenerate with `npx cap add android`)
+frontend/android/

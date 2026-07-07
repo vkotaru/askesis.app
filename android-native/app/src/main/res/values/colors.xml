@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Original Askesis emblem sits on this green; the maskable foreground already
+         carries the artwork, so this only fills any masked corners. -->
+    <color name="ic_launcher_background">#2D7050</color>
+</resources>
