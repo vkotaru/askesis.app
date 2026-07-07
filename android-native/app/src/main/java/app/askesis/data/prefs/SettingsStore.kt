@@ -27,6 +27,11 @@ class SettingsStore(private val context: Context) {
         val proteinTarget: Int = 0,          // 0 = unset
         val themeMode: String = "system",   // system | light | dark
         val colorScheme: String = "forest",
+        // ── FastAPI server sync (Tailscale) ──
+        val syncBackend: String = "sheets",  // sheets | server
+        val serverUrl: String = "",          // e.g. https://askesis.<tailnet>.ts.net
+        val authToken: String = "",          // server JWT captured from the deep-link login
+        val serverSyncCursor: String = "",   // ISO-UTC "updated since" cursor for delta sync
     )
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -42,6 +47,10 @@ class SettingsStore(private val context: Context) {
             proteinTarget = p[PROTEIN_TARGET] ?: 0,
             themeMode = p[THEME_MODE] ?: "system",
             colorScheme = p[COLOR_SCHEME] ?: "forest",
+            syncBackend = p[SYNC_BACKEND] ?: "sheets",
+            serverUrl = p[SERVER_URL] ?: "",
+            authToken = p[AUTH_TOKEN] ?: "",
+            serverSyncCursor = p[SERVER_SYNC_CURSOR] ?: "",
         )
     }
 
@@ -56,10 +65,21 @@ class SettingsStore(private val context: Context) {
     suspend fun setProteinTarget(v: Int) = edit { it[PROTEIN_TARGET] = v }
     suspend fun setThemeMode(v: String) = edit { it[THEME_MODE] = v }
     suspend fun setColorScheme(v: String) = edit { it[COLOR_SCHEME] = v }
+    suspend fun setSyncBackend(v: String) = edit { it[SYNC_BACKEND] = v }
+    suspend fun setServerUrl(v: String) = edit { it[SERVER_URL] = v.trim().trimEnd('/') }
+    suspend fun setAuthToken(v: String) = edit { it[AUTH_TOKEN] = v }
+    suspend fun setServerSyncCursor(v: String) = edit { it[SERVER_SYNC_CURSOR] = v }
 
     suspend fun clearAccount() = context.dataStore.edit {
         it.remove(ACCOUNT_NAME)
         it.remove(LAST_SYNC_AT)
+    }
+
+    /** Disconnect the server backend: drops the JWT + cursor and reverts to the Sheets backend. */
+    suspend fun clearServerAuth() = context.dataStore.edit {
+        it.remove(AUTH_TOKEN)
+        it.remove(SERVER_SYNC_CURSOR)
+        it[SYNC_BACKEND] = "sheets"
     }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
@@ -78,5 +98,9 @@ class SettingsStore(private val context: Context) {
         val PROTEIN_TARGET = intPreferencesKey("protein_target")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val COLOR_SCHEME = stringPreferencesKey("color_scheme")
+        val SYNC_BACKEND = stringPreferencesKey("sync_backend")
+        val SERVER_URL = stringPreferencesKey("server_url")
+        val AUTH_TOKEN = stringPreferencesKey("auth_token")
+        val SERVER_SYNC_CURSOR = stringPreferencesKey("server_sync_cursor")
     }
 }
