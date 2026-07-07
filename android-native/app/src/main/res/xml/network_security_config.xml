@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default policy keeps cleartext (plain HTTP) disabled, so the Tailscale server
+  (https://askesis.<tailnet>.ts.net) and all other traffic must use TLS.
+
+  The one exception is 10.0.2.2 — the Android emulator's alias for the host
+  machine's loopback — so a locally-run FastAPI backend can be exercised over
+  http://10.0.2.2:8000 during development. Real devices never resolve this host.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

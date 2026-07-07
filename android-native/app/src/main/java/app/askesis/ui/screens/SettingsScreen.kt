@@ -37,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.askesis.auth.GoogleAuthManager
+import app.askesis.auth.ServerAuthManager
 import app.askesis.data.prefs.SettingsStore
 import app.askesis.data.repo.AskesisRepository
 import app.askesis.data.sync.SyncEngine
@@ -46,6 +47,7 @@ import app.askesis.ui.components.PlainField
 import app.askesis.ui.components.orBlank
 import app.askesis.ui.components.toIntOrNullSafe
 import app.askesis.ui.repository
+import app.askesis.ui.serverAuthManager
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,6 +56,7 @@ import java.util.Locale
 class SettingsViewModel(
     private val repo: AskesisRepository,
     private val auth: GoogleAuthManager,
+    private val serverAuth: ServerAuthManager,
 ) : ViewModel() {
     val settings = repo.settings.settings
     var syncing by mutableStateOf(false); private set
@@ -80,6 +83,14 @@ class SettingsViewModel(
     }
 
     fun setSpreadsheetId(id: String) = viewModelScope.launch { repo.settings.setSpreadsheetId(id) }
+
+    /** Save the server URL and make it (or Sheets, if cleared) the active sync backend. */
+    fun setServerUrl(url: String) = viewModelScope.launch {
+        repo.settings.setServerUrl(url)
+        repo.settings.setSyncBackend(if (url.isBlank()) "sheets" else "server")
+    }
+    fun startServerLogin(url: String) { if (url.isNotBlank()) serverAuth.startLogin(url) }
+    fun disconnectServer() = viewModelScope.launch { repo.settings.clearServerAuth() }
     fun setThemeMode(v: String) = viewModelScope.launch { repo.settings.setThemeMode(v) }
     fun setColorScheme(v: String) = viewModelScope.launch { repo.settings.setColorScheme(v) }
     fun setWeightUnit(v: String) = viewModelScope.launch { repo.settings.setWeightUnit(v) }
@@ -105,7 +116,7 @@ class SettingsViewModel(
 
     companion object {
         val Factory = viewModelFactory {
-            initializer { SettingsViewModel(repository(), authManager()) }
+            initializer { SettingsViewModel(repository(), authManager(), serverAuthManager()) }
         }
     }
 }
@@ -157,6 +168,45 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel(factory = SettingsViewModel
                     onClick = { vm.setSpreadsheetId(sheetId) },
                     enabled = sheetId.trim() != s.spreadsheetId,
                 ) { Text("Save Sheet ID") }
+            }
+        }
+
+        // ── Server (Tailscale) ──
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Server (Tailscale)", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Sync with your self-hosted Askesis server instead of Google Sheets — one " +
+                        "source of truth shared with the web app. The app still works fully offline; " +
+                        "changes reconcile on the next sync.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                var serverUrl by remember(s.serverUrl) { mutableStateOf(s.serverUrl) }
+                PlainField("Server URL (https://askesis.<tailnet>.ts.net)", serverUrl, { serverUrl = it })
+                Button(
+                    onClick = { vm.setServerUrl(serverUrl) },
+                    enabled = serverUrl.trim().trimEnd('/') != s.serverUrl,
+                ) { Text("Save server URL") }
+
+                if (s.serverUrl.isNotBlank()) {
+                    val connected = s.authToken.isNotBlank()
+                    Text(
+                        "Active backend: " + if (s.syncBackend == "server") "server" else "Google Sheets",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        if (connected) "Signed in to server" else "Not signed in to server",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { vm.startServerLogin(s.serverUrl) }) {
+                            Text(if (connected) "Re-authenticate" else "Sign in to server")
+                        }
+                        if (connected) {
+                            OutlinedButton(onClick = { vm.disconnectServer() }) { Text("Disconnect") }
+                        }
+                    }
+                }
             }
         }
 
