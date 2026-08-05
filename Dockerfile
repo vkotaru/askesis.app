@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Single image: builds the SvelteKit SPA, then serves it + the FastAPI API
-# from one Python process (same-origin), mirroring the Railway/nixpacks build.
+# from one Python process (same-origin). This is the only supported deployment.
 
 # ---- Stage 1: build the frontend (static SPA) ----
 FROM node:20-slim AS frontend

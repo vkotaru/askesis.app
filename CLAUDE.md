@@ -37,33 +37,20 @@ cd backend
 ./db.sh fresh                 # DESTRUCTIVE — dev only
 ```
 
-**Android** (native Kotlin app — see *Three clients* below):
-
-```bash
-cd android-native
-echo "sdk.dir=$HOME/Android/Sdk" > local.properties   # if absent
-./gradlew :app:assembleDebug
-./run.sh --build              # boots the `askesis_test` AVD, installs, launches
-```
-
-**Self-hosted deploy**: `./deploy.sh` (git pull → `docker compose down` → `up -d --build`).
+**Deploy**: `./deploy.sh` (git pull → `docker compose down` → `up -d --build`).
 Read `SELF_HOSTING.md` first — it covers the Tailscale sidecar, the `ENCRYPTION_KEY`
 constraint, and why the app gets its own tailnet hostname.
 
-## Three clients, one data model
+## One client
 
-| Client | Where | Storage | Talks to |
-|---|---|---|---|
-| Web SPA / PWA | `frontend/` | Dexie (IndexedDB) | FastAPI over cookie auth, same-origin |
-| Native Kotlin | `android-native/` | Room | **either** the FastAPI server (bearer JWT over Tailscale) **or** a Google Sheet — user picks at runtime in Settings |
-| Capacitor wrapper | `frontend/android/` | — | **Retired.** See below |
+The SvelteKit PWA in `frontend/` is the only client. It stores to Dexie (IndexedDB) and talks
+to the FastAPI backend same-origin over cookie auth.
 
-The Capacitor wrapper is dead code kept in the tree. Commit 5a72968 handed the
-`app.askesis.app` applicationId to the native Kotlin app, and
-`.github/workflows/android-release.yml` (triggered by a `vMAJOR.MINOR.PATCH` tag) now builds
-and ships `android-native`. `README.md` still describes the Capacitor path as current and
-`android-native/README.md` + `android-native/run.sh` still say `app.askesis.native` — all
-three are stale. Fix them rather than following them.
+The native Kotlin app (`android-native/`) and the Capacitor wrapper (`frontend/android/`) were
+both deleted at tag `v0.1.0-pre-simplify`, along with Railway support. Check out that tag if
+you need any of it. **This repo is mid-simplification** — see
+`~/.claude/plans/lots-of-changes-in-eager-hinton.md` for the phased plan (Google Drive/Sheets
+and OAuth are still present but are being removed).
 
 ## Backend (`backend/`)
 

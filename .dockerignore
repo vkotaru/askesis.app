@@ -17,7 +17,6 @@ frontend/.svelte-kit/
 backend/static/
 
 # Native app — not part of the server image
-android-native/
 
 # Local env
 .env

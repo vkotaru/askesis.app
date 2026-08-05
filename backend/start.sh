@@ -1,6 +1,6 @@
 #!/bin/bash
 # Local development start script
-# For production, Railway uses nixpacks.toml
+# For production, see the Dockerfile (docker compose / ./deploy.sh)
 
 set -e
 

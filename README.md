@@ -27,8 +27,7 @@ A personal fitness tracking app for daily logs, nutrition, progress photos, and 
 - **Database**: PostgreSQL (SQLite for local dev)
 - **Auth**: Google OAuth (cookie on web, bearer token on native)
 - **Photo Storage**: Google Drive API
-- **Web Deployment**: Railway
-- **Mobile**: Capacitor → Android App Bundle published via GitHub Actions to Google Play
+- **Deployment**: self-hosted Docker on a home server, behind Tailscale (see [SELF_HOSTING.md](SELF_HOSTING.md))
 
 ## Local Development
 
@@ -70,19 +69,19 @@ npm run dev
 
 App runs at http://localhost:5173
 
-## Production Deployment (Railway)
+## Production Deployment (self-hosted)
 
-[Railway](https://railway.app) is a platform that makes deploying apps easy - connect your GitHub repo and it handles the rest.
+Askesis runs as a single Docker image (SvelteKit SPA + FastAPI served same-origin)
+on a home server, reachable only over your tailnet via a Tailscale sidecar.
 
-### Quick Start
+```bash
+cp .env.example .env    # fill in secrets + TS_AUTHKEY
+./deploy.sh             # git pull, docker compose down, up --build
+# → https://askesis.<your-tailnet>.ts.net
+```
 
-1. **Create a Railway account** at [railway.app](https://railway.app)
-2. **New Project** → **Deploy from GitHub repo** → Select this repo
-3. **Add a PostgreSQL database**: Click **+ New** → **Database** → **PostgreSQL**
-4. **Set environment variables** (see table below) in the service settings
-5. Railway auto-deploys on every push to main
-
-The app uses `nixpacks.toml` and `railway.json` for build configuration - no Dockerfile needed.
+[SELF_HOSTING.md](SELF_HOSTING.md) is the full runbook — first-time setup, the
+Tailscale sidecar, and the gotchas.
 
 ### Environment Variables
 
@@ -104,37 +103,17 @@ The app uses `nixpacks.toml` and `railway.json` for build configuration - no Doc
 3. Configure OAuth consent screen:
    - Add scope: `https://www.googleapis.com/auth/drive.file`
 4. Create OAuth 2.0 credentials (Web application)
-5. Add authorized redirect URIs:
-   - `https://your-domain.com/auth/callback` (web)
-   - `https://your-domain.com/auth/mobile/callback` (Capacitor/Android)
+5. Add the authorized redirect URI:
+   - `https://askesis.<your-tailnet>.ts.net/auth/callback`
 
-## Android App
+## Mobile
 
-The native Android app is a Capacitor wrapper around the same SvelteKit
-frontend. It signs in with the same Google account as the web app and syncs
-to the same backend, so a user can log a meal on the phone offline, plug in,
-and see it in the web UI.
+Askesis is a PWA — install it from the browser on Android or iOS. It works
+offline (IndexedDB) and syncs when it reconnects.
 
-### Local Android build
-
-```bash
-# One-time
-cp frontend/.env.example frontend/.env.local
-# (edit if you want to target staging instead of prod)
-
-# Each build
-./build-android.sh        # debug APK for sideloading
-./build-release.sh        # signed AAB for Play Store upload
-```
-
-### Continuous delivery
-
-Pushing a tag named `vMAJOR.MINOR.PATCH` runs
-[.github/workflows/android-release.yml](.github/workflows/android-release.yml),
-which derives `versionCode`/`versionName` from the tag, builds, signs, attaches
-the AAB to the GitHub release, and uploads to the Play Console internal-test
-track. See [docs/RELEASE.md](docs/RELEASE.md) for the first-time setup
-checklist (Google Cloud, Play Console, signing keystore, repo secrets).
+There is no separate native app. The Capacitor wrapper and the native Kotlin
+client were both retired in `v0.1.0-pre-simplify`; check out that tag if you
+need them.
 
 ## License
 
