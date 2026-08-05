@@ -1,7 +1,6 @@
 # Self-hosted Askesis for your home server, exposed on the tailnet under its OWN
 # hostname via a Tailscale sidecar (so it installs as its own PWA — a different
-# port on a shared host collides with other PWAs on Android). Railway is left
-# untouched (railway.json / nixpacks.toml).
+# port on a shared host collides with other PWAs on Android).
 #
 #   cp .env.example .env   # fill in secrets + TS_AUTHKEY
 #   ./deploy.sh

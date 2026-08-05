@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <!-- Temp file the camera app writes the captured JPEG into, before we copy it
-         into the app's private photos cache. -->
-    <cache-path name="camera_capture" path="capture/" />
-    <files-path name="photos" path="photos/" />
-</paths>
