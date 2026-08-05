@@ -340,14 +340,13 @@ export interface ImportResult {
 
 // API Client
 import { apiUrl } from '$lib/config';
-import { authHeaders, tryRefreshToken } from '$lib/auth';
+import { tryRefreshToken } from '$lib/auth';
 
 async function doFetch(url: string, options?: RequestInit): Promise<Response> {
   return fetch(apiUrl(url), {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(await authHeaders()),
       ...options?.headers,
     },
     credentials: 'include',
@@ -387,7 +386,6 @@ async function fetchFormData<T>(url: string, formData: FormData): Promise<T> {
   const res = await fetch(apiUrl(url), {
     method: 'POST',
     body: formData,
-    headers: await authHeaders(),
     credentials: 'include',
   });
 

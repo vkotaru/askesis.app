@@ -77,7 +77,5 @@ Updating later is just `./deploy.sh` again.
 - **`TS_ACCEPT_DNS=false`** is set on the sidecar on purpose — it stops Tailscale
   from overriding the container's DNS, so the app can still resolve the `db`
   service. Don't remove it.
-- **CORS_ORIGINS** only matters for the Capacitor apps / cross-origin clients;
-  the web app is same-origin. Put your `ts.net` host there anyway.
-- Native Kotlin Android app is **not** affected — it talks to Google
-  Sheets/Drive directly and never touches this server.
+- **CORS_ORIGINS** only matters for cross-origin clients; the PWA is served
+  same-origin with the API. Put your `ts.net` host there anyway.

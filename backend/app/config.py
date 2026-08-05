@@ -13,19 +13,13 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     allowed_emails: list[str] = []
     dev_mode: bool = False  # Must explicitly enable in .env for development
-    # CORS allowed origins. Defaults cover local web dev (Vite) and the two
-    # origins a Capacitor app loads from on Android/iOS. Production must
-    # extend this via CORS_ORIGINS env var to include the deployed web host.
+    # CORS allowed origins. The web app is served same-origin with the API, so
+    # this only needs to cover local web dev (Vite). Production can extend it
+    # via the CORS_ORIGINS env var if a cross-origin client is ever added.
     cors_origins: list[str] = [
         "http://localhost:5173",
-        "https://localhost",  # Capacitor Android (androidScheme: 'https')
-        "capacitor://localhost",  # Capacitor iOS
     ]
     token_expire_hours: int = 720  # 30 days - stay logged in longer
-
-    # Mobile (Capacitor) deep-link redirect for OAuth token handoff.
-    # The mobile callback redirects here with a `#token=<jwt>` fragment.
-    mobile_redirect_uri: str = "app.askesis.app://auth/callback"
 
     # External food databases
     usda_api_key: str = (

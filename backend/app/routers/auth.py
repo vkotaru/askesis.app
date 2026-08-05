@@ -220,49 +220,6 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     return response
 
 
-@router.get("/mobile/login")
-async def mobile_login(request: Request, db: Session = Depends(get_db)):
-    """Start OAuth from a Capacitor/native client.
-
-    On success, the callback redirects to the app's deep link with a
-    `#token=<jwt>` fragment instead of setting a cookie.
-    """
-    if settings.dev_mode:
-        # In dev, hand back a token immediately so we can test the deep-link flow.
-        user = get_or_create_dev_user(db)
-        access_token = create_access_token({"sub": user.email})
-        return RedirectResponse(
-            url=f"{settings.mobile_redirect_uri}#token={access_token}"
-        )
-
-    redirect_uri = request.url_for("mobile_auth_callback")
-    redirect_uri = str(redirect_uri).replace("http://", "https://")
-
-    return await oauth.google.authorize_redirect(
-        request,
-        redirect_uri,
-        access_type="offline",
-    )
-
-
-@router.get("/mobile/callback", name="mobile_auth_callback")
-async def mobile_auth_callback(request: Request, db: Session = Depends(get_db)):
-    if settings.dev_mode:
-        user = get_or_create_dev_user(db)
-        access_token = create_access_token({"sub": user.email})
-        return RedirectResponse(
-            url=f"{settings.mobile_redirect_uri}#token={access_token}"
-        )
-
-    token = await oauth.google.authorize_access_token(request)
-    user = _upsert_user_from_google(db, token)
-
-    access_token = create_access_token({"sub": user.email})
-    # Hand the JWT to the app via deep link. Fragment (#) keeps the token out of
-    # server logs / browser history more reliably than a query string.
-    return RedirectResponse(url=f"{settings.mobile_redirect_uri}#token={access_token}")
-
-
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
     return {

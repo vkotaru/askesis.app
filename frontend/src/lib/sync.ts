@@ -9,7 +9,6 @@ import { type Table } from 'dexie';
 import { db, type PendingSyncEntry, type SyncOperation } from './db';
 import { browser } from '$app/environment';
 import { apiUrl } from './config';
-import { authHeaders } from './auth';
 
 // ── Stores ───────────────────────────────────────────────────────────────────
 
@@ -152,7 +151,7 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
   try {
     const res = await fetch(apiUrl('/api/sync/push'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+      headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ changes: entries }),
     });
@@ -198,10 +197,7 @@ export async function pullFromServer(): Promise<void> {
     const lastSync = get(lastSyncTime) || '1970-01-01T00:00:00Z';
     const res = await fetch(
       apiUrl(`/api/sync/changes?since=${encodeURIComponent(lastSync)}`),
-      {
-        headers: await authHeaders(),
-        credentials: 'include',
-      },
+      { credentials: 'include' },
     );
 
     if (res.status === 404) {
