@@ -119,9 +119,9 @@ Three layers, and the distinction matters:
 3. `lib/stores/data.ts` (`offlineApi`) — the offline-aware layer components should call.
    Writes hit Dexie first, then queue into `pendingSync`.
 
-`lib/config.ts` + `lib/auth.ts` handle the web/native split: web sends
-`credentials: 'include'` with an empty `API_BASE`; native uses an absolute `VITE_API_BASE`
-baked in at build time plus a bearer token from `@capacitor/preferences`.
+`lib/config.ts` is just an `apiUrl()` passthrough (every request is same-origin) and
+`lib/auth.ts` is only `tryRefreshToken()` — auth rides on the `access_token` cookie, so every
+fetch just needs `credentials: 'include'`.
 
 ### The sync protocol
 

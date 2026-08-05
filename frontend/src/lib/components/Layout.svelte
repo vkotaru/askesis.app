@@ -5,8 +5,6 @@
   import type { User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
   import { user as userStore } from '$lib/stores/user';
-  import { clearAuthToken } from '$lib/auth';
-  import { IS_NATIVE, apiUrl } from '$lib/config';
   import SyncStatus from './SyncStatus.svelte';
 
   export let user: User;
@@ -29,7 +27,7 @@
   $: isLocalUser = user.email === 'local@askesis.local';
   $: filteredNavItems = navItems.filter(item => !(isLocalUser && item.href === '/shared'));
 
-  async function handleSignout(e: MouseEvent) {
+  function handleSignout(e: MouseEvent) {
     // Local profile: never hit the server.
     if (localStorage.getItem('askesis_local_user')) {
       e.preventDefault();
@@ -38,19 +36,8 @@
       return;
     }
 
-    // Native (bearer-token) sign-out: clear the stored JWT and bounce back to login.
-    // The default <a href="/auth/logout"> only clears a cookie, which we don't have here.
-    if (IS_NATIVE) {
-      e.preventDefault();
-      await clearAuthToken();
-      // Best-effort tell the server (in case it wants to log the event) — ignore errors.
-      try {
-        await fetch(apiUrl('/auth/logout'), { credentials: 'include' });
-      } catch {
-        // offline or unreachable — local sign-out is what matters
-      }
-      userStore.set(null);
-    }
+    // Cloud user: fall through to the <a href="/auth/logout"> navigation, which
+    // clears the auth cookie server-side.
   }
 
   let showMobileMenu = false;

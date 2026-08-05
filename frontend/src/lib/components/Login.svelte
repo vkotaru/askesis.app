@@ -4,8 +4,7 @@
   import { settings } from '$lib/stores/settings';
   import { hydrateFromServer } from '$lib/stores/data';
   import { api } from '$lib/api/client';
-  import { setAuthToken } from '$lib/auth';
-  import { apiUrl, IS_NATIVE } from '$lib/config';
+  import { apiUrl } from '$lib/config';
   import { sync, countLocalProfileData, migrateLocalToCloud } from '$lib/sync';
 
   interface LocalProfile {
@@ -130,40 +129,9 @@
     cloudLoginBusy = true;
 
     try {
-      if (!IS_NATIVE) {
-        // Web: just navigate. The cookie comes back via /auth/callback redirect.
-        window.location.href = apiUrl('/auth/login');
-        return;
-      }
-
-      // Native: open system browser to /auth/mobile/login. The callback
-      // redirects to app.askesis.app://auth/callback#token=<jwt>, which fires
-      // appUrlOpen on the App plugin.
-      const [{ Browser }, { App }] = await Promise.all([
-        import('@capacitor/browser'),
-        import('@capacitor/app'),
-      ]);
-
-      const handle = await App.addListener('appUrlOpen', async ({ url }) => {
-        const match = url.match(/[#?&]token=([^&]+)/);
-        if (!match) return;
-        await handle.remove();
-        try {
-          await Browser.close();
-        } catch {
-          // close() throws if the browser isn't open; ignore.
-        }
-        try {
-          await setAuthToken(decodeURIComponent(match[1]));
-          await bootstrapCloudUser();
-        } catch (err) {
-          errorMsg = err instanceof Error ? err.message : 'Sign-in failed';
-        } finally {
-          cloudLoginBusy = false;
-        }
-      });
-
-      await Browser.open({ url: apiUrl('/auth/mobile/login') });
+      // Navigate to the OAuth start. The cookie comes back via the
+      // /auth/callback redirect.
+      window.location.href = apiUrl('/auth/login');
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Sign-in failed';
       cloudLoginBusy = false;
