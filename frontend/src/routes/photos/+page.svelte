@@ -3,7 +3,7 @@
   import { format, addDays, subDays, parseISO } from 'date-fns';
   import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image, AlertTriangle, GitCompare, X } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type ProgressPhoto, type PhotoView, type DriveStatus } from '$lib/api/client';
+  import { api, type ProgressPhoto, type PhotoView } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
   import { isOnline } from '$lib/sync';
   import AuthImage from '$lib/components/AuthImage.svelte';
@@ -18,7 +18,6 @@
   let photos: ProgressPhoto[] = [];
   let loading = true;
   let uploading: PhotoView | null = null;
-  let driveStatus: DriveStatus | null = null;
   let fileInputs: Record<PhotoView, HTMLInputElement | null> = {
     front: null,
     side: null,
@@ -82,15 +81,6 @@
     loadComparePhotos();
   }
 
-  async function checkDriveStatus() {
-    try {
-      driveStatus = await api.getDriveStatus();
-    } catch (err) {
-      console.error('Failed to check Drive status:', err);
-      driveStatus = { configured: false, working: false, message: 'Unable to check Drive status' };
-    }
-  }
-
   async function loadPhotos(silent = false) {
     if (!silent) loading = true;
     try {
@@ -104,7 +94,6 @@
   }
 
   onMount(() => {
-    checkDriveStatus();
     loadPhotos();
   });
 
@@ -251,27 +240,6 @@
       {/if}
     </div>
   </div>
-
-  {#if driveStatus && !driveStatus.working}
-    <div class="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-      <div class="flex items-start gap-3">
-        <AlertTriangle size={20} class="text-amber-500 mt-0.5 flex-shrink-0" />
-        <div>
-          <p class="font-medium text-amber-800 dark:text-amber-200">Google Drive Not Connected</p>
-          <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
-            {driveStatus.message}
-          </p>
-          <a
-            href="/auth/logout"
-            data-sveltekit-reload
-            class="inline-block mt-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
-          >
-            Log out and reconnect
-          </a>
-        </div>
-      </div>
-    </div>
-  {/if}
 
   {#if compareMode}
     <!-- Comparison View -->
@@ -475,7 +443,7 @@
         <li>Wear the same or similar clothing for accurate comparison</li>
         <li>Stand in the same position each time</li>
         <li>Take photos at the same time of day (morning is best)</li>
-        <li>Photos are automatically resized, optimized, and stored in your Google Drive</li>
+        <li>Photos are automatically resized, optimized, and stored on your server</li>
       </ul>
     </div>
   {/if}

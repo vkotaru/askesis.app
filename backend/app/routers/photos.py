@@ -2,11 +2,10 @@ import io
 import logging
 import uuid
 from datetime import date, datetime
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from PIL import Image, ImageOps
@@ -18,6 +17,7 @@ try:
 except ImportError:
     pass  # HEIC support optional
 
+from app import storage
 from app.config import get_settings
 from app.database import get_db
 from app.models import User, ProgressPhoto, PhotoView
@@ -36,7 +36,8 @@ class PhotoResponse(BaseModel):
     id: int
     date: date
     view: str
-    file_path: str | None  # Legacy, may be None for Drive-stored photos
+    # No file_path: the client reads photos through `url` and never needs the
+    # on-disk location, which would leak the server's filesystem layout.
     drive_file_id: str | None  # Google Drive file ID
     notes: str | None
     url: str
@@ -70,7 +71,10 @@ def process_image_bytes(
 
 
 def require_drive_access(user: User):
-    """Ensure user has Google Drive access configured."""
+    """Ensure user has Google Drive access configured.
+
+    PHASE 5: delete. Uploads no longer touch Drive, so nothing calls this.
+    """
     if not user.google_refresh_token:
         raise HTTPException(
             status_code=403,
@@ -110,7 +114,6 @@ def get_photos(
             id=p.id,
             date=p.date,
             view=p.view.value,
-            file_path=p.file_path,
             drive_file_id=p.drive_file_id,
             notes=p.notes,
             url=f"/api/photos/file/{p.id}",
@@ -141,7 +144,6 @@ def get_photos_by_date(
             id=p.id,
             date=p.date,
             view=p.view.value,
-            file_path=p.file_path,
             drive_file_id=p.drive_file_id,
             notes=p.notes,
             url=f"/api/photos/file/{p.id}",
@@ -215,7 +217,6 @@ async def upload_photo(
     current_user: User = Depends(get_current_user),
 ):
     settings = get_settings()
-    require_drive_access(current_user)
 
     # Validate file type
     allowed_types = {
@@ -256,54 +257,38 @@ async def upload_photo(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
 
-    # Generate unique filename for Drive
+    # Filename format is load-bearing: scripts/adopt_photos.py parses user id,
+    # date and view back out of it to match hand-copied files to rows.
     filename = f"askesis_{current_user.id}_{photo_date.isoformat()}_{view.value}_{uuid.uuid4().hex[:8]}.jpg"
 
-    # Resolve the pinned Askesis folder once (creates + caches on first use)
+    # Write to the server's own disk. Store the RELATIVE path.
     try:
-        askesis_folder_id = google_drive.resolve_askesis_folder_id(db, current_user)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to resolve Askesis folder: {e}"
-        )
-
-    # Upload to Google Drive
-    try:
-        drive_file_id = google_drive.upload_photo(
-            get_refresh_token(current_user),
-            processed_content,
-            filename,
-            askesis_folder_id=askesis_folder_id,
+        stored_path = storage.save_media(
+            storage.PHOTOS_BUCKET, filename, processed_content
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to upload to Google Drive: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to store photo: {e}")
 
-    # Delete old photo from Drive if replacing
-    if existing and existing.drive_file_id:
-        try:
-            google_drive.delete_photo(
-                get_refresh_token(current_user), existing.drive_file_id
-            )
-        except Exception:
-            pass  # Ignore errors deleting old file
-
-        # Update existing record
-        existing.drive_file_id = drive_file_id
-        existing.file_path = None  # Clear legacy path
+    if existing:
+        # Replacing: drop the superseded file before repointing the row, or it
+        # is orphaned on disk with nothing referencing it.
+        old_path = existing.file_path
+        existing.file_path = stored_path
+        existing.drive_file_id = None
         existing.notes = notes
         db.commit()
         db.refresh(existing)
         photo = existing
+        if old_path and old_path != stored_path:
+            storage.delete_media(old_path, storage.PHOTOS_BUCKET)
     else:
         # Create new record
         photo = ProgressPhoto(
             user_id=current_user.id,
             date=photo_date,
             view=view,
-            drive_file_id=drive_file_id,
-            file_path=None,
+            drive_file_id=None,
+            file_path=stored_path,
             notes=notes,
         )
         db.add(photo)
@@ -314,7 +299,6 @@ async def upload_photo(
         id=photo.id,
         date=photo.date,
         view=photo.view.value,
-        file_path=photo.file_path,
         drive_file_id=photo.drive_file_id,
         notes=photo.notes,
         url=f"/api/photos/file/{photo.id}",
@@ -327,7 +311,13 @@ def get_photo_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    photo = db.query(ProgressPhoto).filter(ProgressPhoto.id == photo_id).first()
+    photo = (
+        db.query(ProgressPhoto)
+        .filter(ProgressPhoto.id == photo_id)
+        # Match get_photos: a soft-deleted photo must not stay fetchable by id.
+        .filter(ProgressPhoto.deleted_at.is_(None))
+        .first()
+    )
 
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
@@ -336,12 +326,20 @@ def get_photo_file(
     if photo.user_id != current_user.id:
         check_view_permission(photo.user_id, "photos", db, current_user)
 
-    # Get the photo owner for their refresh token
+    # Local disk first. FileResponse streams and sets ETag/Last-Modified, which
+    # the service worker's CacheFirst rule on /api/photos/file/* relies on.
+    if photo.file_path:
+        path = storage.resolve_media_path(photo.file_path, storage.PHOTOS_BUCKET)
+        if path.is_file():
+            return FileResponse(path, media_type="image/jpeg")
+
+    # PHASE 5: delete from here to the end of this function — Google Drive
+    # fallback, kept only so photos not yet adopted onto local disk stay
+    # servable during the migration.
     owner = db.query(User).filter(User.id == photo.user_id).first()
     if not owner:
         raise HTTPException(status_code=404, detail="Photo owner not found")
 
-    # Download from Google Drive
     if photo.drive_file_id:
         if not owner.google_refresh_token:
             raise HTTPException(
@@ -357,12 +355,6 @@ def get_photo_file(
             raise HTTPException(
                 status_code=500, detail=f"Failed to download from Google Drive: {e}"
             )
-
-    # Legacy: file stored locally (should not happen for new photos)
-    if photo.file_path:
-        file_path = Path(photo.file_path)
-        if file_path.exists():
-            return Response(content=file_path.read_bytes(), media_type="image/jpeg")
 
     raise HTTPException(status_code=404, detail="Photo file not found")
 
@@ -383,6 +375,9 @@ def delete_photo(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
+    # Soft delete only: the row is still handed to clients by /api/sync/changes
+    # so they can tombstone their local copy, and unlinking the file here would
+    # make an undelete unrecoverable. Files are reclaimed out-of-band, not here.
     photo.deleted_at = datetime.utcnow()
     db.commit()
 

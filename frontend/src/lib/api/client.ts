@@ -102,7 +102,6 @@ export interface Meal {
   calories?: number;
   description?: string;
   photo_path?: string;
-  drive_file_id?: string;
   ai_analysis?: string;
   photo_url?: string;
   food_items?: MealFoodItem[];
@@ -280,16 +279,8 @@ export interface ProgressPhoto {
   id: number;
   date: string;
   view: PhotoView;
-  file_path?: string;  // Legacy local path (deprecated)
-  drive_file_id?: string;  // Google Drive file ID
   notes?: string;
   url: string;
-}
-
-export interface DriveStatus {
-  configured: boolean;
-  working: boolean;
-  message: string;
 }
 
 // Sharing types
@@ -624,7 +615,6 @@ export const api = {
   deletePhoto: (id: number) =>
     fetchJSON(`/api/photos/${id}`, { method: 'DELETE' }),
   getPhotoUrl: (id: number) => `/api/photos/file/${id}`,
-  getDriveStatus: () => fetchJSON<DriveStatus>('/api/photos/drive-status'),
   disconnectDrive: () => fetchJSON<{ message: string }>('/api/photos/drive/disconnect', { method: 'POST' }),
 
   // Sharing

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import date, datetime
@@ -37,10 +37,11 @@ from app.models import (
 from app.routers.auth import get_current_user, check_view_permission
 from app.encryption import get_refresh_token
 from app import google_drive
+from app import storage
 
 router = APIRouter()
 
-# Temp directory for Gemini analysis (photos are stored in Google Drive)
+# Temp directory for Gemini analysis
 TEMP_DIR = Path(__file__).parent.parent.parent / "uploads" / "temp"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -49,7 +50,10 @@ MAX_LIMIT = 500
 
 
 def require_drive_access(user: User):
-    """Ensure user has Google Drive access configured."""
+    """Ensure user has Google Drive access configured.
+
+    PHASE 5: delete. Meal photo uploads no longer touch Drive.
+    """
     if not user.google_refresh_token:
         raise HTTPException(
             status_code=403,
@@ -507,7 +511,6 @@ async def upload_meal_photo(
 ):
     """Upload a photo for a meal and optionally analyze with Gemini."""
     settings = get_settings()
-    require_drive_access(current_user)
 
     meal = (
         db.query(Meal)
@@ -543,42 +546,24 @@ async def upload_meal_photo(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
 
-    # Generate unique filename for Drive
+    # Filename format is load-bearing: scripts/adopt_photos.py parses user id
+    # and meal id back out of it to match hand-copied files to rows.
     filename = f"meal_{current_user.id}_{meal_id}_{uuid.uuid4().hex[:8]}.jpg"
 
-    # Resolve the pinned Askesis folder once (creates + caches on first use)
+    # Write to the server's own disk. Store the RELATIVE path.
     try:
-        askesis_folder_id = google_drive.resolve_askesis_folder_id(db, current_user)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to resolve Askesis folder: {e}"
-        )
-
-    # Upload to Google Drive
-    try:
-        drive_file_id = google_drive.upload_meal_photo(
-            get_refresh_token(current_user),
-            processed_content,
-            filename,
-            askesis_folder_id=askesis_folder_id,
+        stored_path = storage.save_media(
+            storage.MEALS_BUCKET, filename, processed_content
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to upload to Google Drive: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to store photo: {e}")
 
-    # Delete old photo from Drive if replacing
-    if meal.drive_file_id:
-        try:
-            google_drive.delete_photo(
-                get_refresh_token(current_user), meal.drive_file_id
-            )
-        except Exception:
-            pass  # Ignore errors deleting old file
-
-    # Update meal with Drive file ID
-    meal.drive_file_id = drive_file_id
-    meal.photo_path = None  # Clear legacy path
+    # Drop the superseded file before repointing the row.
+    old_path = meal.photo_path
+    meal.photo_path = stored_path
+    meal.drive_file_id = None
+    if old_path and old_path != stored_path:
+        storage.delete_media(old_path, storage.MEALS_BUCKET)
 
     # Analyze with Gemini if requested
     analysis = None
@@ -620,12 +605,19 @@ def get_meal_photo(
     if meal.user_id != current_user.id:
         check_view_permission(meal.user_id, "nutrition", db, current_user)
 
-    # Get the meal owner for their refresh token
+    # Local disk first. FileResponse streams and sets ETag/Last-Modified.
+    if meal.photo_path:
+        path = storage.resolve_media_path(meal.photo_path, storage.MEALS_BUCKET)
+        if path.is_file():
+            return FileResponse(path, media_type="image/jpeg")
+
+    # PHASE 5: delete from here to the end of this function — Google Drive
+    # fallback, kept only so photos not yet adopted onto local disk stay
+    # servable during the migration.
     owner = db.query(User).filter(User.id == meal.user_id).first()
     if not owner:
         raise HTTPException(status_code=404, detail="Meal owner not found")
 
-    # Download from Google Drive
     if meal.drive_file_id:
         if not owner.google_refresh_token:
             raise HTTPException(
@@ -641,12 +633,6 @@ def get_meal_photo(
             raise HTTPException(
                 status_code=500, detail=f"Failed to download from Google Drive: {e}"
             )
-
-    # Legacy: file stored locally (should not happen for new photos)
-    if meal.photo_path:
-        file_path = Path(meal.photo_path)
-        if file_path.exists():
-            return Response(content=file_path.read_bytes(), media_type="image/jpeg")
 
     raise HTTPException(status_code=404, detail="Photo file not found")
 

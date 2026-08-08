@@ -73,7 +73,6 @@ export interface LocalMeal {
   calories?: number;
   description?: string;
   photo_path?: string;
-  drive_file_id?: string;
   ai_analysis?: string;
   photo_url?: string;
   food_items?: Array<{
@@ -143,7 +142,6 @@ export interface LocalPhoto {
   date: string;
   userId?: number;
   view: 'front' | 'side' | 'back';
-  drive_file_id?: string;
   notes?: string;
   url?: string;
   updatedAt: string;

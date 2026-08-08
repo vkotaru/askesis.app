@@ -1,6 +1,11 @@
 import sys
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+# backend/ — the default uploads dir sits next to app/, and the Docker image
+# bind-mounts the host's ./data/uploads over it.
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -29,6 +34,11 @@ class Settings(BaseSettings):
     # File upload limits (in bytes)
     max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)
     max_csv_size: int = 10 * 1024 * 1024  # 10MB
+
+    # Where progress/meal photos are written. Override with UPLOADS_DIR when the
+    # container mounts storage elsewhere. app/storage.py resolves this once at
+    # import and every stored path is relative to it.
+    uploads_dir: str = str(_BACKEND_DIR / "uploads")
 
     class Config:
         env_file = ".env"
