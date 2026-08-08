@@ -16,8 +16,34 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
+import re
 
 from app.database import Base
+
+_USERNAME_STRIP_RE = re.compile(r"[^a-z0-9._-]")
+
+
+def derive_username(email: str) -> str:
+    """Derive a username from an email local-part.
+
+    Lowercased and restricted to ``[a-z0-9._-]``. Used both as the Python-side
+    default for rows created without an explicit username (Google sign-up, the
+    dev user) and, in duplicated form, by the ``add_password_auth`` migration
+    that backfills existing rows.
+    """
+    local = (email or "").split("@")[0].lower()
+    cleaned = _USERNAME_STRIP_RE.sub("", local)
+    return cleaned[:64] or "user"
+
+
+def _username_default(context) -> str:
+    """SQLAlchemy column default: derive the username from the row's email.
+
+    Keeps every existing ``User(...)`` construction site working unchanged now
+    that ``username`` is NOT NULL.
+    """
+    params = context.get_current_parameters()
+    return derive_username(params.get("email") or "")
 
 
 class ActivityType(enum.Enum):
@@ -49,6 +75,12 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    username: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, default=_username_default
+    )
+    # Nullable on purpose: Google-created rows predate password auth and have no
+    # password until the operator sets one. Making this NOT NULL locks them out.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     picture: Mapped[str | None] = mapped_column(String(500))
     google_refresh_token: Mapped[str | None] = mapped_column(

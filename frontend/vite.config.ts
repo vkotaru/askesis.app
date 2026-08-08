@@ -38,7 +38,10 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/',
-        navigateFallbackDenylist: [/^\/api\//],
+        // /auth/ must be denied too, or the service worker can answer a
+        // navigation to /auth/logout from the cached shell and the request
+        // never reaches the server — leaving the session cookie intact.
+        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,

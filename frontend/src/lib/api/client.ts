@@ -6,6 +6,13 @@ export interface User {
   picture?: string;
 }
 
+export interface LoginResponse {
+  id: number;
+  email: string;
+  name: string;
+  username: string;
+}
+
 export interface DailyLog {
   id: number;
   date: string;
@@ -358,7 +365,9 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 
   // One transparent refresh attempt on 401. /auth/refresh itself never
   // re-enters this branch (relative URL match) so we avoid an infinite loop.
-  if (res.status === 401 && !url.startsWith('/auth/refresh')) {
+  // /auth/login is excluded too: a 401 there means bad credentials, and
+  // refreshing a stale cookie can't change that.
+  if (res.status === 401 && !url.startsWith('/auth/refresh') && !url.startsWith('/auth/login')) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
       res = await doFetch(url, options);
@@ -402,6 +411,19 @@ async function fetchFormData<T>(url: string, formData: FormData): Promise<T> {
 export const api = {
   // Auth
   getMe: () => fetchJSON<User>('/auth/me'),
+  // Username-or-email + password sign-in. Returns JSON (not a redirect) so the
+  // SPA stays mounted; the session cookie rides back on the response.
+  login: (username: string, password: string) =>
+    fetchJSON<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => fetchJSON<{ status: string }>('/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    fetchJSON<{ status: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
 
   // Daily Log
   getDailyLogs: (startDate?: string, endDate?: string, userId?: number, limit?: number) => {
