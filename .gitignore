@@ -15,6 +15,9 @@ venv/
 .env
 .env.local
 
+# Server-side data bind-mounted into the app container (photos, inbox)
+data/
+
 # Node
 node_modules/
 dist/

@@ -20,7 +20,8 @@ Giving Askesis its **own hostname** (not just a different port on a shared host)
 matters: Android associates an installed PWA with its *host*, so two PWAs on the
 same host but different ports collide — a distinct hostname installs cleanly.
 
-Progress/meal photos and DB backups live in **Google Drive** (unchanged).
+Progress/meal photos live on **the server's own disk** (see *Photo storage*).
+DB backups still go to Google Drive.
 
 ## First-time setup (on the server)
 
@@ -55,6 +56,71 @@ Updating later is just `./deploy.sh` again.
 > `sudo tailscale serve --https=8443 off` (on the host), then deploy — the
 > sidecar owns serving now.
 
+## Photo storage
+
+Photos are written to `./data/uploads` on the host, bind-mounted into the
+container at `/app/backend/uploads`:
+
+```
+data/uploads/
+  photos/     progress photos   (askesis_{user}_{date}_{view}_{hex}.jpg)
+  meals/      meal photos       (meal_{user}_{meal_id}_{hex}.jpg)
+  _inbox/     ← drop files here for adoption; not served
+```
+
+The database stores the **relative** path (`photos/<name>`), never an absolute
+one, so moving the mount point doesn't invalidate every row. `data/` is
+gitignored and excluded from the Docker build context.
+
+A **bind mount, not a named volume**, on purpose: you need to be able to copy a
+Google Drive export into `_inbox/` with ordinary host tools, and `docker cp`
+into an anonymous volume path is needlessly awkward.
+
+### One-time: copy the old named volume across
+
+Earlier builds mounted a named volume called `askesis_uploads` here. If it has
+anything in it, move it before the first deploy on the new compose file —
+switching the mount does **not** migrate the contents, and the named volume
+simply stops being attached:
+
+```bash
+mkdir -p data/uploads
+docker run --rm \
+  -v askesis_uploads:/from \
+  -v "$PWD/data/uploads":/to \
+  alpine sh -c 'cp -a /from/. /to/ 2>/dev/null || true; ls -la /to'
+# once you've confirmed the copy:  docker volume rm askesis_uploads
+```
+
+(`docker volume ls` to confirm the exact name — Compose prefixes it with the
+project directory name.)
+
+### Adopting a Google Drive photo dump
+
+Download the Askesis folder from Drive, unzip it, and copy the tree into
+`data/uploads/_inbox/` — nested subdirectories are fine, the walk is recursive.
+Then match the files to database rows by filename:
+
+```bash
+docker compose exec app python scripts/adopt_photos.py             # dry run
+docker compose exec app python scripts/adopt_photos.py --apply
+docker compose exec app python scripts/adopt_photos.py --verify
+```
+
+**Dry run is the default** — there is no `--dry-run`, only `--apply`. The dry
+run prints a per-file table (`ADOPT`, `SKIP-ALREADY`, `CONFLICT-DEST`,
+`CONFLICT-ROWS`, `ORPHAN`, `UNPARSEABLE`) and exits non-zero if anything
+conflicted. `--apply` **copies** and leaves `_inbox/` intact; a later
+`--apply --prune-inbox` deletes each source only after re-reading its copy and
+matching the sha256. Re-running is a no-op — everything already adopted comes
+back as `SKIP-ALREADY`.
+
+Files that parse but match no row land in `_inbox/_orphans/`; files whose names
+match no known pattern land in `_inbox/_unparseable/`. Neither is deleted.
+`--create-missing` will synthesize a *progress photo* row (its filename carries
+user, date and view — the whole row); it will never synthesize a *meal* row,
+because a meal needs a date and a label that the filename doesn't carry.
+
 ## Gotchas / migration notes
 
 - **`ENCRYPTION_KEY`** — Google refresh tokens are encrypted with it. To move
@@ -79,3 +145,13 @@ Updating later is just `./deploy.sh` again.
   service. Don't remove it.
 - **CORS_ORIGINS** only matters for cross-origin clients; the PWA is served
   same-origin with the API. Put your `ts.net` host there anyway.
+- **`deploy.sh` runs `docker compose down`, which is safe** — it stops and
+  removes containers, and leaves both volumes (`pgdata`, `tailscale-state`) and
+  the `./data/uploads` bind mount untouched. **Never run `docker compose
+  down -v`**: `-v` destroys the named volumes, which means your Postgres data
+  and the Tailscale node identity. Photos survive `-v` now that they're a bind
+  mount, but the database that points at them would not.
+- **Back up `data/uploads` along with the database.** They are two halves of one
+  backup: a Postgres dump whose `file_path` rows point at files you no longer
+  have restores to broken images. `scripts/adopt_photos.py --verify` reports
+  exactly that mismatch in both directions.

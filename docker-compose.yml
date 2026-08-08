@@ -58,11 +58,14 @@ services:
         condition: service_healthy
       tailscale:
         condition: service_started
-    # Legacy local upload dir (current builds store photos on Google Drive).
+    # Progress/meal photos live on the server's own disk. A bind mount, not a
+    # named volume: the operator needs to drop a Drive export into
+    # ./data/uploads/_inbox/ from the host and run scripts/adopt_photos.py.
+    # See SELF_HOSTING.md ("Photo storage") for the one-time copy out of the
+    # old `uploads` named volume.
     volumes:
-      - uploads:/app/backend/uploads
+      - ./data/uploads:/app/backend/uploads
 
 volumes:
   pgdata:
-  uploads:
   tailscale-state:

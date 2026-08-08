@@ -10,6 +10,9 @@ backend/.venv/
 backend/*.db
 backend/uploads/
 
+# Server-side photo storage (bind-mounted at runtime, never baked into the image)
+data/
+
 # Node / SvelteKit (rebuilt inside the image)
 frontend/node_modules/
 frontend/build/
