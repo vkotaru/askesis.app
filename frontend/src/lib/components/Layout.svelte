@@ -2,9 +2,9 @@
   import { page } from '$app/stores';
   import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Menu, Users, Target } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import type { User } from '$lib/api/client';
+  import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
-  import { user as userStore } from '$lib/stores/user';
+  import { user as userStore, clearCachedUser } from '$lib/stores/user';
   import SyncStatus from './SyncStatus.svelte';
 
   export let user: User;
@@ -27,17 +27,28 @@
   $: isLocalUser = user.email === 'local@askesis.local';
   $: filteredNavItems = navItems.filter(item => !(isLocalUser && item.href === '/shared'));
 
-  function handleSignout(e: MouseEvent) {
+  async function handleSignout(e: MouseEvent) {
+    // Always handled in-page. A bare <a href="/auth/logout"> gets intercepted by
+    // SvelteKit's client router — it throws "Not found: /auth/logout" before
+    // falling back to a real navigation — and the service worker's
+    // navigateFallback can serve it from cache without ever reaching the
+    // server, leaving the cookie intact.
+    e.preventDefault();
+
     // Local profile: never hit the server.
     if (localStorage.getItem('askesis_local_user')) {
-      e.preventDefault();
       localStorage.removeItem('askesis_local_user');
       userStore.set(null);
       return;
     }
 
-    // Cloud user: fall through to the <a href="/auth/logout"> navigation, which
-    // clears the auth cookie server-side.
+    try {
+      await api.logout();
+    } catch {
+      // Offline or already logged out — drop the local session regardless.
+    }
+    await clearCachedUser();
+    userStore.set(null);
   }
 
   let showMobileMenu = false;
@@ -134,14 +145,14 @@
           {/each}
         </nav>
         <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700">
-          <a
-            href="/auth/logout"
+          <button
+            type="button"
             on:click={handleSignout}
             class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors px-2"
           >
             <LogOut size={16} />
             Sign out
-          </a>
+          </button>
         </div>
       </div>
     </div>
@@ -206,14 +217,14 @@
         </div>
       </div>
       <div class="flex items-center justify-between px-2">
-        <a
-          href="/auth/logout"
+        <button
+          type="button"
           on:click={handleSignout}
           class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors"
         >
           <LogOut size={16} />
           Sign out
-        </a>
+        </button>
         <SyncStatus />
       </div>
     </div>

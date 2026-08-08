@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { user as userStore } from '$lib/stores/user';
+  import { user as userStore, cacheUser } from '$lib/stores/user';
   import { settings } from '$lib/stores/settings';
   import { hydrateFromServer } from '$lib/stores/data';
   import { api } from '$lib/api/client';
@@ -18,6 +18,11 @@
   let isCreatingNew = false;
   let errorMsg = '';
   let cloudLoginBusy = false;
+
+  // Username + password sign-in
+  let usernameInput = '';
+  let passwordInput = '';
+  let passwordLoginBusy = false;
 
   onMount(() => {
     // Load local profiles
@@ -89,6 +94,7 @@
 
     const me = await api.getMe();
     userStore.set(me);
+    await cacheUser(me);
     await settings.load();
     hydrateFromServer(me.id).catch(() => {});
 
@@ -121,6 +127,33 @@
     }
 
     sync().catch(() => {});
+  }
+
+  async function handlePasswordLogin() {
+    errorMsg = '';
+    if (passwordLoginBusy) return;
+
+    const identifier = usernameInput.trim();
+    if (!identifier || !passwordInput) {
+      errorMsg = 'Username and password are required';
+      return;
+    }
+
+    passwordLoginBusy = true;
+    try {
+      await api.login(identifier, passwordInput);
+      passwordInput = '';
+      // Same bootstrap the layout runs on mount, so the user lands in the app
+      // without a manual reload.
+      await bootstrapCloudUser();
+    } catch (err) {
+      errorMsg =
+        err instanceof Error && err.message !== 'Unauthorized'
+          ? err.message
+          : 'Incorrect username or password';
+    } finally {
+      passwordLoginBusy = false;
+    }
   }
 
   async function startCloudLogin() {
@@ -272,15 +305,60 @@
         {/if}
       </div>
     {:else}
-      <!-- Google Sign In -->
+      <!-- Cloud sign in -->
       <div class="space-y-4">
         <p class="text-xs text-gray-500 dark:text-gray-400 text-center mb-4">
-          Authenticate using your Google account to automatically back up and sync your data with the web version.
+          Sign in to back up and sync your data with the web version.
         </p>
 
         {#if errorMsg && activeTab === 'online'}
           <p class="text-red-500 text-xs text-center font-medium">{errorMsg}</p>
         {/if}
+
+        <!-- Username + password -->
+        <form on:submit|preventDefault={handlePasswordLogin} class="space-y-3">
+          <div>
+            <label for="login-username" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+              Username or Email
+            </label>
+            <input
+              id="login-username"
+              type="text"
+              autocomplete="username"
+              bind:value={usernameInput}
+              placeholder="e.g. prasanth"
+              class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div>
+            <label for="login-password" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+              Password
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              autocomplete="current-password"
+              bind:value={passwordInput}
+              placeholder="••••••••"
+              class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={passwordLoginBusy}
+            class="w-full py-3 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 active:scale-[0.98] rounded-xl transition-all shadow-md shadow-primary-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {passwordLoginBusy ? 'Signing in…' : 'Sign In'}
+          </button>
+        </form>
+
+        <div class="flex items-center gap-3 py-1">
+          <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+          <span class="text-[10px] uppercase tracking-wider text-gray-400">or</span>
+          <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+        </div>
 
         <button
           type="button"

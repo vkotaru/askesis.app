@@ -2,6 +2,8 @@ import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from jose import jwt
 from datetime import datetime, timedelta
@@ -9,6 +11,12 @@ from datetime import datetime, timedelta
 from app.database import get_db
 from app.config import get_settings
 from app.models import User, DataShare
+from app.security import (
+    MAX_PASSWORD_BYTES,
+    MIN_PASSWORD_LENGTH,
+    hash_password,
+    verify_password,
+)
 
 logger = logging.getLogger("askesis.auth")
 
@@ -48,6 +56,21 @@ def set_auth_cookie(response, access_token: str) -> None:
         max_age=settings.token_expire_hours * 60 * 60,
         samesite="strict",
         secure=not settings.dev_mode,  # HTTPS only in production
+    )
+
+
+def clear_auth_cookie(response) -> None:
+    """Clear the auth cookie, mirroring the flags set_auth_cookie used.
+
+    Browsers match a deletion on name/path/domain, so a bare delete_cookie
+    does work — but it emits SameSite=lax with no Secure/HttpOnly, which
+    reads like a different cookie. Keep the two symmetrical.
+    """
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        samesite="strict",
+        secure=not settings.dev_mode,
     )
 
 
@@ -295,5 +318,93 @@ async def refresh_token(request: Request, db: Session = Depends(get_db)):
 @router.get("/logout")
 async def logout():
     response = RedirectResponse(url="/")
-    response.delete_cookie("access_token")
+    clear_auth_cookie(response)
+    return response
+
+
+# ── Username + password auth ─────────────────────────────────────────────────
+# Added alongside Google OAuth, not in place of it. The JWT `sub` stays the
+# email for both paths, so `get_current_user` needs no change and cookies
+# issued before this shipped stay valid.
+
+# pydantic's max_length counts *characters*; bcrypt truncates at 72 *bytes*.
+# Characters <= bytes, so this bound is necessary but not sufficient —
+# hash_password() re-checks the encoded length and raises.
+_PASSWORD_FIELD = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_BYTES)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=255)
+    # No length floor on login: an old password shorter than today's minimum
+    # must still be able to sign in and then change itself.
+    password: str = Field(min_length=1, max_length=MAX_PASSWORD_BYTES)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_BYTES)
+    new_password: str = _PASSWORD_FIELD
+
+
+# Deliberately identical for "no such user" and "wrong password" so the
+# response body doesn't reveal whether an account exists.
+_BAD_CREDENTIALS = "Incorrect username or password"
+
+
+@router.post("/login")
+async def password_login(payload: LoginRequest, db: Session = Depends(get_db)):
+    """Sign in with a username (or email) and password.
+
+    Returns JSON rather than a redirect so the SPA stays mounted.
+    """
+    identifier = payload.username.strip()
+
+    user = (
+        db.query(User)
+        .filter(or_(User.username == identifier, User.email == identifier))
+        .first()
+    )
+
+    # verify_password burns a bcrypt round against a dummy hash when the user
+    # is missing or has no password set, so timing doesn't leak account
+    # existence.
+    stored_hash = user.password_hash if user else None
+    if not verify_password(payload.password, stored_hash):
+        raise HTTPException(status_code=401, detail=_BAD_CREDENTIALS)
+
+    access_token = create_access_token({"sub": user.email})
+    response = JSONResponse(
+        {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "username": user.username,
+        }
+    )
+    set_auth_cookie(response, access_token)
+    return response
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    try:
+        current_user.password_hash = hash_password(payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/logout")
+async def logout_post():
+    """POST counterpart to GET /auth/logout, for fetch-based sign-out."""
+    response = JSONResponse({"status": "ok"})
+    clear_auth_cookie(response)
     return response
