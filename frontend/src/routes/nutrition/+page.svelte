@@ -8,7 +8,7 @@
   import AuthImage from '$lib/components/AuthImage.svelte';
   import { clsx } from 'clsx';
   import { api, type Meal, type MealInput, type FoodAnalysis, type DailyNutrition, type FoodItem, type MealFoodItemInput } from '$lib/api/client';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
 
 
   const MEAL_LABELS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
@@ -48,8 +48,8 @@
   let macroFat: number | undefined;
   let savingMacros = false;
 
-  async function loadMeals() {
-    loading = true;
+  async function loadMeals(silent = false) {
+    if (!silent) loading = true;
     try {
       meals = await offlineApi.getMeals(selectedDate, undefined);
     } catch (err) {
@@ -97,6 +97,15 @@
   }
 
   onMount(loadData);
+
+  // Re-read the cache when a background revalidation actually changed
+  // something. Skip the macro form while it's being edited.
+  let seenDataVersion = $dataVersion;
+  $: if ($dataVersion !== seenDataVersion) {
+    seenDataVersion = $dataVersion;
+    loadMeals(true);
+    if (!editingMacros) loadDailyNutrition();
+  }
 
   $: totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0);
 

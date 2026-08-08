@@ -4,7 +4,7 @@
   import { Camera, Upload, Trash2, ChevronLeft, ChevronRight, Image, AlertTriangle, GitCompare, X } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type ProgressPhoto, type PhotoView, type DriveStatus } from '$lib/api/client';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
   import { isOnline } from '$lib/sync';
   import AuthImage from '$lib/components/AuthImage.svelte';
 
@@ -91,8 +91,8 @@
     }
   }
 
-  async function loadPhotos() {
-    loading = true;
+  async function loadPhotos(silent = false) {
+    if (!silent) loading = true;
     try {
       photos = await offlineApi.getPhotosByDate(selectedDate, undefined);
     } catch (err) {
@@ -107,6 +107,14 @@
     checkDriveStatus();
     loadPhotos();
   });
+
+  // Re-read the cache when a background revalidation actually changed something
+  let seenDataVersion = $dataVersion;
+  $: if ($dataVersion !== seenDataVersion) {
+    seenDataVersion = $dataVersion;
+    loadPhotos(true);
+    if (compareMode) loadAllPhotoDates();
+  }
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
@@ -148,6 +156,7 @@
     uploading = view;
     try {
       await api.uploadPhoto(file, selectedDate, view);
+      await offlineApi.refreshPhotos(selectedDate);
       await loadPhotos();
     } catch (err) {
       console.error('Failed to upload photo:', err);
@@ -165,7 +174,7 @@
     }
     if (!confirm('Delete this photo?')) return;
     try {
-      await api.deletePhoto(photo.id);
+      await offlineApi.deletePhoto(photo.id);
       await loadPhotos();
     } catch (err) {
       console.error('Failed to delete photo:', err);

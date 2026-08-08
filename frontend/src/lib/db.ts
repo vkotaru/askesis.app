@@ -149,6 +149,18 @@ export interface LocalPhoto {
   updatedAt: string;
 }
 
+export interface LocalDailyNutrition {
+  localId?: number;
+  serverId?: number;
+  date: string;
+  userId?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  notes?: string;
+  updatedAt: string;
+}
+
 export interface LocalSetting {
   key: string;
   value: unknown;
@@ -166,6 +178,47 @@ export interface PendingSyncEntry {
   timestamp: string;
 }
 
+// ── One-shot duplicate cleanup ───────────────────────────────────────────────
+
+/**
+ * Settings key that records that the one-time "one row per date" cleanup has
+ * already run. Stranded duplicates come from old sync bugs; once cleaned they
+ * don't come back, so this must never run on every mount.
+ */
+export const DEDUPE_BY_DATE_FLAG = 'dedupeByDateV1';
+
+interface DatedRow {
+  localId?: number;
+  serverId?: number;
+  date: string;
+}
+
+/**
+ * For tables that hold at most one row per date (dailyLogs, measurements),
+ * return the localIds of the rows that should be dropped. The row carrying a
+ * serverId wins; otherwise the first one seen wins.
+ */
+export function findDuplicateDateIds(rows: DatedRow[]): number[] {
+  const seen = new Map<string, DatedRow>();
+  const toDelete: number[] = [];
+
+  for (const row of rows) {
+    const existing = seen.get(row.date);
+    if (!existing) {
+      seen.set(row.date, row);
+      continue;
+    }
+    if (row.serverId && !existing.serverId) {
+      if (existing.localId != null) toDelete.push(existing.localId);
+      seen.set(row.date, row);
+    } else if (row.localId != null) {
+      toDelete.push(row.localId);
+    }
+  }
+
+  return toDelete;
+}
+
 // ── Database class ───────────────────────────────────────────────────────────
 
 class AskesisDB extends Dexie {
@@ -175,6 +228,7 @@ class AskesisDB extends Dexie {
   foods!: Table<LocalFood, number>;
   measurements!: Table<LocalMeasurement, number>;
   photos!: Table<LocalPhoto, number>;
+  dailyNutrition!: Table<LocalDailyNutrition, number>;
   settings!: Table<LocalSetting, string>;
   pendingSync!: Table<PendingSyncEntry, number>;
 
@@ -203,6 +257,34 @@ class AskesisDB extends Dexie {
       settings: 'key',
       pendingSync: '++id, table, operation, localId, serverId, timestamp',
     });
+
+    // ── Version 3: Add dailyNutrition table ────────────────────────────────
+    this.version(3)
+      .stores({
+        dailyLogs: '++localId, serverId, date, userId, updatedAt',
+        activities: '++localId, serverId, date, userId, updatedAt',
+        meals: '++localId, serverId, date, userId, updatedAt',
+        foods: '++localId, serverId, name, updatedAt',
+        measurements: '++localId, serverId, date, userId, updatedAt',
+        photos: '++localId, serverId, date, userId, view, updatedAt',
+        dailyNutrition: '++localId, serverId, date, userId, updatedAt',
+        settings: 'key',
+        pendingSync: '++id, table, operation, localId, serverId, timestamp',
+      })
+      .upgrade(async (tx) => {
+        // One-shot cleanup of duplicate-by-date rows stranded by older sync
+        // bugs. This used to run on every mount; do it once, here, and record
+        // it so the runtime path can skip the table scan forever after.
+        for (const name of ['dailyLogs', 'measurements'] as const) {
+          const table = tx.table(name);
+          const rows = await table.toArray();
+          const duplicates = findDuplicateDateIds(rows);
+          if (duplicates.length > 0) {
+            await table.bulkDelete(duplicates);
+          }
+        }
+        await tx.table('settings').put({ key: DEDUPE_BY_DATE_FLAG, value: true });
+      });
 
     // ── Future versions go here ────────────────────────────────────────────
   }
