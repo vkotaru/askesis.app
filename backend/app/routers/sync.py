@@ -6,18 +6,19 @@ POST /api/sync/push                       — push client mutations to server
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import Date, or_
 from pydantic import BaseModel
 
 from app.database import get_db
 from app.models import (
     User,
     DailyLog,
+    DailyNutrition,
     Activity,
     Exercise,
     Meal,
@@ -67,6 +68,7 @@ class SyncPushResponse(BaseModel):
 # Map client table names to SQLAlchemy models
 TABLE_MAP = {
     "dailyLogs": DailyLog,
+    "dailyNutrition": DailyNutrition,
     "activities": Activity,
     "meals": Meal,
     "foods": FoodItem,
@@ -157,9 +159,12 @@ def get_changes(
 
     for table_name, model in TABLE_MAP.items():
         # Build filter: updated_at > since OR deleted_at > since
-        # This catches both modifications and soft deletes
+        # This catches both modifications and soft deletes. Not every model
+        # has deleted_at (daily_nutrition is upsert-only, never deleted), so
+        # only add that clause where the column exists.
         filters = [model.updated_at > since_dt]
-        filters.append(model.deleted_at > since_dt)
+        if hasattr(model, "deleted_at"):
+            filters.append(model.deleted_at > since_dt)
 
         query = db.query(model).filter(or_(*filters))
 
@@ -251,6 +256,24 @@ def _clean_data(data: dict | None) -> dict:
     return {k: v for k, v in data.items() if k not in _EXCLUDE_FIELDS}
 
 
+def _coerce_column_types(model: type, data: dict) -> dict:
+    """Convert ISO date strings into date objects for Date columns.
+
+    The client always sends dates as "YYYY-MM-DD". Postgres accepts that
+    string as a literal, SQLite refuses it outright, so normalise here and
+    both backends behave the same.
+    """
+    out = dict(data)
+    for col in model.__table__.columns:
+        value = out.get(col.name)
+        if isinstance(value, str) and isinstance(col.type, Date):
+            try:
+                out[col.name] = date.fromisoformat(value)
+            except ValueError:
+                pass  # Leave it alone and let the DB reject it
+    return out
+
+
 def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> int:
     """Create a new record from client data. Returns server ID."""
     data = _clean_data(change.data)
@@ -282,6 +305,7 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
     # Strip any keys that aren't actual model columns to prevent constructor errors
     model_columns = {c.name for c in model.__table__.columns}
     data = {k: v for k, v in data.items() if k in model_columns}
+    data = _coerce_column_types(model, data)
 
     # Check for existing record with same serverId (dedup)
     if change.serverId:
@@ -303,6 +327,25 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
                 DailyLog.user_id == user.id,
                 DailyLog.date == data["date"],
                 DailyLog.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if existing:
+            for key, value in data.items():
+                if key != "date" and hasattr(existing, key):
+                    setattr(existing, key, value)
+            existing.updated_at = datetime.utcnow()
+            db.flush()
+            return existing.id
+
+    # DailyNutrition has a UniqueConstraint on (user_id, date) and no
+    # deleted_at, so a re-pushed row must upsert instead of insert.
+    if model == DailyNutrition and "date" in data:
+        existing = (
+            db.query(DailyNutrition)
+            .filter(
+                DailyNutrition.user_id == user.id,
+                DailyNutrition.date == data["date"],
             )
             .first()
         )
@@ -405,6 +448,7 @@ def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> 
 
     # Only set actual model columns
     model_columns = {c.name for c in model.__table__.columns}
+    data = _coerce_column_types(model, data)
     for key, value in data.items():
         if key in model_columns:
             setattr(obj, key, value)

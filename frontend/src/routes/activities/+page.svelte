@@ -5,7 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
 
   import { settings } from '$lib/stores/settings';
   import { formatDistance, distanceToMetric, getDistanceLabel, formatWeight, getWeightLabel } from '$lib/utils/units';
@@ -58,8 +58,8 @@
   let formNotes = '';
   let formIcon: string | null = null;
 
-  async function loadActivities() {
-    loading = true;
+  async function loadActivities(silent = false) {
+    if (!silent) loading = true;
     try {
       activities = await offlineApi.getActivities(selectedDate, selectedDate, undefined);
     } catch (err) {
@@ -85,6 +85,14 @@
     loadActivities();
     loadRecentActivities();
   });
+
+  // Re-read the cache when a background revalidation actually changed something
+  let seenDataVersion = $dataVersion;
+  $: if ($dataVersion !== seenDataVersion) {
+    seenDataVersion = $dataVersion;
+    loadActivities(true);
+    loadRecentActivities();
+  }
 
 
   function goToDate(date: string) {

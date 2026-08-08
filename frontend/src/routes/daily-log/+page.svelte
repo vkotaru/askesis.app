@@ -5,7 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { type DailyLog } from '$lib/api/client';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
   import { formatWater, formatWeight, waterToMetric, waterFromMetric, weightToMetric, weightFromMetric, getWaterLabel, getWeightLabel } from '$lib/utils/units';
 
@@ -114,6 +114,15 @@
     loadLog();
     loadRecentLogs();
   });
+
+  // Re-read the cache when a background revalidation actually changed
+  // something. Only the list — reloading loadLog() would clobber whatever the
+  // user is typing into the form.
+  let seenDataVersion = $dataVersion;
+  $: if ($dataVersion !== seenDataVersion) {
+    seenDataVersion = $dataVersion;
+    loadRecentLogs();
+  }
 
   function goToDate(date: string) {
     selectedDate = date;

@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { api } from '$lib/api/client';
-  import { user, userLoading } from '$lib/stores/user';
+  import { user, userLoading, loadCachedUser, cacheUser, clearCachedUser } from '$lib/stores/user';
   import { settings } from '$lib/stores/settings';
   import Layout from '$lib/components/Layout.svelte';
   import Login from '$lib/components/Login.svelte';
@@ -21,16 +21,33 @@
       return;
     }
 
+    // Paint from the cached identity right away — /auth/me is a round-trip to
+    // a home server over Tailscale and must not gate first render.
+    const cached = await loadCachedUser();
+    if (cached) {
+      user.set(cached);
+      userLoading.set(false);
+      settings.load().catch(() => {});
+    }
+
+    // …then revalidate in the background.
     try {
       const userData = await api.getMe();
       user.set(userData);
+      await cacheUser(userData);
       await settings.load();
       // Hydrate Dexie from server (only if tables are empty)
       hydrateFromServer(userData.id).catch(() => {});
       // Sync any pending offline mutations
       sync().catch(() => {});
-    } catch {
-      user.set(null);
+    } catch (err) {
+      const unauthorized = err instanceof Error && err.message === 'Unauthorized';
+      // Offline with a cached user: keep rendering the app. Only a real 401
+      // (or having nothing cached in the first place) drops us to <Login>.
+      if (unauthorized || !cached) {
+        user.set(null);
+        await clearCachedUser();
+      }
     } finally {
       userLoading.set(false);
     }

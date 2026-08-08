@@ -2,16 +2,37 @@
  * Offline-aware data access layer backed by Dexie.
  *
  * Provides the same method signatures as the existing api client but:
- * - Reads return Dexie data instantly (works offline)
+ * - Reads return Dexie data instantly (works offline) and revalidate in the
+ *   background: the server fetch is fire-and-forget, merges into Dexie, and
+ *   bumps `dataVersion` only if the merge actually changed something
  * - Writes go to Dexie first (instant UI update), then sync to server
  * - If server write succeeds, updates serverId in Dexie
  * - If server write fails (offline), queues in pendingSync
+ *
+ * Components subscribe to `dataVersion` to re-read after a background
+ * revalidation lands:  `$: if ($dataVersion !== seen) { seen = $dataVersion; reload(); }`
+ *
+ * IMPORTANT: reads scoped to another user (`_userId` truthy — the "shared with
+ * me" case) bypass Dexie entirely. The local DB only ever holds the current
+ * user's rows, so serving them for someone else's id would show the wrong data.
  *
  * Components can gradually migrate from `api.*` to `offlineApi.*` calls.
  * The return types match the existing API types so no component changes needed.
  */
 
-import { db, type LocalDailyLog, type LocalActivity, type LocalMeal, type LocalMeasurement, type LocalPhoto } from '$lib/db';
+import { writable } from 'svelte/store';
+import { type Table } from 'dexie';
+import {
+  db,
+  findDuplicateDateIds,
+  DEDUPE_BY_DATE_FLAG,
+  type LocalDailyLog,
+  type LocalActivity,
+  type LocalMeal,
+  type LocalMeasurement,
+  type LocalPhoto,
+  type LocalDailyNutrition,
+} from '$lib/db';
 import {
   api,
   type DailyLog,
@@ -38,6 +59,183 @@ function now(): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type UpdateSpec = Record<string, any>;
+
+// ── Background revalidation ──────────────────────────────────────────────────
+
+/**
+ * Bumped once per background revalidation that actually wrote to Dexie.
+ * Never bumped when the server returned data identical to the cache, which is
+ * what keeps `$: $dataVersion → reload()` from looping forever.
+ */
+export const dataVersion = writable(0);
+
+/** Revalidations currently running, keyed by table + query params. */
+const inFlight = new Set<string>();
+
+/** When each key last started a revalidation, so a reload triggered by a
+ *  `dataVersion` bump doesn't immediately re-fetch what just landed. */
+const lastRevalidated = new Map<string, number>();
+const REVALIDATE_MIN_INTERVAL_MS = 2000;
+
+/** Merges that land together (cold start hydrates several tables at once)
+ *  collapse into a single bump instead of N re-reads. */
+const BUMP_COALESCE_MS = 50;
+let bumpTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * All Dexie merges run one at a time. The fetches stay parallel; only the
+ * read-modify-write is serialized, so two concurrent revalidations (or a
+ * revalidation racing initial hydration) can't both decide a row is missing
+ * and insert it twice.
+ */
+let mergeChain: Promise<unknown> = Promise.resolve();
+
+function serializeMerge<T>(fn: () => Promise<T>): Promise<T> {
+  const next = mergeChain.then(fn, fn);
+  mergeChain = next.catch(() => {});
+  return next;
+}
+
+function bumpDataVersion(): void {
+  if (bumpTimer !== null) return;
+  bumpTimer = setTimeout(() => {
+    bumpTimer = null;
+    dataVersion.update((n) => n + 1);
+  }, BUMP_COALESCE_MS);
+}
+
+/**
+ * Fire-and-forget background refresh. Deduplicated by `key` so rapid
+ * navigation doesn't stack N identical fetches. Failures are silent — being
+ * offline is the normal case — and never clear cached data.
+ */
+function revalidate(key: string, task: () => Promise<boolean>): void {
+  if (inFlight.has(key)) return;
+  if (Date.now() - (lastRevalidated.get(key) ?? 0) < REVALIDATE_MIN_INTERVAL_MS) return;
+
+  inFlight.add(key);
+  lastRevalidated.set(key, Date.now());
+
+  task()
+    .then((changed) => {
+      if (changed) bumpDataVersion();
+    })
+    .catch(() => {
+      // Offline or server error: keep serving the cache.
+    })
+    .finally(() => {
+      inFlight.delete(key);
+    });
+}
+
+/** Drop keys whose value is `undefined` so Dexie never deletes a field we
+ *  simply didn't map (e.g. `userId` when the caller didn't pass one). Server
+ *  fields that were genuinely cleared come back as `null`, which is kept. */
+function stripUndefined(spec: UpdateSpec): UpdateSpec {
+  const out: UpdateSpec = {};
+  for (const [key, value] of Object.entries(spec)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+/** True if applying `spec` to `existing` would change anything meaningful.
+ *  `updatedAt` is ignored — it is regenerated on every fetch by design. */
+function specDiffers(existing: Record<string, unknown>, spec: UpdateSpec): boolean {
+  for (const [key, value] of Object.entries(spec)) {
+    if (key === 'updatedAt') continue;
+    const current = existing[key];
+    if (current === value) continue;
+    if (current == null && value == null) continue;
+    if ((current !== null && typeof current === 'object') || (value !== null && typeof value === 'object')) {
+      if (JSON.stringify(current ?? null) !== JSON.stringify(value ?? null)) return true;
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Merge a page of server rows into a Dexie table with a single indexed lookup
+ * (`anyOf`) instead of one `.first()` per row, and a single bulk write.
+ *
+ * Returns true only if rows were inserted or changed, which is the signal the
+ * UI listens to.
+ */
+async function mergeServerRows<T>(
+  /** Dexie table name — also the key `pendingSync` rows are filed under. */
+  tableName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: Table<any, number>,
+  rows: T[],
+  getId: (row: T) => number,
+  toLocal: (row: T) => UpdateSpec,
+  /** For one-row-per-date tables: adopt an unsynced local row for the same
+   *  date instead of inserting a duplicate next to it. */
+  matchByDate = false
+): Promise<boolean> {
+  if (rows.length === 0) return false;
+
+  const specs = rows.map((row) => ({ id: getId(row), spec: stripUndefined(toLocal(row)) }));
+  const ids = specs.map((s) => s.id);
+
+  // Rows with an unflushed local mutation are never overwritten — the user's
+  // offline edit is newer than anything the server can currently return.
+  const pending = await db.pendingSync.where('table').equals(tableName).toArray();
+  const pendingLocalIds = new Set(pending.map((p) => p.localId));
+
+  const existingRows = await table.where('serverId').anyOf(ids).toArray();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const byServerId = new Map<number, any>();
+  for (const row of existingRows) byServerId.set(row.serverId, row);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orphansByDate = new Map<string, any>();
+  if (matchByDate) {
+    const dates = specs.map((s) => s.spec.date).filter((d): d is string => typeof d === 'string');
+    if (dates.length > 0) {
+      const dateRows = await table.where('date').anyOf(dates).toArray();
+      for (const row of dateRows) {
+        if (row.serverId == null && !orphansByDate.has(row.date)) orphansByDate.set(row.date, row);
+      }
+    }
+  }
+
+  const inserts: UpdateSpec[] = [];
+  const updates: UpdateSpec[] = [];
+
+  for (const { id, spec } of specs) {
+    let existing = byServerId.get(id);
+    if (!existing && matchByDate && typeof spec.date === 'string') {
+      const orphan = orphansByDate.get(spec.date);
+      if (orphan) {
+        // An unsynced local row owns this date: leave it alone entirely, and
+        // don't insert a second row next to it. The push will reconcile it and
+        // a later revalidation will adopt it once it has a serverId.
+        orphansByDate.delete(spec.date);
+        if (pendingLocalIds.has(orphan.localId)) continue;
+        existing = orphan;
+      }
+    }
+
+    if (!existing) {
+      inserts.push({ ...spec, serverId: id });
+      continue;
+    }
+
+    if (pendingLocalIds.has(existing.localId)) continue;
+
+    if (existing.serverId !== id || specDiffers(existing, spec)) {
+      updates.push({ ...existing, ...spec, serverId: id, updatedAt: now() });
+    }
+  }
+
+  if (inserts.length > 0) await table.bulkAdd(inserts);
+  if (updates.length > 0) await table.bulkPut(updates);
+
+  return inserts.length > 0 || updates.length > 0;
+}
 
 /** Convert a server DailyLog to local format */
 function toLocalDailyLog(log: DailyLog, userId?: number): UpdateSpec {
@@ -202,13 +400,83 @@ function fromLocalMeasurement(local: any): BodyMeasurement {
   };
 }
 
+function toLocalNutrition(n: DailyNutrition, userId?: number): UpdateSpec {
+  return {
+    serverId: n.id,
+    date: n.date,
+    userId: userId ?? n.user_id,
+    protein_g: n.protein_g,
+    carbs_g: n.carbs_g,
+    fat_g: n.fat_g,
+    notes: n.notes,
+    updatedAt: now(),
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromLocalNutrition(local: any): DailyNutrition {
+  return {
+    id: local.serverId ?? local.localId ?? 0,
+    user_id: local.userId ?? local.user_id ?? 0,
+    date: local.date,
+    protein_g: local.protein_g,
+    carbs_g: local.carbs_g,
+    fat_g: local.fat_g,
+    notes: local.notes,
+  };
+}
+
+function toLocalFood(f: FoodItem): UpdateSpec {
+  return {
+    serverId: f.id,
+    name: f.name,
+    brand: f.brand,
+    category: f.category,
+    serving_size: f.serving_size,
+    serving_unit: f.serving_unit,
+    calories: f.calories,
+    protein_g: f.protein_g,
+    carbs_g: f.carbs_g,
+    fat_g: f.fat_g,
+    fiber_g: f.fiber_g,
+    is_shared: f.is_shared,
+    source: f.source,
+    updatedAt: now(),
+  };
+}
+
+function toLocalPhoto(p: ProgressPhoto, userId?: number): UpdateSpec {
+  return {
+    serverId: p.id,
+    date: p.date,
+    userId,
+    view: p.view,
+    drive_file_id: p.drive_file_id,
+    notes: p.notes,
+    url: p.url,
+    updatedAt: now(),
+  };
+}
+
+function localToPhoto(p: LocalPhoto): ProgressPhoto {
+  return {
+    id: p.serverId ?? p.localId!,
+    date: p.date,
+    view: p.view,
+    drive_file_id: p.drive_file_id,
+    notes: p.notes,
+    url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+  };
+}
+
 // ── Hydrate: populate Dexie from server on first load ────────────────────────
 
 async function hydrateTable<T>(
   tableName: string,
   fetcher: () => Promise<T[]>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  toLocal: (item: T) => any
+  getId: (item: T) => number,
+  toLocal: (item: T) => UpdateSpec,
+  matchByDate = false
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const table = (db as any)[tableName];
@@ -217,79 +485,59 @@ async function hydrateTable<T>(
 
   try {
     const serverData = await fetcher();
-    await table.bulkAdd(serverData.map(toLocal));
+    const changed = await serializeMerge(() =>
+      mergeServerRows(tableName, table, serverData, getId, toLocal, matchByDate)
+    );
+    if (changed) bumpDataVersion();
   } catch (err) {
     console.warn(`[askesis] Failed to hydrate ${tableName}:`, err);
   }
 }
 
-/** Remove duplicate records for the same date, keeping the one with a serverId */
+/**
+ * Remove duplicate records for the same date, keeping the one with a serverId.
+ *
+ * This is a one-shot repair for duplicates stranded by older sync bugs, not a
+ * per-mount maintenance task — it scans the whole table. `runOneShotDedupe`
+ * guards it; the v3 Dexie upgrade does the same work for anyone migrating.
+ */
 async function deduplicateByDate(tableName: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const table = (db as any)[tableName];
-  const all = await table.orderBy('date').toArray();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const seen = new Map<string, any>();
-  const toDelete: number[] = [];
-
-  for (const row of all) {
-    const existing = seen.get(row.date);
-    if (!existing) {
-      seen.set(row.date, row);
-    } else {
-      // Keep the one with serverId; delete the other
-      if (row.serverId && !existing.serverId) {
-        toDelete.push(existing.localId);
-        seen.set(row.date, row);
-      } else {
-        toDelete.push(row.localId);
-      }
-    }
-  }
+  const all = await table.toArray();
+  const toDelete = findDuplicateDateIds(all);
 
   if (toDelete.length > 0) {
     await table.bulkDelete(toDelete);
   }
 }
 
+/** Run the date-duplicate cleanup at most once per browser profile. */
+async function runOneShotDedupe(): Promise<void> {
+  try {
+    const flag = await db.settings.get(DEDUPE_BY_DATE_FLAG);
+    if (flag?.value) return;
+
+    await Promise.all([deduplicateByDate('dailyLogs'), deduplicateByDate('measurements')]);
+    await db.settings.put({ key: DEDUPE_BY_DATE_FLAG, value: true });
+  } catch (err) {
+    console.warn('[askesis] Duplicate cleanup failed:', err);
+  }
+}
+
 export async function hydrateFromServer(userId?: number): Promise<void> {
-  // Clean up any existing duplicates from prior sync issues
-  await Promise.all([
-    deduplicateByDate('dailyLogs'),
-    deduplicateByDate('measurements'),
-  ]);
+  // Clean up duplicates left behind by prior sync issues (once, ever)
+  await runOneShotDedupe();
 
   // Use max server limit (500) to get complete data for offline use
   await Promise.all([
-    hydrateTable('dailyLogs', () => api.getDailyLogs(undefined, undefined, undefined, 500), (log) => toLocalDailyLog(log, userId)),
-    hydrateTable('activities', () => api.getActivities(undefined, undefined, undefined, 500), (a) => toLocalActivity(a, userId)),
-    hydrateTable('meals', () => api.getMeals(undefined, undefined, undefined, undefined, 500), (m) => toLocalMeal(m, userId)),
-    hydrateTable('foods', () => api.searchFoods(undefined, undefined, false, 200), (f) => ({
-      serverId: f.id,
-      name: f.name,
-      brand: f.brand,
-      category: f.category,
-      serving_size: f.serving_size,
-      serving_unit: f.serving_unit,
-      calories: f.calories,
-      protein_g: f.protein_g,
-      carbs_g: f.carbs_g,
-      fat_g: f.fat_g,
-      fiber_g: f.fiber_g,
-      is_shared: f.is_shared,
-      source: f.source,
-      updatedAt: now(),
-    })),
-    hydrateTable('measurements', () => api.getMeasurements(undefined, undefined, undefined), (m) => toLocalMeasurement(m, userId)),
-    hydrateTable('photos', () => api.getPhotos(undefined, undefined, undefined, undefined), (p) => ({
-      serverId: p.id,
-      date: p.date,
-      view: p.view,
-      drive_file_id: p.drive_file_id,
-      notes: p.notes,
-      url: p.url,
-      updatedAt: now(),
-    })),
+    hydrateTable('dailyLogs', () => api.getDailyLogs(undefined, undefined, undefined, 500), (log) => log.id, (log) => toLocalDailyLog(log, userId), true),
+    hydrateTable('activities', () => api.getActivities(undefined, undefined, undefined, 500), (a) => a.id, (a) => toLocalActivity(a, userId)),
+    hydrateTable('meals', () => api.getMeals(undefined, undefined, undefined, undefined, 500), (m) => m.id, (m) => toLocalMeal(m, userId)),
+    hydrateTable('foods', () => api.searchFoods(undefined, undefined, false, 200), (f) => f.id, toLocalFood),
+    hydrateTable('measurements', () => api.getMeasurements(undefined, undefined, undefined), (m) => m.id, (m) => toLocalMeasurement(m, userId), true),
+    hydrateTable('photos', () => api.getPhotos(undefined, undefined, undefined, undefined), (p) => p.id, (p) => toLocalPhoto(p, userId)),
+    hydrateTable('dailyNutrition', () => api.getNutritionHistory(undefined, undefined, undefined, 500), (n) => n.id, (n) => toLocalNutrition(n, userId), true),
   ]);
 }
 
@@ -305,41 +553,37 @@ export const offlineApi = {
     _userId?: number,
     limit?: number
   ): Promise<DailyLog[]> {
-    // Try server first (authoritative), fall back to local
-    try {
-      const serverLogs = await api.getDailyLogs(startDate, endDate, _userId, limit);
-      for (const log of serverLogs) {
-        const existing = await db.dailyLogs.where('serverId').equals(log.id).first();
-        if (existing) {
-          await db.dailyLogs.update(existing.localId!, toLocalDailyLog(log));
-        } else {
-          await db.dailyLogs.add(toLocalDailyLog(log) as LocalDailyLog);
-        }
-      }
-      return serverLogs;
-    } catch {
-      // Offline — serve from Dexie
-      let collection = db.dailyLogs.orderBy('date').reverse();
+    // Another user's data is never in the local DB — go straight to the server
+    if (_userId) return api.getDailyLogs(startDate, endDate, _userId, limit);
 
-      if (startDate && endDate) {
-        collection = db.dailyLogs.where('date').between(startDate, endDate, true, true).reverse();
-      }
+    revalidate(`dailyLogs:${startDate ?? ''}:${endDate ?? ''}:${limit ?? ''}`, async () => {
+      const serverLogs = await api.getDailyLogs(startDate, endDate, undefined, limit);
+      return serializeMerge(() =>
+        mergeServerRows('dailyLogs', db.dailyLogs, serverLogs, (log) => log.id, (log) => toLocalDailyLog(log), true)
+      );
+    });
 
-      let results = await collection.toArray();
+    // Serve from Dexie immediately
+    let collection = db.dailyLogs.orderBy('date').reverse();
 
-      // Deduplicate by date (keep the one with serverId, or the latest localId)
-      const byDate = new Map<string, LocalDailyLog>();
-      for (const r of results) {
-        const existing = byDate.get(r.date);
-        if (!existing || (r.serverId && !existing.serverId) || (r.localId! > existing.localId!)) {
-          byDate.set(r.date, r);
-        }
-      }
-      results = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
-
-      if (limit) results = results.slice(0, limit);
-      return results.map(fromLocalDailyLog);
+    if (startDate && endDate) {
+      collection = db.dailyLogs.where('date').between(startDate, endDate, true, true).reverse();
     }
+
+    let results = await collection.toArray();
+
+    // Deduplicate by date (keep the one with serverId, or the latest localId)
+    const byDate = new Map<string, LocalDailyLog>();
+    for (const r of results) {
+      const existing = byDate.get(r.date);
+      if (!existing || (r.serverId && !existing.serverId) || (r.localId! > existing.localId!)) {
+        byDate.set(r.date, r);
+      }
+    }
+    results = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+
+    if (limit) results = results.slice(0, limit);
+    return results.map(fromLocalDailyLog);
   },
 
   async getDailyLog(date: string, _userId?: number): Promise<DailyLog> {
@@ -389,32 +633,26 @@ export const offlineApi = {
     _userId?: number,
     limit?: number
   ): Promise<Activity[]> {
-    // Try server first (authoritative), fall back to local
-    try {
-      const serverActivities = await api.getActivities(startDate, endDate, _userId, limit);
-      // Update Dexie cache
-      for (const a of serverActivities) {
-        const existing = await db.activities.where('serverId').equals(a.id).first();
-        if (existing) {
-          await db.activities.update(existing.localId!, toLocalActivity(a));
-        } else {
-          await db.activities.add(toLocalActivity(a) as LocalActivity);
-        }
-      }
-      return serverActivities;
-    } catch {
-      // Offline — serve from Dexie
-      let results: LocalActivity[];
+    if (_userId) return api.getActivities(startDate, endDate, _userId, limit);
 
-      if (startDate && endDate) {
-        results = await db.activities.where('date').between(startDate, endDate, true, true).reverse().toArray();
-      } else {
-        results = await db.activities.orderBy('date').reverse().toArray();
-      }
+    revalidate(`activities:${startDate ?? ''}:${endDate ?? ''}:${limit ?? ''}`, async () => {
+      const serverActivities = await api.getActivities(startDate, endDate, undefined, limit);
+      return serializeMerge(() =>
+        mergeServerRows('activities', db.activities, serverActivities, (a) => a.id, (a) => toLocalActivity(a))
+      );
+    });
 
-      if (limit) results = results.slice(0, limit);
-      return results.map(fromLocalActivity);
+    // Serve from Dexie immediately
+    let results: LocalActivity[];
+
+    if (startDate && endDate) {
+      results = await db.activities.where('date').between(startDate, endDate, true, true).reverse().toArray();
+    } else {
+      results = await db.activities.orderBy('date').reverse().toArray();
     }
+
+    if (limit) results = results.slice(0, limit);
+    return results.map(fromLocalActivity);
   },
 
   async createActivity(data: ActivityInput): Promise<Activity> {
@@ -485,33 +723,28 @@ export const offlineApi = {
     endDate?: string,
     limit?: number
   ): Promise<Meal[]> {
-    // Try server first, fall back to local
-    try {
-      const serverMeals = await api.getMeals(date, _userId, startDate, endDate, limit);
-      for (const m of serverMeals) {
-        const existing = await db.meals.where('serverId').equals(m.id).first();
-        if (existing) {
-          await db.meals.update(existing.localId!, toLocalMeal(m));
-        } else {
-          await db.meals.add(toLocalMeal(m) as LocalMeal);
-        }
-      }
-      return serverMeals;
-    } catch {
-      // Offline — serve from Dexie
-      let results: LocalMeal[];
+    if (_userId) return api.getMeals(date, _userId, startDate, endDate, limit);
 
-      if (date) {
-        results = await db.meals.where('date').equals(date).toArray();
-      } else if (startDate && endDate) {
-        results = await db.meals.where('date').between(startDate, endDate, true, true).reverse().toArray();
-      } else {
-        results = await db.meals.orderBy('date').reverse().toArray();
-      }
+    revalidate(`meals:${date ?? ''}:${startDate ?? ''}:${endDate ?? ''}:${limit ?? ''}`, async () => {
+      const serverMeals = await api.getMeals(date, undefined, startDate, endDate, limit);
+      return serializeMerge(() =>
+        mergeServerRows('meals', db.meals, serverMeals, (m) => m.id, (m) => toLocalMeal(m))
+      );
+    });
 
-      if (limit) results = results.slice(0, limit);
-      return results.map(fromLocalMeal);
+    // Serve from Dexie immediately
+    let results: LocalMeal[];
+
+    if (date) {
+      results = await db.meals.where('date').equals(date).toArray();
+    } else if (startDate && endDate) {
+      results = await db.meals.where('date').between(startDate, endDate, true, true).reverse().toArray();
+    } else {
+      results = await db.meals.orderBy('date').reverse().toArray();
     }
+
+    if (limit) results = results.slice(0, limit);
+    return results.map(fromLocalMeal);
   },
 
   async createMeal(data: MealInput): Promise<Meal> {
@@ -582,30 +815,25 @@ export const offlineApi = {
     endDate?: string,
     _userId?: number
   ): Promise<BodyMeasurement[]> {
-    // Try server first, fall back to local
-    try {
-      const serverMeasurements = await api.getMeasurements(startDate, endDate, _userId);
-      for (const m of serverMeasurements) {
-        const existing = await db.measurements.where('serverId').equals(m.id).first();
-        if (existing) {
-          await db.measurements.update(existing.localId!, toLocalMeasurement(m));
-        } else {
-          await db.measurements.add(toLocalMeasurement(m) as LocalMeasurement);
-        }
-      }
-      return serverMeasurements;
-    } catch {
-      // Offline — serve from Dexie
-      let results: LocalMeasurement[];
+    if (_userId) return api.getMeasurements(startDate, endDate, _userId);
 
-      if (startDate && endDate) {
-        results = await db.measurements.where('date').between(startDate, endDate, true, true).reverse().toArray();
-      } else {
-        results = await db.measurements.orderBy('date').reverse().toArray();
-      }
+    revalidate(`measurements:${startDate ?? ''}:${endDate ?? ''}`, async () => {
+      const serverMeasurements = await api.getMeasurements(startDate, endDate, undefined);
+      return serializeMerge(() =>
+        mergeServerRows('measurements', db.measurements, serverMeasurements, (m) => m.id, (m) => toLocalMeasurement(m), true)
+      );
+    });
 
-      return results.map(fromLocalMeasurement);
+    // Serve from Dexie immediately
+    let results: LocalMeasurement[];
+
+    if (startDate && endDate) {
+      results = await db.measurements.where('date').between(startDate, endDate, true, true).reverse().toArray();
+    } else {
+      results = await db.measurements.orderBy('date').reverse().toArray();
     }
+
+    return results.map(fromLocalMeasurement);
   },
 
   async getMeasurement(date: string, _userId?: number): Promise<BodyMeasurement> {
@@ -658,22 +886,61 @@ export const offlineApi = {
     }
   },
 
-  // ── Nutrition (pass-through with offline fallback) ─────────────────────
+  // ── Nutrition ────────────────────────────────────────────────────────────
 
   async getDailyNutrition(date: string, userId?: number): Promise<DailyNutrition> {
+    if (userId) return api.getDailyNutrition(date, userId);
+
+    const local = await db.dailyNutrition.where('date').equals(date).first();
+
+    if (local) {
+      revalidate(`dailyNutritionDate:${date}`, async () => {
+        const server = await api.getDailyNutrition(date, undefined);
+        return serializeMerge(() =>
+          mergeServerRows('dailyNutrition', db.dailyNutrition, [server], (n) => n.id, (n) => toLocalNutrition(n), true)
+        );
+      });
+      return fromLocalNutrition(local);
+    }
+
     try {
-      return await api.getDailyNutrition(date, userId);
+      const server = await api.getDailyNutrition(date, undefined);
+      await serializeMerge(() =>
+        mergeServerRows('dailyNutrition', db.dailyNutrition, [server], (n) => n.id, (n) => toLocalNutrition(n), true)
+      );
+      return server;
     } catch {
-      // Return empty nutrition for offline
+      // Nothing cached and nothing on the server (or we're offline)
       return { id: 0, user_id: 0, date } as DailyNutrition;
     }
   },
 
   async saveDailyNutrition(data: DailyNutritionInput): Promise<DailyNutrition> {
+    // Write to Dexie first so the macros survive an offline save
+    const existing = await db.dailyNutrition.where('date').equals(data.date).first();
+    const localRecord: LocalDailyNutrition = { ...data, updatedAt: now() };
+
+    let localId: number;
+    if (existing) {
+      await db.dailyNutrition.update(existing.localId!, localRecord as UpdateSpec);
+      localId = existing.localId!;
+    } else {
+      localId = await db.dailyNutrition.add(localRecord);
+    }
+
     try {
-      return await api.saveDailyNutrition(data);
+      const server = await api.saveDailyNutrition(data);
+      await db.dailyNutrition.update(localId, { serverId: server.id, userId: server.user_id });
+      return server;
     } catch {
-      return { id: 0, user_id: 0, ...data } as DailyNutrition;
+      await queueSync(
+        'dailyNutrition',
+        existing?.serverId ? 'update' : 'create',
+        localId,
+        existing?.serverId,
+        data as unknown as Record<string, unknown>
+      );
+      return fromLocalNutrition({ ...localRecord, localId, serverId: existing?.serverId, userId: existing?.userId });
     }
   },
 
@@ -683,11 +950,27 @@ export const offlineApi = {
     userId?: number,
     limit?: number
   ): Promise<DailyNutrition[]> {
-    try {
-      return await api.getNutritionHistory(startDate, endDate, userId, limit);
-    } catch {
-      return [];
+    if (userId) return api.getNutritionHistory(startDate, endDate, userId, limit);
+
+    revalidate(`dailyNutrition:${startDate ?? ''}:${endDate ?? ''}:${limit ?? ''}`, async () => {
+      const server = await api.getNutritionHistory(startDate, endDate, undefined, limit);
+      return serializeMerge(() =>
+        mergeServerRows('dailyNutrition', db.dailyNutrition, server, (n) => n.id, (n) => toLocalNutrition(n), true)
+      );
+    });
+
+    // Serve from Dexie immediately
+    let results: LocalDailyNutrition[];
+
+    if (startDate && endDate) {
+      results = await db.dailyNutrition.where('date').between(startDate, endDate, true, true).reverse().toArray();
+    } else {
+      results = await db.dailyNutrition.orderBy('date').reverse().toArray();
     }
+
+    results = [...results].sort((a, b) => b.date.localeCompare(a.date));
+    if (limit) results = results.slice(0, limit);
+    return results.map(fromLocalNutrition);
   },
 
   // ── Photos (metadata caching, images cached by SW) ─────────────────────
@@ -698,67 +981,64 @@ export const offlineApi = {
     view?: PhotoView,
     _userId?: number
   ): Promise<ProgressPhoto[]> {
-    const toPhoto = (p: LocalPhoto): ProgressPhoto => ({
-      id: p.serverId ?? p.localId!,
-      date: p.date,
-      view: p.view,
-      drive_file_id: p.drive_file_id,
-      notes: p.notes,
-      url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+    if (_userId) return api.getPhotos(startDate, endDate, view, _userId);
+
+    revalidate(`photos:${startDate ?? ''}:${endDate ?? ''}:${view ?? ''}`, async () => {
+      const serverPhotos = await api.getPhotos(startDate, endDate, view, undefined);
+      return serializeMerge(() =>
+        mergeServerRows('photos', db.photos, serverPhotos, (p) => p.id, (p) => toLocalPhoto(p))
+      );
     });
 
-    const cachePhoto = async (p: ProgressPhoto) => {
-      const existing = await db.photos.where('serverId').equals(p.id).first();
-      const local = { serverId: p.id, date: p.date, view: p.view, drive_file_id: p.drive_file_id, notes: p.notes, url: p.url, updatedAt: now() };
-      if (existing) {
-        await db.photos.update(existing.localId!, local);
-      } else {
-        await db.photos.add(local as LocalPhoto);
-      }
-    };
-
-    // Try server first, fall back to local
-    try {
-      const serverPhotos = await api.getPhotos(startDate, endDate, view, _userId);
-      for (const p of serverPhotos) { await cachePhoto(p); }
-      return serverPhotos;
-    } catch {
-      let results: LocalPhoto[];
-      if (startDate && endDate) {
-        results = await db.photos.where('date').between(startDate, endDate, true, true).toArray();
-      } else {
-        results = await db.photos.orderBy('date').toArray();
-      }
-      if (view) results = results.filter(p => p.view === view);
-      return results.map(toPhoto);
+    // Serve from Dexie immediately
+    let results: LocalPhoto[];
+    if (startDate && endDate) {
+      results = await db.photos.where('date').between(startDate, endDate, true, true).toArray();
+    } else {
+      results = await db.photos.orderBy('date').toArray();
     }
+    if (view) results = results.filter(p => p.view === view);
+    return results.map(localToPhoto);
   },
 
   async getPhotosByDate(date: string, _userId?: number): Promise<ProgressPhoto[]> {
-    const toPhoto = (p: LocalPhoto): ProgressPhoto => ({
-      id: p.serverId ?? p.localId!,
-      date: p.date,
-      view: p.view,
-      drive_file_id: p.drive_file_id,
-      notes: p.notes,
-      url: p.url || api.getPhotoUrl(p.serverId ?? p.localId!),
+    if (_userId) return api.getPhotosByDate(date, _userId);
+
+    revalidate(`photosByDate:${date}`, async () => {
+      const serverPhotos = await api.getPhotosByDate(date, undefined);
+      return serializeMerge(() =>
+        mergeServerRows('photos', db.photos, serverPhotos, (p) => p.id, (p) => toLocalPhoto(p))
+      );
     });
 
-    try {
-      const serverPhotos = await api.getPhotosByDate(date, _userId);
-      for (const p of serverPhotos) {
-        const existing = await db.photos.where('serverId').equals(p.id).first();
-        const local = { serverId: p.id, date: p.date, view: p.view, drive_file_id: p.drive_file_id, notes: p.notes, url: p.url, updatedAt: now() };
-        if (existing) {
-          await db.photos.update(existing.localId!, local);
-        } else {
-          await db.photos.add(local as LocalPhoto);
-        }
-      }
-      return serverPhotos;
-    } catch {
-      const local = await db.photos.where('date').equals(date).toArray();
-      return local.map(toPhoto);
+    const local = await db.photos.where('date').equals(date).toArray();
+    return local.map(localToPhoto);
+  },
+
+  /**
+   * Delete a photo and drop its cached metadata.
+   *
+   * Photo upload/delete are online-only (the UI blocks them offline), but the
+   * local row has to go with it: a merge can only add and update rows, so a
+   * server-side delete would otherwise stay visible in the cache until the
+   * next `pullFromServer` pass.
+   */
+  async deletePhoto(id: number): Promise<void> {
+    await api.deletePhoto(id);
+
+    const existing = (await db.photos.where('serverId').equals(id).first())
+      ?? await db.photos.get(id);
+    if (existing) {
+      await db.photos.delete(existing.localId!);
     }
+  },
+
+  /** Pull photo metadata for one date straight into the cache. Used right
+   *  after an upload so the new photo appears without waiting for a bump. */
+  async refreshPhotos(date: string): Promise<void> {
+    const serverPhotos = await api.getPhotosByDate(date, undefined);
+    await serializeMerge(() =>
+      mergeServerRows('photos', db.photos, serverPhotos, (p) => p.id, (p) => toLocalPhoto(p))
+    );
   },
 };

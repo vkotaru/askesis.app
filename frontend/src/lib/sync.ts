@@ -214,6 +214,11 @@ export async function pullFromServer(): Promise<void> {
         await mergeServerRecord(db.dailyLogs, log);
       }
     }
+    if (data.dailyNutrition) {
+      for (const nutrition of data.dailyNutrition) {
+        await mergeServerRecord(db.dailyNutrition, nutrition);
+      }
+    }
     if (data.activities) {
       for (const activity of data.activities) {
         await mergeServerRecord(db.activities, activity);

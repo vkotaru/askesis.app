@@ -3,7 +3,7 @@
   import { format, subDays, parseISO, startOfWeek, endOfWeek, addWeeks, addDays, isSameWeek } from 'date-fns';
   import { ChevronLeft, ChevronRight, X, Flame, Beef, Footprints, Activity as ActivityIcon } from 'lucide-svelte';
   import { api, type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition, type TrainingPlan } from '$lib/api/client';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
   import { distanceFromMetric } from '$lib/utils/units';
   import {
@@ -56,8 +56,8 @@
     selectedWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   }
 
-  async function loadWeek(start: string, end: string) {
-    weekLoading = true;
+  async function loadWeek(start: string, end: string, silent = false) {
+    if (!silent) weekLoading = true;
     try {
       const [mealsData, nutritionData, activitiesData, logsData] = await Promise.all([
         offlineApi.getMeals(undefined, undefined, start, end, 500),
@@ -81,7 +81,7 @@
     loadWeek(weekStartStr, weekEndStr);
   }
 
-  onMount(async () => {
+  async function loadGlobal(silent = false) {
     try {
       const [logsData, recentData, allActsData] = await Promise.all([
         offlineApi.getDailyLogs(undefined, undefined, undefined, 365),
@@ -92,18 +92,30 @@
       recentActivities = recentData;
       allActivities = allActsData;
 
-      try {
-        const plans = await api.getTrainingPlans();
-        activePlanData = plans.find(p => p.status === 'active') || null;
-      } catch {
-        activePlanData = null;
+      if (!silent) {
+        try {
+          const plans = await api.getTrainingPlans();
+          activePlanData = plans.find(p => p.status === 'active') || null;
+        } catch {
+          activePlanData = null;
+        }
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
       loading = false;
     }
-  });
+  }
+
+  onMount(() => loadGlobal());
+
+  // Re-read the cache when a background revalidation actually changed something
+  let seenDataVersion = $dataVersion;
+  $: if ($dataVersion !== seenDataVersion) {
+    seenDataVersion = $dataVersion;
+    loadGlobal(true);
+    loadWeek(weekStartStr, weekEndStr, true);
+  }
 
   // Weight trend — all logs
   $: weightPoints = logs

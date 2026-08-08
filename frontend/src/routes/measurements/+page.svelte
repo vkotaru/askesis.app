@@ -5,7 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import { clsx } from 'clsx';
   import { api, type BodyMeasurement } from '$lib/api/client';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
 import { settings } from '$lib/stores/settings';
   import { getMeasurementLabel, formatMeasurement, measurementToMetric, measurementFromMetric } from '$lib/utils/units';
 
@@ -125,6 +125,14 @@ import { settings } from '$lib/stores/settings';
     loadMeasurement();
     loadRecentMeasurements();
   });
+
+  // Re-read the cache when a background revalidation actually changed
+  // something. Only the list — the form holds in-progress edits.
+  let seenDataVersion = $dataVersion;
+  $: if ($dataVersion !== seenDataVersion) {
+    seenDataVersion = $dataVersion;
+    loadRecentMeasurements();
+  }
 
   function goToDate(date: string) {
     selectedDate = date;
