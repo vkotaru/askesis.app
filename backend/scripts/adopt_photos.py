@@ -386,7 +386,6 @@ def synthesize_progress(db, parsed: Parsed, apply: bool) -> ProgressPhoto | None
         date=parsed.photo_date,
         view=PhotoView(parsed.view),
         file_path=None,
-        drive_file_id=None,
         notes="Adopted from filesystem import",
     )
     row._synthesized = True

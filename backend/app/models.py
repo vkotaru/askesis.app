@@ -27,9 +27,9 @@ def derive_username(email: str) -> str:
     """Derive a username from an email local-part.
 
     Lowercased and restricted to ``[a-z0-9._-]``. Used both as the Python-side
-    default for rows created without an explicit username (Google sign-up, the
-    dev user) and, in duplicated form, by the ``add_password_auth`` migration
-    that backfills existing rows.
+    default for rows created without an explicit username (the dev user) and,
+    in duplicated form, by the ``add_password_auth`` migration that backfills
+    existing rows.
     """
     local = (email or "").split("@")[0].lower()
     cleaned = _USERNAME_STRIP_RE.sub("", local)
@@ -78,14 +78,10 @@ class User(Base):
     username: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, default=_username_default
     )
-    # Nullable on purpose: Google-created rows predate password auth and have no
-    # password until the operator sets one. Making this NOT NULL locks them out.
+    # Nullable on purpose: rows created before password auth have no password
+    # until the operator sets one. Making this NOT NULL locks them out.
     password_hash: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
-    picture: Mapped[str | None] = mapped_column(String(500))
-    google_refresh_token: Mapped[str | None] = mapped_column(
-        Text
-    )  # For Google Drive API access
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -128,23 +124,6 @@ class UserSettings(Base):
     protein_target: Mapped[int | None] = mapped_column(
         Integer
     )  # Daily protein goal in grams
-    # Google Drive settings
-    drive_parent_folder_id: Mapped[str | None] = mapped_column(
-        String(100)
-    )  # Optional: parent folder ID in user's Drive
-    drive_askesis_folder_id: Mapped[str | None] = mapped_column(
-        String(100)
-    )  # Cached ID of the resolved "Askesis" folder; pinned after first resolve
-    # Google Sheets sync settings
-    google_sheet_id: Mapped[str | None] = mapped_column(
-        String(100)
-    )  # Sheet ID for export sync
-    gsheet_sync_interval_hours: Mapped[int | None] = mapped_column(
-        Integer
-    )  # Auto-sync interval in hours (null = disabled)
-    last_gsheet_sync: Mapped[datetime | None] = mapped_column(
-        DateTime
-    )  # Last successful sync timestamp
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
@@ -189,10 +168,7 @@ class Meal(Base):
     time: Mapped[str | None] = mapped_column(String(10))  # HH:MM format
     calories: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
-    photo_path: Mapped[str | None] = mapped_column(String(500))  # Legacy local path
-    drive_file_id: Mapped[str | None] = mapped_column(
-        String(100)
-    )  # Google Drive file ID
+    photo_path: Mapped[str | None] = mapped_column(String(500))  # Path under uploads/
     ai_analysis: Mapped[str | None] = mapped_column(Text)  # Gemini analysis result
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -401,12 +377,7 @@ class ProgressPhoto(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     date: Mapped[date] = mapped_column(Date, index=True)
     view: Mapped[PhotoView] = mapped_column(Enum(PhotoView))  # front, side, back
-    file_path: Mapped[str | None] = mapped_column(
-        String(500)
-    )  # Legacy local path (deprecated)
-    drive_file_id: Mapped[str | None] = mapped_column(
-        String(100)
-    )  # Google Drive file ID
+    file_path: Mapped[str | None] = mapped_column(String(500))  # Path under uploads/
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

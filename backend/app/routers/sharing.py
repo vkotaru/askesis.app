@@ -26,7 +26,6 @@ class ShareResponse(BaseModel):
     shared_with_id: int
     shared_with_name: str
     shared_with_email: str
-    shared_with_picture: str | None
     categories: list[str]
 
     class Config:
@@ -38,7 +37,6 @@ class SharedWithMeResponse(BaseModel):
     owner_id: int
     owner_name: str
     owner_email: str
-    owner_picture: str | None
     categories: list[str]
 
 
@@ -46,7 +44,6 @@ class UserResponse(BaseModel):
     id: int
     name: str
     email: str
-    picture: str | None
 
     class Config:
         from_attributes = True
@@ -72,7 +69,6 @@ def share_to_response(share: DataShare) -> ShareResponse:
         shared_with_id=share.shared_with_id,
         shared_with_name=share.shared_with.name,
         shared_with_email=share.shared_with.email,
-        shared_with_picture=share.shared_with.picture,
         categories=parse_categories(share.categories),
     )
 
@@ -83,7 +79,6 @@ def share_to_shared_with_me(share: DataShare) -> SharedWithMeResponse:
         owner_id=share.owner_id,
         owner_name=share.owner.name,
         owner_email=share.owner.email,
-        owner_picture=share.owner.picture,
         categories=parse_categories(share.categories),
     )
 

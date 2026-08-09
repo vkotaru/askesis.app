@@ -78,15 +78,11 @@
               $viewingUser?.owner_id === user.owner_id && 'bg-accent-50 dark:bg-accent-900/20'
             )}
           >
-            {#if user.owner_picture}
-              <img src={user.owner_picture} alt={user.owner_name} class="w-8 h-8 rounded-full" />
-            {:else}
-              <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
-                <span class="text-gray-600 dark:text-gray-300 font-medium text-xs">
-                  {user.owner_name?.charAt(0) || '?'}
-                </span>
-              </div>
-            {/if}
+            <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+              <span class="text-gray-600 dark:text-gray-300 font-medium text-xs">
+                {user.owner_name?.charAt(0) || '?'}
+              </span>
+            </div>
             <div class="flex-1 min-w-0">
               <div class="font-medium truncate">{user.owner_name}</div>
               <div class="text-xs text-gray-500 truncate">{user.categories.length} categories</div>

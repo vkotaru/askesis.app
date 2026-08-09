@@ -13,7 +13,6 @@ const DEFAULT_SETTINGS: UserSettings = {
   measurement_unit: 'cm',
   weight_unit: 'kg',
   water_unit: 'ml',
-  drive_parent_folder_id: null,
 };
 
 const FONT_MAP: Record<string, string> = {

@@ -1,14 +1,11 @@
 import logging
 import time
-from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
-from app.scheduler import start_scheduler, stop_scheduler
 from app.routers import (
     auth,
     daily_log,
@@ -38,18 +35,7 @@ logger = logging.getLogger("askesis")
 app_settings = get_settings()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    # Startup: start the scheduler for automated backups
-    start_scheduler()
-    logger.info("Application started with scheduled backup enabled")
-    yield
-    # Shutdown: stop the scheduler
-    stop_scheduler()
-
-
-app = FastAPI(title="Askesis", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Askesis", version="0.1.0")
 
 
 @app.middleware("http")
@@ -67,14 +53,6 @@ async def log_requests(request: Request, call_next):
 
     return response
 
-
-# Session middleware for OAuth state
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=app_settings.secret_key,
-    same_site="lax",  # Allow cookie on OAuth redirect
-    https_only=not app_settings.dev_mode,  # HTTPS only in production
-)
 
 # CORS for frontend - origins configured via CORS_ORIGINS env var
 app.add_middleware(

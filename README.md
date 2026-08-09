@@ -14,7 +14,7 @@ A personal fitness tracking app for daily logs, nutrition, progress photos, and 
 
 - **Daily Log** - Track weight, sleep, energy levels, and notes
 - **Nutrition** - Log meals and track macros
-- **Progress Photos** - Front/side/back photos stored in your Google Drive
+- **Progress Photos** - Front/side/back photos stored on your own server
 - **Measurements** - Track body measurements over time
 - **Activities** - Log workouts and exercises
 - **Calendar** - View your history at a glance
@@ -25,8 +25,8 @@ A personal fitness tracking app for daily logs, nutrition, progress photos, and 
 - **Frontend**: SvelteKit + TailwindCSS, offline-first via Dexie/IndexedDB
 - **Backend**: FastAPI + SQLAlchemy + Alembic
 - **Database**: PostgreSQL (SQLite for local dev)
-- **Auth**: Google OAuth (cookie on web, bearer token on native)
-- **Photo Storage**: Google Drive API
+- **Auth**: username + password, httponly cookie session
+- **Photo Storage**: the server's own disk (bind-mounted `./data/uploads`)
 - **Deployment**: self-hosted Docker on a home server, behind Tailscale (see [SELF_HOSTING.md](SELF_HOSTING.md))
 
 ## Local Development
@@ -35,7 +35,6 @@ A personal fitness tracking app for daily logs, nutrition, progress photos, and 
 
 - Python 3.12+
 - Node.js 20+
-- Google Cloud project with OAuth credentials
 
 ### Backend Setup
 
@@ -69,6 +68,9 @@ npm run dev
 
 App runs at http://localhost:5173
 
+`DEV_MODE=true` bypasses login entirely and signs you in as a synthetic
+`dev@askesis.local` user, so no account setup is needed locally.
+
 ## Production Deployment (self-hosted)
 
 Askesis runs as a single Docker image (SvelteKit SPA + FastAPI served same-origin)
@@ -88,23 +90,23 @@ Tailscale sidecar, and the gotchas.
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `SECRET_KEY` | Random 32+ character string |
-| `GOOGLE_CLIENT_ID` | OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
-| `ALLOWED_EMAILS` | Comma-separated list of allowed emails |
-| `CORS_ORIGINS` | Frontend URL(s) |
-| `DRIVE_FOLDER_NAME` | Name for photos folder (default: "Askesis Progress Photos") |
-| `DRIVE_PARENT_FOLDER_ID` | Optional: parent folder ID in Google Drive |
+| `SECRET_KEY` | Random 32+ character string (`openssl rand -hex 32`) |
+| `CORS_ORIGINS` | JSON array of allowed origins |
+| `UPLOADS_DIR` | Where photos are written (defaults to `backend/uploads`) |
+| `USDA_API_KEY` | Optional — food-database lookups |
+| `GEMINI_API_KEY` | Optional — AI meal-photo analysis |
 
-### Google Cloud Setup
+### Creating accounts
 
-1. Create a project at [Google Cloud Console](https://console.cloud.google.com)
-2. Enable the Google Drive API
-3. Configure OAuth consent screen:
-   - Add scope: `https://www.googleapis.com/auth/drive.file`
-4. Create OAuth 2.0 credentials (Web application)
-5. Add the authorized redirect URI:
-   - `https://askesis.<your-tailnet>.ts.net/auth/callback`
+There is no sign-up page. Accounts are created on the server:
+
+```bash
+docker compose exec app python backend/scripts/manage_users.py \
+    create --username you --email you@example.com --name "Your Name"
+```
+
+It prompts for the password twice. `set-password --username you` resets one,
+and `list` shows every account.
 
 ## Mobile
 

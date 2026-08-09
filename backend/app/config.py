@@ -11,12 +11,6 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./askesis.db"
     secret_key: str = "change-me-in-production"
-    encryption_key: str = (
-        ""  # Separate key for encrypting tokens at rest; falls back to secret_key
-    )
-    google_client_id: str = ""
-    google_client_secret: str = ""
-    allowed_emails: list[str] = []
     dev_mode: bool = False  # Must explicitly enable in .env for development
     # CORS allowed origins. The web app is served same-origin with the API, so
     # this only needs to cover local web dev (Vite). Production can extend it
@@ -42,6 +36,12 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # Tolerate keys we no longer read. pydantic-settings rejects unknown
+        # keys from a dotenv file by default (unknown *env vars* it ignores),
+        # so an operator .env still carrying GOOGLE_CLIENT_ID or ENCRYPTION_KEY
+        # from before the Google removal would otherwise crash the app at
+        # import time rather than being ignored.
+        extra = "ignore"
 
     def validate_production(self) -> list[str]:
         """Validate settings for production deployment. Returns list of errors."""
