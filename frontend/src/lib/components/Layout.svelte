@@ -24,9 +24,6 @@
     { href: '/settings', icon: Settings, label: 'Settings', color: 'text-gray-500' },
   ];
 
-  $: isLocalUser = user.email === 'local@askesis.local';
-  $: filteredNavItems = navItems.filter(item => !(isLocalUser && item.href === '/shared'));
-
   async function handleSignout(e: MouseEvent) {
     // Always handled in-page. A bare <a href="/auth/logout"> gets intercepted by
     // SvelteKit's client router — it throws "Not found: /auth/logout" before
@@ -34,13 +31,6 @@
     // navigateFallback can serve it from cache without ever reaching the
     // server, leaving the cookie intact.
     e.preventDefault();
-
-    // Local profile: never hit the server.
-    if (localStorage.getItem('askesis_local_user')) {
-      localStorage.removeItem('askesis_local_user');
-      userStore.set(null);
-      return;
-    }
 
     try {
       await api.logout();
@@ -97,13 +87,16 @@
       role="button"
       tabindex="0"
     >
+      <!-- Flex column: header / scrollable nav / footer. An absolutely
+           positioned footer used to sit on top of the last nav row, so a tap
+           meant for "Settings" could land on "Sign out". -->
       <div
-        class="absolute right-0 top-0 h-full w-72 bg-white dark:bg-gray-800 shadow-xl"
+        class="absolute right-0 top-0 h-full w-72 flex flex-col bg-white dark:bg-gray-800 shadow-xl"
         on:click|stopPropagation
         on:keydown|stopPropagation
         role="dialog"
       >
-        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+        <div class="flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
             <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
               <span class="text-primary-600 dark:text-primary-400 font-semibold">
@@ -116,8 +109,8 @@
             </div>
           </div>
         </div>
-        <nav class="p-3">
-          {#each filteredNavItems as { href, icon: Icon, label, color }}
+        <nav class="flex-1 min-h-0 overflow-y-auto p-3">
+          {#each navItems as { href, icon: Icon, label, color }}
             {@const isActive = currentPath === href}
             <a
               {href}
@@ -136,11 +129,13 @@
             </a>
           {/each}
         </nav>
-        <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700">
+        <div
+          class="flex-shrink-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-gray-200 dark:border-gray-700"
+        >
           <button
             type="button"
             on:click={handleSignout}
-            class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors px-2"
+            class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors px-2 py-2"
           >
             <LogOut size={16} />
             Sign out
@@ -160,7 +155,7 @@
     </div>
 
     <nav class="flex-1 px-3 overflow-y-auto">
-      {#each filteredNavItems as { href, icon: Icon, label, color }}
+      {#each navItems as { href, icon: Icon, label, color }}
         {@const isActive = currentPath === href}
         <a
           {href}
@@ -224,7 +219,7 @@
   <!-- Mobile Bottom Navigation (horizontally scrollable) -->
   <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 pb-safe">
     <div class="flex overflow-x-auto scrollbar-hide py-2 px-1">
-      {#each filteredNavItems as { href, icon: Icon, label, color }}
+      {#each navItems as { href, icon: Icon, label, color }}
         {@const isActive = currentPath === href}
         <a
           {href}

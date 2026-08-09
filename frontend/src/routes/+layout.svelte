@@ -9,6 +9,7 @@
   import Login from '$lib/components/Login.svelte';
   import SWUpdatePrompt from '$lib/components/SWUpdatePrompt.svelte';
   import SyncErrorToast from '$lib/components/SyncErrorToast.svelte';
+  import MigrateLocalDataBanner from '$lib/components/MigrateLocalDataBanner.svelte';
   import { hydrateFromServer } from '$lib/stores/data';
   import { sync } from '$lib/sync';
 
@@ -62,6 +63,10 @@
   </div>
 {:else if $user}
   <Layout user={$user}>
+    <!-- Mounts once per signed-in session and self-checks; renders nothing
+         unless this browser is holding data from the retired local-profile
+         mode that exists nowhere on the server. -->
+    <MigrateLocalDataBanner userId={$user.id} />
     <slot />
   </Layout>
 {:else}

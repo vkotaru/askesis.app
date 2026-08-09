@@ -42,15 +42,9 @@ export default defineConfig({
         // navigation to /auth/logout from the cached shell and the request
         // never reaches the server — leaving the session cookie intact.
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        // Fonts are self-hosted under /fonts and precached via globPatterns —
+        // there is no external origin left to runtime-cache.
         runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts',
-              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
-            },
-          },
           {
             urlPattern: /\/api\/photos\/file\/.*/i,
             handler: 'CacheFirst',

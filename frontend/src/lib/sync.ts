@@ -102,7 +102,6 @@ export async function queueSync(
 // ── Flush pending sync queue ─────────────────────────────────────────────────
 
 export async function flushPendingSync(): Promise<void> {
-  if (localStorage.getItem('askesis_local_user')) return;
   if (!get(isOnline)) return;
   if (get(isSyncing)) return;
 
@@ -190,7 +189,6 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
 }
 
 export async function pullFromServer(): Promise<void> {
-  if (localStorage.getItem('askesis_local_user')) return;
   if (!get(isOnline)) return;
 
   try {
@@ -211,12 +209,12 @@ export async function pullFromServer(): Promise<void> {
     // Merge server changes into Dexie
     if (data.dailyLogs) {
       for (const log of data.dailyLogs) {
-        await mergeServerRecord(db.dailyLogs, log);
+        await mergeServerRecord(db.dailyLogs, log, true);
       }
     }
     if (data.dailyNutrition) {
       for (const nutrition of data.dailyNutrition) {
-        await mergeServerRecord(db.dailyNutrition, nutrition);
+        await mergeServerRecord(db.dailyNutrition, nutrition, true);
       }
     }
     if (data.activities) {
@@ -236,7 +234,7 @@ export async function pullFromServer(): Promise<void> {
     }
     if (data.measurements) {
       for (const measurement of data.measurements) {
-        await mergeServerRecord(db.measurements, measurement);
+        await mergeServerRecord(db.measurements, measurement, true);
       }
     }
     if (data.photos) {
@@ -254,17 +252,33 @@ export async function pullFromServer(): Promise<void> {
 async function mergeServerRecord(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: Table<any, number>,
-  serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown }
+  serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown },
+  // Only true for tables the server keeps at one row per date (daily logs,
+  // measurements, daily nutrition — all of which have a unique (user_id, date)
+  // constraint). Activities, meals and photos legitimately hold several rows
+  // per date, so matching on date there picks an arbitrary unrelated row.
+  dateIsUnique = false
 ): Promise<void> {
-  // Look up by serverId first, then fall back to date (prevents duplicates
-  // when a local record was created before the server assigned an ID)
   let existing = await table.where('serverId').equals(serverRecord.id).first();
-  if (!existing && serverRecord.date) {
-    existing = await table.where('date').equals(serverRecord.date).first();
+  const matchedByServerId = existing !== undefined;
+
+  // Fall back to date only to adopt a local create the server hasn't assigned
+  // an id to yet — that is the case this fallback was written for. Restricting
+  // it to serverId == null is what keeps it from overwriting an already-synced
+  // row that merely shares a date.
+  if (!existing && dateIsUnique && serverRecord.date) {
+    existing = await table
+      .where('date')
+      .equals(serverRecord.date)
+      .filter((r) => r.serverId == null)
+      .first();
   }
 
   if (serverRecord.deleted_at) {
-    if (existing) {
+    // Delete only what we matched by serverId. A date match is a guess, and
+    // this is a hard delete — getting it wrong destroys a row whose only copy
+    // may be local.
+    if (existing && matchedByServerId) {
       await table.delete(existing.localId);
     }
     return;
@@ -286,12 +300,16 @@ async function mergeServerRecord(
 // ── Full sync cycle ──────────────────────────────────────────────────────────
 
 export async function sync(): Promise<void> {
-  if (localStorage.getItem('askesis_local_user')) return;
   await pullFromServer();
   await flushPendingSync();
 }
 
 // ── Local profile → cloud account migration ──────────────────────────────────
+//
+// Local-profile mode (an account-less identity kept in localStorage) is gone,
+// but a browser that used it still holds those rows in IndexedDB, and they
+// exist nowhere else. These two helpers find that data and hand it to the
+// signed-in account; MigrateLocalDataBanner.svelte drives them after login.
 
 interface MigrationCounts {
   dailyLogs: number;
@@ -303,26 +321,57 @@ interface MigrationCounts {
 }
 
 /**
- * Detect Dexie rows owned by an old local profile and re-target them at the
- * current cloud user. Returns the per-table count of rows that will be
- * pushed on the next sync.
+ * localId sets, per table, of rows that already have a queued mutation.
  *
- * "Local profile rows" = rows with a userId that doesn't match the current
- * cloud user AND no serverId (never synced). Photos are intentionally
- * counted but not migrated — they need a real file upload, not a sync-queue
- * entry, which we defer to a follow-up.
+ * These are NOT stranded: local-profile mode left its writes in pendingSync
+ * (every write falls back to the queue when the API call 401s, which is what
+ * every write did with no session), and now that nothing short-circuits
+ * flushPendingSync they go up on the first sync after login, under the
+ * signed-in account. Re-queueing them as well would push the same row twice,
+ * and `_handle_create` on the server only upserts DailyLog and DailyNutrition
+ * — activities, meals, measurements and foods would insert a second copy.
+ */
+async function queuedLocalIdsByTable(): Promise<Map<string, Set<number>>> {
+  const byTable = new Map<string, Set<number>>();
+  for (const entry of await db.pendingSync.toArray()) {
+    let ids = byTable.get(entry.table);
+    if (!ids) {
+      ids = new Set<number>();
+      byTable.set(entry.table, ids);
+    }
+    ids.add(entry.localId);
+  }
+  return byTable;
+}
+
+/**
+ * Count Dexie rows that belong to an old local profile and have no route to
+ * the server: no serverId (never synced) and no pendingSync entry (not on
+ * their way either). For every table but `foods` that also means a userId
+ * that isn't the current account's; local foods carry no userId at all.
+ *
+ * Photos are counted but never migrated — the bytes have to round-trip
+ * through /api/photos/upload, which is not a sync-queue operation.
  */
 export async function countLocalProfileData(currentUserId: number): Promise<MigrationCounts> {
-  const matches = (row: { userId?: number; serverId?: number }) =>
-    row.serverId == null && row.userId != null && row.userId !== currentUserId;
+  const queued = await queuedLocalIdsByTable();
+
+  const isStranded =
+    (tableName: string, requireForeignUser = true) =>
+    (row: { localId?: number; userId?: number; serverId?: number }) => {
+      if (row.serverId != null) return false;
+      if (row.localId != null && queued.get(tableName)?.has(row.localId)) return false;
+      if (!requireForeignUser) return true;
+      return row.userId != null && row.userId !== currentUserId;
+    };
 
   const [dailyLogs, activities, meals, foods, measurements, photos] = await Promise.all([
-    db.dailyLogs.filter(matches).count(),
-    db.activities.filter(matches).count(),
-    db.meals.filter(matches).count(),
-    db.foods.filter((r) => r.serverId == null).count(),
-    db.measurements.filter(matches).count(),
-    db.photos.filter(matches).count(),
+    db.dailyLogs.filter(isStranded('dailyLogs')).count(),
+    db.activities.filter(isStranded('activities')).count(),
+    db.meals.filter(isStranded('meals')).count(),
+    db.foods.filter(isStranded('foods', false)).count(),
+    db.measurements.filter(isStranded('measurements')).count(),
+    db.photos.filter(isStranded('photos')).count(),
   ]);
 
   return {
@@ -336,17 +385,13 @@ export async function countLocalProfileData(currentUserId: number): Promise<Migr
 }
 
 /**
- * Reassign every local-profile row to currentUserId and queue it as a create.
- * The server-side push handler upserts on (user_id, date) so re-importing
- * the same data twice is safe.
+ * Reassign every stranded local-profile row to currentUserId and queue it as
+ * a create. Selection matches countLocalProfileData exactly, so the banner
+ * never promises to move more than this moves.
  *
  * Returns the totals migrated.
  */
 export async function migrateLocalToCloud(currentUserId: number): Promise<MigrationCounts> {
-  if (localStorage.getItem('askesis_local_user')) {
-    throw new Error('Sign in to a cloud account before migrating local data');
-  }
-
   const counts: MigrationCounts = {
     dailyLogs: 0,
     activities: 0,
@@ -367,13 +412,19 @@ export async function migrateLocalToCloud(currentUserId: number): Promise<Migrat
     { name: 'measurements', table: db.measurements },
   ];
 
+  const queued = await queuedLocalIdsByTable();
+
   for (const { name, table } of tables) {
     const rows = await table.toArray();
     for (const row of rows) {
+      if (row.serverId != null) continue;
+      // Already queued: the sync engine will push it. Queueing a second
+      // create would insert a duplicate on the server for every table except
+      // dailyLogs, which is the only one _handle_create upserts by date.
+      if (row.localId != null && queued.get(name)?.has(row.localId)) continue;
       // Foods don't have userId in the local schema, but they still need a
       // server-side create if they weren't synced. Everything else gets the
       // old-userId check.
-      if (row.serverId != null) continue;
       if (name !== 'foods' && (row.userId == null || row.userId === currentUserId)) continue;
 
       row.userId = currentUserId;
@@ -389,7 +440,13 @@ export async function migrateLocalToCloud(currentUserId: number): Promise<Migrat
   // Photos: count but don't queue. Photo bytes have to round-trip through
   // /api/photos/upload, which isn't a sync-queue operation. Follow-up.
   counts.photosSkipped = await db.photos
-    .filter((r) => r.serverId == null && r.userId != null && r.userId !== currentUserId)
+    .filter(
+      (r) =>
+        r.serverId == null &&
+        !(r.localId != null && queued.get('photos')?.has(r.localId)) &&
+        r.userId != null &&
+        r.userId !== currentUserId
+    )
     .count();
 
   // Kick the push immediately so the user sees progress.

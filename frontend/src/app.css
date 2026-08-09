@@ -1,3 +1,7 @@
+/* Self-hosted @font-face declarations. Must stay above the @tailwind
+   directives: CSS @import is only valid at the top of a stylesheet. */
+@import './fonts.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
