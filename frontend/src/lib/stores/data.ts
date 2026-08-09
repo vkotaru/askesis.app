@@ -188,7 +188,24 @@ async function mergeServerRows<T>(
   const existingRows = await table.where('serverId').anyOf(ids).toArray();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const byServerId = new Map<number, any>();
-  for (const row of existingRows) byServerId.set(row.serverId, row);
+  // Two local rows claiming one serverId is a duplicate stranded by an older
+  // merge. Keeping the last one seen — as this used to — silently orphans the
+  // twin, so it survives forever and the UI renders the row twice. Keep the
+  // lowest localId (same rule as the v4 Dexie upgrade) and delete the rest,
+  // unless the loser has an unflushed mutation: never drop unsent work.
+  const strays: number[] = [];
+  for (const row of existingRows) {
+    const prev = byServerId.get(row.serverId);
+    if (!prev) {
+      byServerId.set(row.serverId, row);
+      continue;
+    }
+    const keep = prev.localId <= row.localId ? prev : row;
+    const drop = keep === prev ? row : prev;
+    byServerId.set(row.serverId, keep);
+    if (drop.localId != null && !pendingLocalIds.has(drop.localId)) strays.push(drop.localId);
+  }
+  if (strays.length > 0) await table.bulkDelete(strays);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orphansByDate = new Map<string, any>();
@@ -234,7 +251,7 @@ async function mergeServerRows<T>(
   if (inserts.length > 0) await table.bulkAdd(inserts);
   if (updates.length > 0) await table.bulkPut(updates);
 
-  return inserts.length > 0 || updates.length > 0;
+  return inserts.length > 0 || updates.length > 0 || strays.length > 0;
 }
 
 /** Convert a server DailyLog to local format */

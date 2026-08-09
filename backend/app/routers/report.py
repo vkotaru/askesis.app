@@ -1,9 +1,14 @@
 """
 Public report endpoint — shareable health summary via unguessable token.
 
-GET  /api/report/{token}    — public, no auth, returns aggregated data
+GET  /api/report/token      — authenticated, read the existing token (mints nothing)
 POST /api/report/token      — authenticated, generate or return existing token
+POST /api/report/token/regenerate — authenticated, rotate the token
 DELETE /api/report/token    — authenticated, revoke token (old links stop working)
+GET  /api/report/{token}    — public, no auth, returns aggregated data
+
+Route order matters: /token and /token/regenerate must be declared before the
+catch-all GET /{token}, or "token" is read as a report token.
 """
 
 import secrets
@@ -35,6 +40,13 @@ router = APIRouter()
 class TokenResponse(BaseModel):
     token: str
     url: str
+
+
+class TokenStatus(BaseModel):
+    """Read-only view of the share token. `token` is None when none exists."""
+
+    token: str | None = None
+    url: str | None = None
 
 
 class WeightPoint(BaseModel):
@@ -98,12 +110,34 @@ class ReportResponse(BaseModel):
 # ── Token management (authenticated) ─────────────────────────────────────────
 
 
+@router.get("/token", response_model=TokenStatus)
+def read_token(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the existing report token, or nulls. Never creates one.
+
+    Viewing the settings page must not mint a shareable public credential —
+    that has to be a deliberate user action (POST /token).
+    """
+    existing = (
+        db.query(ReportToken).filter(ReportToken.user_id == current_user.id).first()
+    )
+    if not existing:
+        return TokenStatus()
+    return TokenStatus(token=existing.token, url=f"/report/{existing.token}")
+
+
 @router.post("/token", response_model=TokenResponse)
 def generate_token(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate or return existing report token."""
+    """Generate or return existing report token.
+
+    ReportToken.user_id is unique, so this is idempotent: an existing token is
+    returned as-is rather than rotated. Use /token/regenerate to rotate.
+    """
     existing = (
         db.query(ReportToken).filter(ReportToken.user_id == current_user.id).first()
     )

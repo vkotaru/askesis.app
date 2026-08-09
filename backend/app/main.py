@@ -89,7 +89,7 @@ def health_check():
 # Serve frontend static files with SPA fallback
 STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, JSONResponse
 
     # Mount static assets directories if they exist
     _app_dir = STATIC_DIR / "_app"
@@ -99,6 +99,16 @@ if STATIC_DIR.exists():
     # SPA fallback: serve index.html for all non-API routes
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        # Never let an unmatched backend path fall through to the SPA shell.
+        # Returning index.html with a 200 turns "this endpoint doesn't exist"
+        # into "HTML where JSON was expected", which is a much harder bug to
+        # read from the client side.
+        first_segment = full_path.split("/", 1)[0]
+        if first_segment in ("api", "auth"):
+            return JSONResponse(
+                status_code=404, content={"detail": f"Not Found: /{full_path}"}
+            )
+
         # Security: prevent path traversal
         try:
             file_path = (STATIC_DIR / full_path).resolve()

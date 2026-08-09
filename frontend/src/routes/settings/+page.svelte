@@ -11,7 +11,24 @@
   let reportLoading = false;
   let reportCopied = false;
 
+  /**
+   * Read the existing share token. GET only — opening this page must never
+   * mint a public credential; that takes an explicit click on "Create share
+   * link" (createReportToken below).
+   */
   async function loadReportToken() {
+    try {
+      const res = await fetch('/api/report/token', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        reportToken = data.token ?? '';
+        reportUrl = data.url ? `${window.location.origin}${data.url}` : '';
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function createReportToken() {
+    reportLoading = true;
     try {
       const res = await fetch('/api/report/token', { method: 'POST', credentials: 'include' });
       if (res.ok) {
@@ -20,6 +37,7 @@
         reportUrl = `${window.location.origin}${data.url}`;
       }
     } catch { /* ignore */ }
+    finally { reportLoading = false; }
   }
 
   async function regenerateReportToken() {
@@ -646,12 +664,12 @@
         </div>
       {:else}
         <button
-          on:click={loadReportToken}
+          on:click={createReportToken}
           disabled={reportLoading}
           class="btn-primary px-4 py-2 text-sm flex items-center gap-2"
         >
           <Link size={16} />
-          Generate Report Link
+          {reportLoading ? 'Creating…' : 'Create share link'}
         </button>
       {/if}
     </div>

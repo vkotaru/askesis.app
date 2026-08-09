@@ -217,6 +217,57 @@ export function findDuplicateDateIds(rows: DatedRow[]): number[] {
   return toDelete;
 }
 
+/** Every table whose rows carry a serverId assigned by the sync engine. */
+export const SYNCED_TABLES = [
+  'dailyLogs',
+  'activities',
+  'meals',
+  'foods',
+  'measurements',
+  'photos',
+  'dailyNutrition',
+] as const;
+
+interface SyncedRow {
+  localId?: number;
+  serverId?: number;
+}
+
+/**
+ * Return the localIds of rows that duplicate another row's serverId.
+ *
+ * One server row must map to exactly one local row. Older merge logic could
+ * insert a second copy under a fresh localId, which is how a browser ends up
+ * rendering the same activity twice. The lowest localId wins — it is the one
+ * the rest of the DB is most likely to reference, and the choice is stable
+ * across re-runs.
+ *
+ * Rows with a null serverId are never returned: those are local creates that
+ * have not been pushed yet, so the local DB is their only copy. `findDuplicate-
+ * DateIds` cannot do this job — it matches by date, and `activities` legitimately
+ * holds many rows per date.
+ */
+export function findDuplicateServerIds(rows: SyncedRow[]): number[] {
+  const keptLocalIdByServerId = new Map<number, number>();
+  const toDelete: number[] = [];
+
+  for (const row of rows) {
+    if (row.serverId == null || row.localId == null) continue;
+
+    const kept = keptLocalIdByServerId.get(row.serverId);
+    if (kept == null) {
+      keptLocalIdByServerId.set(row.serverId, row.localId);
+    } else if (row.localId < kept) {
+      keptLocalIdByServerId.set(row.serverId, row.localId);
+      toDelete.push(kept);
+    } else {
+      toDelete.push(row.localId);
+    }
+  }
+
+  return toDelete;
+}
+
 // ── Database class ───────────────────────────────────────────────────────────
 
 class AskesisDB extends Dexie {
@@ -282,6 +333,36 @@ class AskesisDB extends Dexie {
           }
         }
         await tx.table('settings').put({ key: DEDUPE_BY_DATE_FLAG, value: true });
+      });
+
+    // ── Version 4: dedupe by serverId across every synced table ────────────
+    // Same stores as v3 — this version exists only to run the upgrade.
+    this.version(4)
+      .stores({
+        dailyLogs: '++localId, serverId, date, userId, updatedAt',
+        activities: '++localId, serverId, date, userId, updatedAt',
+        meals: '++localId, serverId, date, userId, updatedAt',
+        foods: '++localId, serverId, name, updatedAt',
+        measurements: '++localId, serverId, date, userId, updatedAt',
+        photos: '++localId, serverId, date, userId, view, updatedAt',
+        dailyNutrition: '++localId, serverId, date, userId, updatedAt',
+        settings: 'key',
+        pendingSync: '++id, table, operation, localId, serverId, timestamp',
+      })
+      .upgrade(async (tx) => {
+        // The v3 cleanup only covered dailyLogs + measurements and only matched
+        // by date, so it could never reach a duplicate-by-serverId in a
+        // many-rows-per-date table like `activities` — browsers upgraded to v3
+        // still show the same workout twice. Sweep every synced table by
+        // serverId instead. Unsynced rows (serverId == null) are left alone;
+        // this DB is the only place they exist.
+        for (const name of SYNCED_TABLES) {
+          const table = tx.table(name);
+          const duplicates = findDuplicateServerIds(await table.toArray());
+          if (duplicates.length > 0) {
+            await table.bulkDelete(duplicates);
+          }
+        }
       });
 
     // ── Future versions go here ────────────────────────────────────────────
