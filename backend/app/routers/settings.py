@@ -1,8 +1,12 @@
 import logging
 import os
+import sqlite3
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
@@ -11,9 +15,6 @@ from app.database import get_db
 from app.models import User, UserSettings
 from app.routers.auth import get_current_user
 from app.config import get_settings as get_app_settings
-from app.encryption import get_refresh_token
-from app import google_drive
-from app.google_drive import upload_backup
 
 logger = logging.getLogger("askesis.settings")
 
@@ -34,12 +35,6 @@ class UserSettingsSchema(BaseModel):
     # Nutrition targets
     calorie_target: int | None = None
     protein_target: int | None = None
-    # Google Drive settings
-    drive_parent_folder_id: str | None = None
-    # Google Sheets sync settings
-    google_sheet_id: str | None = None
-    gsheet_sync_interval_hours: int | None = None
-    last_gsheet_sync: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -57,9 +52,6 @@ class UserSettingsUpdate(BaseModel):
     water_unit: str | None = None
     calorie_target: int | None = None
     protein_target: int | None = None
-    drive_parent_folder_id: str | None = None
-    google_sheet_id: str | None = None
-    gsheet_sync_interval_hours: int | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -136,12 +128,6 @@ def update_settings(
         settings.weight_unit = settings_data.weight_unit
     if settings_data.water_unit is not None:
         settings.water_unit = settings_data.water_unit
-    if settings_data.drive_parent_folder_id is not None:
-        settings.drive_parent_folder_id = settings_data.drive_parent_folder_id
-    if settings_data.google_sheet_id is not None:
-        settings.google_sheet_id = settings_data.google_sheet_id
-    if settings_data.gsheet_sync_interval_hours is not None:
-        settings.gsheet_sync_interval_hours = settings_data.gsheet_sync_interval_hours
     if settings_data.calorie_target is not None:
         settings.calorie_target = settings_data.calorie_target
     if settings_data.protein_target is not None:
@@ -152,14 +138,14 @@ def update_settings(
     return settings
 
 
-class BackupResponse(BaseModel):
-    success: bool
-    message: str
-    file_id: str | None = None
-
-
 def _backup_sqlite(db_url: str) -> tuple[bytes, str]:
-    """Backup SQLite database. Returns (content, filename)."""
+    """Backup SQLite database. Returns (content, filename).
+
+    Uses sqlite3's online backup API rather than reading the file. In WAL mode
+    the main .db file is not self-contained — committed pages can still live in
+    the -wal sidecar until a checkpoint — so a raw read yields a stale or torn
+    snapshot. backup() takes the read lock and produces a consistent copy.
+    """
     db_path = db_url.replace("sqlite:///", "")
 
     if not os.path.exists(db_path):
@@ -168,8 +154,18 @@ def _backup_sqlite(db_url: str) -> tuple[bytes, str]:
             detail=f"Database file not found: {db_path}",
         )
 
-    with open(db_path, "rb") as f:
-        return f.read(), "askesis_backup.db"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        snapshot = Path(tmpdir) / "askesis_backup.db"
+        source = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            dest = sqlite3.connect(snapshot)
+            try:
+                source.backup(dest)
+            finally:
+                dest.close()
+        finally:
+            source.close()
+        return snapshot.read_bytes(), "askesis_backup.db"
 
 
 def _backup_postgres(db: Session) -> tuple[bytes, str]:
@@ -212,55 +208,33 @@ def _backup_postgres(db: Session) -> tuple[bytes, str]:
     return json_content.encode("utf-8"), "askesis_backup.json"
 
 
-@router.post("/backup", response_model=BackupResponse)
+@router.post("/backup")
 def backup_database(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Backup the database to Google Drive, overwriting any existing backup."""
+    """Download a snapshot of the database.
+
+    Streams the backup straight back to the caller as an attachment; the server
+    keeps no copy. SQLite comes back as a .db file, PostgreSQL as portable JSON.
+    """
     logger.info(f"Backup requested by user {current_user.email}")
-    logger.info(f"Refresh token present: {bool(current_user.google_refresh_token)}")
 
-    # Check if user has refresh token for Drive access
-    if not current_user.google_refresh_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Google Drive access not configured. Please re-login to grant Drive access.",
-        )
-
-    # Get database URL from config
     app_settings = get_app_settings()
     db_url = app_settings.database_url
 
     try:
-        # Determine database type and backup accordingly
         if db_url.startswith("sqlite"):
             db_content, filename = _backup_sqlite(db_url)
+            media_type = "application/vnd.sqlite3"
         elif db_url.startswith("postgresql") or db_url.startswith("postgres"):
             db_content, filename = _backup_postgres(db)
+            media_type = "application/json"
         else:
             raise HTTPException(
                 status_code=400,
                 detail="Backup only supported for SQLite and PostgreSQL databases.",
             )
-
-        # Resolve the pinned Askesis folder (creates + caches on first use)
-        askesis_folder_id = google_drive.resolve_askesis_folder_id(db, current_user)
-
-        # Upload to Google Drive (overwrites existing)
-        file_id = upload_backup(
-            refresh_token=get_refresh_token(current_user),
-            file_content=db_content,
-            filename=filename,
-            askesis_folder_id=askesis_folder_id,
-        )
-
-        return BackupResponse(
-            success=True,
-            message=f"Backup completed successfully at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            file_id=file_id,
-        )
-
     except HTTPException:
         raise
     except Exception as e:
@@ -269,6 +243,16 @@ def backup_database(
             status_code=500,
             detail=f"Backup failed: {str(e)}",
         )
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stem, _, ext = filename.rpartition(".")
+    download_name = f"{stem}_{stamp}.{ext}"
+
+    return Response(
+        content=db_content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+    )
 
 
 class RestoreResponse(BaseModel):

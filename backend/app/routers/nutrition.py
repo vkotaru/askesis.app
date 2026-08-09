@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import date, datetime
@@ -35,8 +35,6 @@ from app.models import (
     MealFoodItem,
 )
 from app.routers.auth import get_current_user, check_view_permission
-from app.encryption import get_refresh_token
-from app import google_drive
 from app import storage
 
 router = APIRouter()
@@ -47,18 +45,6 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
-
-
-def require_drive_access(user: User):
-    """Ensure user has Google Drive access configured.
-
-    PHASE 5: delete. Meal photo uploads no longer touch Drive.
-    """
-    if not user.google_refresh_token:
-        raise HTTPException(
-            status_code=403,
-            detail="Google Drive access not configured. Please log out and log in again to grant Drive permissions.",
-        )
 
 
 class MealFoodItemCreate(BaseModel):
@@ -102,7 +88,6 @@ class MealResponse(BaseModel):
     calories: int | None = None
     description: str | None = None
     photo_path: str | None = None
-    drive_file_id: str | None = None
     ai_analysis: str | None = None
     photo_url: str | None = None
     food_items: list[MealFoodItemResponse] = []
@@ -261,7 +246,7 @@ def _food_item_response(mfi: MealFoodItem) -> dict:
 
 def meal_to_response(meal: Meal) -> dict:
     """Convert Meal to response dict with photo URL and food items."""
-    has_photo = meal.drive_file_id or meal.photo_path
+    has_photo = bool(meal.photo_path)
     computed = _compute_meal_nutrition(meal)
     return {
         "id": meal.id,
@@ -272,7 +257,6 @@ def meal_to_response(meal: Meal) -> dict:
         "calories": meal.calories,
         "description": meal.description,
         "photo_path": meal.photo_path,
-        "drive_file_id": meal.drive_file_id,
         "ai_analysis": meal.ai_analysis,
         "photo_url": f"/api/nutrition/meals/{meal.id}/photo" if has_photo else None,
         "food_items": [_food_item_response(mfi) for mfi in meal.food_items],
@@ -561,7 +545,6 @@ async def upload_meal_photo(
     # Drop the superseded file before repointing the row.
     old_path = meal.photo_path
     meal.photo_path = stored_path
-    meal.drive_file_id = None
     if old_path and old_path != stored_path:
         storage.delete_media(old_path, storage.MEALS_BUCKET)
 
@@ -598,41 +581,18 @@ def get_meal_photo(
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
 
-    if not meal.drive_file_id and not meal.photo_path:
+    if not meal.photo_path:
         raise HTTPException(status_code=404, detail="Photo not found")
 
     # Check permission - allow owner or shared users
     if meal.user_id != current_user.id:
         check_view_permission(meal.user_id, "nutrition", db, current_user)
 
-    # Local disk first. FileResponse streams and sets ETag/Last-Modified.
-    if meal.photo_path:
-        path = storage.resolve_media_path(meal.photo_path, storage.MEALS_BUCKET)
-        if path.is_file():
-            return FileResponse(path, media_type="image/jpeg")
-
-    # PHASE 5: delete from here to the end of this function — Google Drive
-    # fallback, kept only so photos not yet adopted onto local disk stay
-    # servable during the migration.
-    owner = db.query(User).filter(User.id == meal.user_id).first()
-    if not owner:
-        raise HTTPException(status_code=404, detail="Meal owner not found")
-
-    if meal.drive_file_id:
-        if not owner.google_refresh_token:
-            raise HTTPException(
-                status_code=500, detail="Meal owner's Drive access expired"
-            )
-
-        try:
-            content = google_drive.download_photo(
-                get_refresh_token(owner), meal.drive_file_id
-            )
-            return Response(content=content, media_type="image/jpeg")
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to download from Google Drive: {e}"
-            )
+    # The server's own disk is the only photo store. FileResponse streams and
+    # sets ETag/Last-Modified.
+    path = storage.resolve_media_path(meal.photo_path, storage.MEALS_BUCKET)
+    if path.is_file():
+        return FileResponse(path, media_type="image/jpeg")
 
     raise HTTPException(status_code=404, detail="Photo file not found")
 

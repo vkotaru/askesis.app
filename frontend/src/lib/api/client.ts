@@ -3,7 +3,7 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  picture?: string;
+  username?: string;
 }
 
 export interface LoginResponse {
@@ -237,18 +237,6 @@ export interface UserSettings {
   water_unit: WaterUnit;
   calorie_target?: number | null;
   protein_target?: number | null;
-  drive_parent_folder_id?: string | null;
-  google_sheet_id?: string | null;
-  gsheet_sync_interval_hours?: number | null;
-  last_gsheet_sync?: string | null;
-}
-
-export interface GSheetSyncResponse {
-  success: boolean;
-  message: string;
-  last_sync?: string | null;
-  tabs: string[];
-  sheet_id?: string | null;
 }
 
 export interface BodyMeasurement {
@@ -291,7 +279,6 @@ export interface DataShare {
   shared_with_id: number;
   shared_with_name: string;
   shared_with_email: string;
-  shared_with_picture?: string;
   categories: DataCategory[];
 }
 
@@ -300,7 +287,6 @@ export interface SharedWithMe {
   owner_id: number;
   owner_name: string;
   owner_email: string;
-  owner_picture?: string;
   categories: DataCategory[];
 }
 
@@ -308,7 +294,6 @@ export interface ShareableUser {
   id: number;
   name: string;
   email: string;
-  picture?: string;
 }
 
 // Import types
@@ -349,6 +334,43 @@ async function doFetch(url: string, options?: RequestInit): Promise<Response> {
     },
     credentials: 'include',
   });
+}
+
+/**
+ * Fetch a response body as an attachment and hand it to the browser as a
+ * download. Honours the server's Content-Disposition filename when present.
+ */
+async function downloadFile(url: string, options?: RequestInit): Promise<void> {
+  let res = await doFetch(url, options);
+
+  if (res.status === 401) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      res = await doFetch(url, options);
+    }
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('Unauthorized');
+    try {
+      const errorData = await res.json();
+      throw new Error(errorData.detail || `HTTP ${res.status}`);
+    } catch (e) {
+      if (e instanceof Error && e.message !== `HTTP ${res.status}`) throw e;
+      throw new Error(`HTTP ${res.status}`);
+    }
+  }
+
+  const filename =
+    res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ?? 'download';
+  const blobUrl = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
 }
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
@@ -562,10 +584,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  backupDatabase: () =>
-    fetchJSON<{ success: boolean; message: string; file_id?: string }>('/api/settings/backup', {
-      method: 'POST',
-    }),
+  // Streams the backup straight to the browser as a download; there is no
+  // server-side copy to point at, so this returns nothing.
+  downloadBackup: () => downloadFile('/api/settings/backup', { method: 'POST' }),
 
   // Body Measurements
   getMeasurements: (startDate?: string, endDate?: string, userId?: number) => {
@@ -615,7 +636,6 @@ export const api = {
   deletePhoto: (id: number) =>
     fetchJSON(`/api/photos/${id}`, { method: 'DELETE' }),
   getPhotoUrl: (id: number) => `/api/photos/file/${id}`,
-  disconnectDrive: () => fetchJSON<{ message: string }>('/api/photos/drive/disconnect', { method: 'POST' }),
 
   // Sharing
   getMyShares: () => fetchJSON<DataShare[]>('/api/sharing/my-shares'),
@@ -659,12 +679,6 @@ export const api = {
     fetchJSON<ImportResult>('/api/import/meals', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
-
-  // Google Sheets Export
-  syncToGoogleSheet: () =>
-    fetchJSON<GSheetSyncResponse>('/api/export/gsheet/sync', {
-      method: 'POST',
     }),
 
   // Training Plans

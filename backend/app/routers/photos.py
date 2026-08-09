@@ -3,9 +3,8 @@ import logging
 import uuid
 from datetime import date, datetime
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from PIL import Image, ImageOps
@@ -22,8 +21,6 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import User, ProgressPhoto, PhotoView
 from app.routers.auth import get_current_user, check_view_permission
-from app import google_drive
-from app.encryption import get_refresh_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,7 +35,6 @@ class PhotoResponse(BaseModel):
     view: str
     # No file_path: the client reads photos through `url` and never needs the
     # on-disk location, which would leak the server's filesystem layout.
-    drive_file_id: str | None  # Google Drive file ID
     notes: str | None
     url: str
 
@@ -68,18 +64,6 @@ def process_image_bytes(
     img.save(output, "JPEG", quality=quality, optimize=True)
     output.seek(0)
     return output.read()
-
-
-def require_drive_access(user: User):
-    """Ensure user has Google Drive access configured.
-
-    PHASE 5: delete. Uploads no longer touch Drive, so nothing calls this.
-    """
-    if not user.google_refresh_token:
-        raise HTTPException(
-            status_code=403,
-            detail="Google Drive access not configured. Please log out and log in again to grant Drive permissions.",
-        )
 
 
 @router.get("/", response_model=list[PhotoResponse])
@@ -114,7 +98,6 @@ def get_photos(
             id=p.id,
             date=p.date,
             view=p.view.value,
-            drive_file_id=p.drive_file_id,
             notes=p.notes,
             url=f"/api/photos/file/{p.id}",
         )
@@ -144,67 +127,11 @@ def get_photos_by_date(
             id=p.id,
             date=p.date,
             view=p.view.value,
-            drive_file_id=p.drive_file_id,
             notes=p.notes,
             url=f"/api/photos/file/{p.id}",
         )
         for p in photos
     ]
-
-
-@router.get("/drive-status")
-def get_drive_status(
-    current_user: User = Depends(get_current_user),
-):
-    """Check if user has Google Drive configured and working."""
-    if not current_user.google_refresh_token:
-        return {
-            "configured": False,
-            "working": False,
-            "message": "Please log out and log in again to enable photo storage.",
-        }
-
-    try:
-        working = google_drive.check_drive_access(get_refresh_token(current_user))
-        return {
-            "configured": True,
-            "working": working,
-            "message": "Google Drive connected"
-            if working
-            else "Drive access expired, please re-login",
-        }
-    except Exception as e:
-        return {"configured": True, "working": False, "message": str(e)}
-
-
-@router.post("/drive/disconnect")
-def disconnect_drive(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Revoke Google Drive access and clear the stored refresh token."""
-    token = get_refresh_token(current_user)
-    if token:
-        # Attempt to revoke the token with Google
-        try:
-            resp = httpx.post(
-                "https://oauth2.googleapis.com/revoke",
-                params={"token": token},
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            if resp.status_code == 200:
-                logger.info(f"Revoked Google token for user {current_user.email}")
-            else:
-                logger.warning(
-                    f"Google revoke returned {resp.status_code} for user {current_user.email}"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to revoke Google token: {e}")
-
-    # Clear token from database regardless of revoke result
-    current_user.google_refresh_token = None
-    db.commit()
-    return {"message": "Google Drive disconnected"}
 
 
 @router.post("/upload", response_model=PhotoResponse)
@@ -274,7 +201,6 @@ async def upload_photo(
         # is orphaned on disk with nothing referencing it.
         old_path = existing.file_path
         existing.file_path = stored_path
-        existing.drive_file_id = None
         existing.notes = notes
         db.commit()
         db.refresh(existing)
@@ -287,7 +213,6 @@ async def upload_photo(
             user_id=current_user.id,
             date=photo_date,
             view=view,
-            drive_file_id=None,
             file_path=stored_path,
             notes=notes,
         )
@@ -299,7 +224,6 @@ async def upload_photo(
         id=photo.id,
         date=photo.date,
         view=photo.view.value,
-        drive_file_id=photo.drive_file_id,
         notes=photo.notes,
         url=f"/api/photos/file/{photo.id}",
     )
@@ -326,35 +250,13 @@ def get_photo_file(
     if photo.user_id != current_user.id:
         check_view_permission(photo.user_id, "photos", db, current_user)
 
-    # Local disk first. FileResponse streams and sets ETag/Last-Modified, which
-    # the service worker's CacheFirst rule on /api/photos/file/* relies on.
+    # The server's own disk is the only photo store. FileResponse streams and
+    # sets ETag/Last-Modified, which the service worker's CacheFirst rule on
+    # /api/photos/file/* relies on.
     if photo.file_path:
         path = storage.resolve_media_path(photo.file_path, storage.PHOTOS_BUCKET)
         if path.is_file():
             return FileResponse(path, media_type="image/jpeg")
-
-    # PHASE 5: delete from here to the end of this function — Google Drive
-    # fallback, kept only so photos not yet adopted onto local disk stay
-    # servable during the migration.
-    owner = db.query(User).filter(User.id == photo.user_id).first()
-    if not owner:
-        raise HTTPException(status_code=404, detail="Photo owner not found")
-
-    if photo.drive_file_id:
-        if not owner.google_refresh_token:
-            raise HTTPException(
-                status_code=500, detail="Photo owner's Drive access expired"
-            )
-
-        try:
-            content = google_drive.download_photo(
-                get_refresh_token(owner), photo.drive_file_id
-            )
-            return Response(content=content, media_type="image/jpeg")
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to download from Google Drive: {e}"
-            )
 
     raise HTTPException(status_code=404, detail="Photo file not found")
 

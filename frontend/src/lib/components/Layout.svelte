@@ -105,19 +105,11 @@
       >
         <div class="p-4 border-b border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-            {#if user.picture}
-              <img
-                src={user.picture}
-                alt={user.name}
-                class="w-10 h-10 rounded-full ring-2 ring-primary-200 dark:ring-primary-800"
-              />
-            {:else}
-              <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
-                <span class="text-primary-600 dark:text-primary-400 font-semibold">
-                  {user.name?.charAt(0) || 'U'}
-                </span>
-              </div>
-            {/if}
+            <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+              <span class="text-primary-600 dark:text-primary-400 font-semibold">
+                {user.name?.charAt(0) || 'U'}
+              </span>
+            </div>
             <div class="flex-1 min-w-0">
               <p class="font-medium truncate text-sm">{user.name}</p>
               <p class="text-xs text-gray-500 truncate">{user.email}</p>
@@ -198,19 +190,11 @@
     <!-- User section -->
     <div class="p-4 border-t border-gray-100 dark:border-gray-700">
       <div class="flex items-center gap-3 mb-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-        {#if user.picture}
-          <img
-            src={user.picture}
-            alt={user.name}
-            class="w-10 h-10 rounded-full ring-2 ring-primary-200 dark:ring-primary-800"
-          />
-        {:else}
-          <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
-            <span class="text-primary-600 dark:text-primary-400 font-semibold">
-              {user.name?.charAt(0) || 'U'}
-            </span>
-          </div>
-        {/if}
+        <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+          <span class="text-primary-600 dark:text-primary-400 font-semibold">
+            {user.name?.charAt(0) || 'U'}
+          </span>
+        </div>
         <div class="flex-1 min-w-0">
           <p class="font-medium truncate text-sm">{user.name}</p>
           <p class="text-xs text-gray-500 truncate">{user.email}</p>

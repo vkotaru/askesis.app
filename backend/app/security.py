@@ -41,7 +41,7 @@ def verify_password(password: str, hashed: str | None) -> bool:
     """Check a plaintext password against a stored hash.
 
     Returns ``False`` when ``hashed`` is ``None`` (an account that has never had
-    a password set — e.g. one created via Google sign-in), but still burns a
+    a password set — e.g. one that predates password auth), but still burns a
     bcrypt round against the dummy hash so the timing matches the hit path.
     """
     encoded = password.encode("utf-8")

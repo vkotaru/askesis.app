@@ -48,7 +48,6 @@ def create_users(db: Session) -> tuple[User, User]:
         user1 = User(
             email="dev@askesis.local",
             name="Dev User",
-            picture=None,
         )
         db.add(user1)
 
@@ -58,7 +57,6 @@ def create_users(db: Session) -> tuple[User, User]:
         user2 = User(
             email="partner@askesis.local",
             name="Partner User",
-            picture=None,
         )
         db.add(user2)
 

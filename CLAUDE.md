@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Askesis is a personal fitness/health tracker (daily log, nutrition, activities,
-measurements, progress photos) for a small allowlisted set of users. It is Tier 1 in the
+measurements, progress photos) for a handful of accounts. It is Tier 1 in the
 `ai_codespace` portfolio — see the workspace `CLAUDE.md` for the cross-app conventions this
 repo is expected to follow (offline-first, PWA, real auth).
 
@@ -38,8 +38,8 @@ cd backend
 ```
 
 **Deploy**: `./deploy.sh` (git pull → `docker compose down` → `up -d --build`).
-Read `SELF_HOSTING.md` first — it covers the Tailscale sidecar, the `ENCRYPTION_KEY`
-constraint, and why the app gets its own tailnet hostname.
+Read `SELF_HOSTING.md` first — it covers the Tailscale sidecar, the photo-uploads bind
+mount, and why the app gets its own tailnet hostname.
 
 ## One client
 
@@ -49,15 +49,15 @@ to the FastAPI backend same-origin over cookie auth.
 The native Kotlin app (`android-native/`) and the Capacitor wrapper (`frontend/android/`) were
 both deleted at tag `v0.1.0-pre-simplify`, along with Railway support. Check out that tag if
 you need any of it. **This repo is mid-simplification** — see
-`~/.claude/plans/lots-of-changes-in-eager-hinton.md` for the phased plan (Google Drive/Sheets
-and OAuth are still present but are being removed).
+`~/.claude/plans/lots-of-changes-in-eager-hinton.md` for the phased plan. Google Drive,
+Sheets and OAuth are gone; the local-profile mode is the last piece still to go.
 
 ## Backend (`backend/`)
 
 FastAPI + SQLAlchemy 2.0 (`Mapped[...]` style) + Alembic. Postgres in production, SQLite for
 local dev. `app/main.py` mounts every router under `/api/<domain>` (plus `/auth`) and, if
 `backend/static/` exists, serves the built SPA from the same process with an index.html
-fallback — that's how the single-container/Railway deploy works.
+fallback — that's how the single-container Docker deploy works.
 
 Key modules:
 
@@ -67,25 +67,28 @@ Key modules:
 - `app/routers/sync.py` — the offline-sync protocol (below).
 - `app/units.py` — **everything is stored canonical metric** (kg, km, cm, ml). Conversion to
   the user's preferred unit happens at the API boundary. Never persist an imperial value.
-- `app/google_drive.py` / `app/google_sheets.py` — photos, meal photos and DB backups live
-  in the *user's own* Drive, not on the server. Sheets export is a separate feature.
-- `app/encryption.py` — Fernet-encrypts Google refresh tokens at rest, keyed by
-  `ENCRYPTION_KEY` (falls back to `SECRET_KEY`). Changing the key orphans every stored token.
-- `app/scheduler.py` — APScheduler background jobs (Drive backup, Sheets auto-sync). Note the
-  scheduled DB backup only handles SQLite.
+- `app/storage.py` — resolves every stored media path against `UPLOADS_DIR`. Progress and
+  meal photos are written to the server's own disk; the DB stores a path relative to that dir.
+- `app/security.py` — bcrypt hashing for password auth, with a constant-time miss path.
+- `app/routers/settings.py` — `POST /api/settings/backup` streams a DB snapshot back as a
+  download (SQLite via the online `backup()` API, so it is WAL-safe; Postgres as JSON).
 
 ### Auth
 
-Three modes share one `get_current_user`:
+Username + password, and nothing else. `POST /auth/login` verifies a bcrypt hash and sets an
+httponly `access_token` cookie; the cookie is the only session mechanism (no bearer headers).
+`POST /auth/refresh` re-issues it, accepting a token that expired within a 7-day grace window.
 
-- **`DEV_MODE=true`** short-circuits auth entirely and returns a synthetic `dev@askesis.local`
-  user. It also disables secure cookies. Anything gated on real identity can't be exercised
-  in dev mode.
-- **Web**: Google OAuth → `access_token` cookie. `allowed_emails` is an allowlist; anyone
-  else is rejected at callback.
-- **Native**: `/auth/mobile/login` → `/auth/mobile/callback` redirects to
-  `app.askesis.app://auth/callback#token=<jwt>`. A `Bearer` header takes precedence over the
-  cookie.
+There is **no self-signup**. Accounts are created on the server:
+
+```bash
+python backend/scripts/manage_users.py create --username u --email u@x --name "U"
+python backend/scripts/manage_users.py set-password --username u
+```
+
+`DEV_MODE=true` short-circuits auth entirely and returns a synthetic `dev@askesis.local`
+user, and disables secure cookies. Anything gated on real identity can't be exercised in dev
+mode.
 
 `get_settings()` calls `validate_production()` and **`sys.exit(1)`** if `SECRET_KEY` is still
 the placeholder while `DEV_MODE` is false.
@@ -145,13 +148,15 @@ read:   component ← Dexie ← GET /api/sync/changes?since=<cursor>
 
 ## Gotchas
 
-- **Photos never live on the server.** They go to the user's Google Drive; the DB stores
-  `drive_file_id`. A user who hasn't linked Drive has no working photo feature, and the
-  service worker caches `/api/photos/file/*` for 90 days.
-- **The native Kotlin app is not a client of this repo's sync protocol.** It has its own
-  reconciliation (`android-native/.../data/sync/`, `SyncBackend` with two implementations)
-  where a push *rewrites a whole Sheets tab*. Changes to `/api/sync/*` need a matching change
-  in `ServerSyncEngine.kt`.
+- **Photos live on the server's disk**, under `UPLOADS_DIR` (`./data/uploads` bind-mounted
+  into the container). The DB stores a path relative to that dir, so the mount is as much
+  part of the data as the database is — back both up. The service worker caches
+  `/api/photos/file/*` for 90 days.
+- **The Google columns are still in the database** (`users.google_refresh_token`,
+  `users.picture`, five Drive/Sheets columns on `user_settings`, `drive_file_id` on
+  `progress_photos` and `meals`) even though no model maps them. They are the last row→file
+  mapping into the operator's Drive export and get dropped in a later, separate migration.
+  SQLAlchemy ignores unmapped columns, so nothing reads them today.
 - `analysis/` is a separate `pip install -e .` package for offline notebook analysis of an
   exported `.db` file. It is not part of the app or CI.
 - Adding a router means touching both `app/routers/` and the `include_router` block in

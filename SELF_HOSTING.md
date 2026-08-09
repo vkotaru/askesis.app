@@ -1,7 +1,7 @@
 # Self-hosting Askesis on your home server (Tailscale)
 
-This runs the same web app/API that's on Railway, in Docker, on your own box,
-reachable over your tailnet. Railway is left untouched — this is independent.
+This runs the web app/API in Docker on your own box, reachable over your
+tailnet. Nothing about it phones home: no OAuth provider, no cloud storage.
 
 Files: `Dockerfile`, `docker-compose.yml`, `deploy.sh`, `.env.example`,
 `tailscale/serve.json`.
@@ -21,7 +21,8 @@ matters: Android associates an installed PWA with its *host*, so two PWAs on the
 same host but different ports collide — a distinct hostname installs cleanly.
 
 Progress/meal photos live on **the server's own disk** (see *Photo storage*).
-DB backups still go to Google Drive.
+Database backups download straight to whatever device you clicked from
+(Settings → Backup & Restore); nothing is uploaded anywhere.
 
 ## First-time setup (on the server)
 
@@ -45,10 +46,14 @@ DB backups still go to Google Drive.
    exists in your tailnet it'll be renamed `askesis-1`; rename in the admin
    console or change `hostname:` in `docker-compose.yml`.)
 
-3. **Google OAuth**: in the Google Cloud console, add the authorized redirect URI:
-   `https://askesis.<your-tailnet>.ts.net/auth/callback`
-   (the existing `app.askesis.app://auth/callback` for the mobile app stays.)
-   HTTPS + `--proxy-headers` mean the secure cookies and OAuth redirect work.
+3. **Create your account.** There is no sign-up page and no OAuth; accounts are
+   made on the box:
+   ```bash
+   docker compose exec app python backend/scripts/manage_users.py \
+       create --username you --email you@example.com --name "Your Name"
+   ```
+   It prompts for the password twice and never takes it as a flag (shell history).
+   `set-password --username you` resets one later; `list` shows every account.
 
 Updating later is just `./deploy.sh` again.
 
@@ -73,7 +78,7 @@ one, so moving the mount point doesn't invalidate every row. `data/` is
 gitignored and excluded from the Docker build context.
 
 A **bind mount, not a named volume**, on purpose: you need to be able to copy a
-Google Drive export into `_inbox/` with ordinary host tools, and `docker cp`
+photo export into `_inbox/` with ordinary host tools, and `docker cp`
 into an anonymous volume path is needlessly awkward.
 
 ### One-time: copy the old named volume across
@@ -95,9 +100,9 @@ docker run --rm \
 (`docker volume ls` to confirm the exact name — Compose prefixes it with the
 project directory name.)
 
-### Adopting a Google Drive photo dump
+### Adopting a photo dump
 
-Download the Askesis folder from Drive, unzip it, and copy the tree into
+If you have an export of photos from an earlier hosting setup, copy the tree into
 `data/uploads/_inbox/` — nested subdirectories are fine, the walk is recursive.
 Then match the files to database rows by filename:
 
@@ -123,23 +128,26 @@ because a meal needs a date and a label that the filename doesn't carry.
 
 ## Gotchas / migration notes
 
-- **`ENCRYPTION_KEY`** — Google refresh tokens are encrypted with it. To move
-  data from Railway, set the *same* `ENCRYPTION_KEY` here, or everyone has to
-  re-link Google (Drive photos won't load until they do). Fresh install: just
-  generate one.
-- **Moving your data** from Railway Postgres:
+- **Importing an existing Postgres database:**
   ```bash
-  # on a machine with the Railway DATABASE_URL:
-  pg_dump "$RAILWAY_DATABASE_URL" > askesis.sql
+  # on a machine with the old DATABASE_URL:
+  pg_dump "$OLD_DATABASE_URL" > askesis.sql
   # on the server, after the stack is up:
   docker compose exec -T db psql -U askesis askesis < askesis.sql
   ```
   Skip this for a fresh start (Alembic creates the schema on first boot).
+- **Rows carried over from an older install keep their Google columns**
+  (`google_refresh_token`, `picture`, the Drive/Sheets settings columns,
+  `drive_file_id`). No code reads them — SQLAlchemy ignores unmapped columns —
+  and a later migration drops them. They are kept for now because
+  `drive_file_id` is the only remaining mapping from a row to a file in an
+  un-exported Drive folder.
 - **`SECRET_KEY`** must not stay the placeholder — the app refuses to start in
   production mode otherwise.
 - **Always use the `https://askesis.<tailnet>.ts.net` URL.** The sidecar serves
-  HTTPS with a real cert; Google OAuth and the `DEV_MODE=false` HTTPS-only
-  cookies require it. There are no plain-HTTP host ports anymore.
+  HTTPS with a real cert, and the `DEV_MODE=false` session cookie is
+  HTTPS-only, so plain HTTP silently fails to keep you logged in. There are no
+  plain-HTTP host ports anymore.
 - **`TS_ACCEPT_DNS=false`** is set on the sidecar on purpose — it stops Tailscale
   from overriding the container's DNS, so the app can still resolve the `db`
   service. Don't remove it.

@@ -9,7 +9,7 @@
   import { getActivityIcon, LEGEND_ICONS } from '$lib/utils/activityIcons';
 
   interface UserData {
-    user: { id: number | null; name: string; picture?: string };
+    user: { id: number | null; name: string };
     logs: DailyLog[];
     activities: ActivityType[];
     latestWeight?: DailyLog;
@@ -55,7 +55,7 @@
     try {
       const [myData, theirData] = await Promise.all([
         loadUserData(null, 'Me'),
-        loadUserData(selected.owner_id, selected.owner_name, selected.owner_picture),
+        loadUserData(selected.owner_id, selected.owner_name),
       ]);
       userData = [myData, theirData];
     } catch (err) {
@@ -70,7 +70,7 @@
     loadComparison();
   }
 
-  async function loadUserData(userId: number | null, name: string, picture?: string): Promise<UserData> {
+  async function loadUserData(userId: number | null, name: string): Promise<UserData> {
     const [logs, activities] = await Promise.all([
       api.getDailyLogs(undefined, undefined, userId ?? undefined, 60),
       api.getActivities(thirtyDaysAgo, today, userId ?? undefined, 10),
@@ -79,7 +79,7 @@
     const weightData = logs.filter(l => l.weight).slice().reverse();
 
     return {
-      user: { id: userId, name, picture },
+      user: { id: userId, name },
       logs,
       activities,
       latestWeight: logs.find(l => l.weight),
@@ -220,13 +220,9 @@
             'w-3 h-3 rounded-full',
             idx === 0 ? 'bg-primary-500' : idx === 1 ? 'bg-accent-500' : 'bg-cardio-500'
           )}></div>
-          {#if user.picture}
-            <img src={user.picture} alt={user.name} class="w-8 h-8 rounded-full" />
-          {:else}
-            <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-          {/if}
+          <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium">
+            {user.name.charAt(0).toUpperCase()}
+          </div>
           <span class="font-medium">{user.name}</span>
         </div>
       {/each}

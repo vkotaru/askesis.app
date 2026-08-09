@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, Cloud, Upload, FileSpreadsheet, RefreshCw, Link, Copy, RotateCw, Flame } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
@@ -140,94 +140,20 @@
   let exporting = false;
   let backingUp = false;
   let backupMessage = '';
-  let disconnecting = false;
   let restoring = false;
   let restoreMessage = '';
   let restoreFile: FileList | null = null;
 
-  // Google Sheets sync
-  let syncing = false;
-  let syncMessage = '';
-  let sheetIdInput = '';
-
-  // Initialize sheet ID from settings
-  $: if ($settings.google_sheet_id && !sheetIdInput) {
-    sheetIdInput = $settings.google_sheet_id;
-  }
-
-  function extractSheetId(input: string): string {
-    // If it's a Google Sheets URL, extract the ID
-    // Format: https://docs.google.com/spreadsheets/d/SHEET_ID/edit...
-    const urlMatch = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-    if (urlMatch) {
-      return urlMatch[1];
-    }
-    // Otherwise return as-is (assume it's already just the ID)
-    return input.trim();
-  }
-
-  async function saveSheetId() {
-    // Extract ID from URL if needed
-    if (sheetIdInput) {
-      const extractedId = extractSheetId(sheetIdInput);
-      if (extractedId !== sheetIdInput) {
-        sheetIdInput = extractedId;
-      }
-    }
-    if (sheetIdInput !== $settings.google_sheet_id) {
-      await settings.updateSetting('google_sheet_id', sheetIdInput || null);
-    }
-  }
-
-  async function syncToGoogleSheet() {
-    // Save sheet ID first if changed
-    await saveSheetId();
-
-    if (!sheetIdInput) {
-      syncMessage = 'Please enter a Google Sheet ID first';
-      return;
-    }
-
-    syncing = true;
-    syncMessage = '';
-    try {
-      const result = await api.syncToGoogleSheet();
-      if (result.success) {
-        const shortId = result.sheet_id ? `...${result.sheet_id.slice(-8)}` : '';
-        syncMessage = `✓ ${result.message} [Sheet: ${shortId}]`;
-      } else {
-        syncMessage = 'Sync failed';
-      }
-    } catch (err) {
-      syncMessage = err instanceof Error ? err.message : 'Sync failed';
-    } finally {
-      syncing = false;
-    }
-  }
-
-  async function backupToCloud() {
+  async function downloadBackup() {
     backingUp = true;
     backupMessage = '';
     try {
-      const result = await api.backupDatabase();
-      backupMessage = result.message;
+      await api.downloadBackup();
+      backupMessage = 'Backup downloaded successfully.';
     } catch (err) {
       backupMessage = err instanceof Error ? err.message : 'Backup failed';
     } finally {
       backingUp = false;
-    }
-  }
-
-  async function disconnectDrive() {
-    if (!confirm('Disconnect Google Drive? You can reconnect by logging out and back in.')) return;
-    disconnecting = true;
-    try {
-      await api.disconnectDrive();
-      backupMessage = 'Google Drive disconnected.';
-    } catch (err) {
-      backupMessage = err instanceof Error ? err.message : 'Disconnect failed';
-    } finally {
-      disconnecting = false;
     }
   }
 
@@ -817,15 +743,11 @@
             <div class="space-y-3">
               {#each myShares as share}
                 <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                  {#if share.shared_with_picture}
-                    <img src={share.shared_with_picture} alt={share.shared_with_name} class="w-10 h-10 rounded-full" />
-                  {:else}
-                    <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
-                      <span class="text-gray-600 dark:text-gray-300 font-medium">
-                        {share.shared_with_name?.charAt(0) || '?'}
-                      </span>
-                    </div>
-                  {/if}
+                  <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                    <span class="text-gray-600 dark:text-gray-300 font-medium">
+                      {share.shared_with_name?.charAt(0) || '?'}
+                    </span>
+                  </div>
                   <div class="flex-1 min-w-0">
                     <p class="font-medium truncate">{share.shared_with_name}</p>
                     <p class="text-xs text-gray-500 truncate">{share.categories.join(', ')}</p>
@@ -855,15 +777,11 @@
             <div class="space-y-3">
               {#each sharedWithMe as share}
                 <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                  {#if share.owner_picture}
-                    <img src={share.owner_picture} alt={share.owner_name} class="w-10 h-10 rounded-full" />
-                  {:else}
-                    <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
-                      <span class="text-gray-600 dark:text-gray-300 font-medium">
-                        {share.owner_name?.charAt(0) || '?'}
-                      </span>
-                    </div>
-                  {/if}
+                  <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                    <span class="text-gray-600 dark:text-gray-300 font-medium">
+                      {share.owner_name?.charAt(0) || '?'}
+                    </span>
+                  </div>
                   <div class="flex-1 min-w-0">
                     <p class="font-medium truncate">{share.owner_name}</p>
                     <p class="text-xs text-gray-500 truncate">{share.categories.join(', ')}</p>
@@ -876,47 +794,33 @@
       {/if}
     </div>
 
-    <!-- Google Drive -->
+    <!-- Backup & Restore -->
     <div class="card p-6">
       <div class="flex items-center gap-2 mb-4">
-        <Cloud size={20} class="text-primary-500" />
-        <h2 class="text-lg font-semibold">Google Drive</h2>
+        <HardDriveDownload size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Backup &amp; Restore</h2>
       </div>
       <p class="text-sm text-gray-500 mb-4">
-        Progress photos and backups are stored in your Google Drive. By default, they go to folders at the root of your Drive.
+        Your data lives on this server. Download a snapshot to keep your own copy.
       </p>
-      <div class="max-w-md mb-6">
-        <label for="drive-folder" class="label">Parent Folder ID (optional)</label>
-        <input
-          id="drive-folder"
-          type="text"
-          class="input"
-          placeholder="Leave empty for Drive root"
-          value={$settings.drive_parent_folder_id || ''}
-          on:change={(e) => settings.updateSetting('drive_parent_folder_id', e.currentTarget.value || null)}
-        />
-        <p class="text-xs text-gray-500 mt-2">
-          To store photos inside a specific folder, paste its ID here. You can find the folder ID in the URL when viewing the folder in Google Drive.
-        </p>
-      </div>
 
       <!-- Database Backup -->
       <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
         <h3 class="font-medium mb-2">Database Backup</h3>
         <p class="text-sm text-gray-500 mb-3">
-          Backup your database to Google Drive. This will overwrite any existing backup.
+          Download a full snapshot of the database to this device.
         </p>
         <button
-          on:click={backupToCloud}
+          on:click={downloadBackup}
           disabled={backingUp}
           class="btn-secondary flex items-center gap-2"
         >
           {#if backingUp}
             <span class="animate-spin">⏳</span>
-            Backing up...
+            Preparing...
           {:else}
-            <Cloud size={18} />
-            Backup to Drive
+            <HardDriveDownload size={18} />
+            Download Backup
           {/if}
         </button>
         {#if backupMessage}
@@ -927,26 +831,6 @@
             {backupMessage}
           </p>
         {/if}
-      </div>
-
-      <!-- Disconnect Drive -->
-      <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
-        <h3 class="font-medium mb-2">Disconnect Google Drive</h3>
-        <p class="text-sm text-gray-500 mb-3">
-          Revoke Drive access and remove the stored token. You can reconnect by logging out and back in.
-        </p>
-        <button
-          on:click={disconnectDrive}
-          disabled={disconnecting}
-          class="btn-secondary text-red-600 dark:text-red-400 flex items-center gap-2"
-        >
-          {#if disconnecting}
-            <span class="animate-spin">...</span>
-            Disconnecting...
-          {:else}
-            Disconnect Drive
-          {/if}
-        </button>
       </div>
 
       <!-- Database Restore -->
@@ -986,85 +870,6 @@
           </p>
         {/if}
       </div>
-    </div>
-
-    <!-- Google Sheets Sync -->
-    <div class="card p-6">
-      <div class="flex items-center gap-2 mb-4">
-        <FileSpreadsheet size={20} class="text-green-600" />
-        <h2 class="text-lg font-semibold">Google Sheets Sync</h2>
-      </div>
-      <p class="text-sm text-gray-500 mb-4">
-        Sync your data to a Google Sheet. Creates tabs for Daily_Log, Activities, Measurements, and Photos.
-      </p>
-
-      <div class="max-w-md mb-4">
-        <label for="sheet-id" class="label">Google Sheet ID</label>
-        <input
-          id="sheet-id"
-          type="text"
-          class="input"
-          placeholder="e.g. 1BxiM... (from the sheet URL)"
-          bind:value={sheetIdInput}
-          on:blur={saveSheetId}
-        />
-        <p class="text-xs text-gray-500 mt-2">
-          Find this in your Google Sheet URL: docs.google.com/spreadsheets/d/<strong>[SHEET_ID]</strong>/edit
-        </p>
-      </div>
-
-      <!-- Auto-sync interval -->
-      <div class="max-w-md mb-4">
-        <label for="sync-interval" class="label">Auto-sync interval</label>
-        <select
-          id="sync-interval"
-          class="input"
-          value={$settings.gsheet_sync_interval_hours ?? 0}
-          on:change={(e) => {
-            const val = parseInt(e.currentTarget.value);
-            settings.updateSetting('gsheet_sync_interval_hours', val || null);
-          }}
-        >
-          <option value={0}>Disabled (manual only)</option>
-          <option value={6}>Every 6 hours</option>
-          <option value={12}>Every 12 hours</option>
-          <option value={24}>Every 24 hours</option>
-        </select>
-        <p class="text-xs text-gray-500 mt-1">
-          Automatically sync your data to Google Sheets in the background.
-        </p>
-      </div>
-
-      <div class="flex items-center gap-4">
-        <button
-          on:click={syncToGoogleSheet}
-          disabled={syncing || !sheetIdInput}
-          class="btn-primary flex items-center gap-2"
-        >
-          {#if syncing}
-            <RefreshCw size={18} class="animate-spin" />
-            Syncing...
-          {:else}
-            <RefreshCw size={18} />
-            Sync Now
-          {/if}
-        </button>
-
-        {#if $settings.last_gsheet_sync}
-          <span class="text-sm text-gray-500">
-            Last sync: {new Date($settings.last_gsheet_sync).toLocaleString()}
-          </span>
-        {/if}
-      </div>
-
-      {#if syncMessage}
-        <p class={clsx(
-          'text-sm mt-3',
-          syncMessage.includes('success') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-        )}>
-          {syncMessage}
-        </p>
-      {/if}
     </div>
 
     <!-- Data Export -->

@@ -471,6 +471,15 @@ def _handle_delete(db: Session, model: type, change: SyncChange, user: User) -> 
     if hasattr(obj, "user_id") and obj.user_id != user.id:
         raise ValueError("Permission denied")
 
-    obj.deleted_at = datetime.utcnow()
-    obj.updated_at = datetime.utcnow()
+    # Not every synced model carries a tombstone column — DailyNutrition, for
+    # one, is upsert-only and has no deleted_at. Setting the attribute anyway
+    # would just bind a stray instance attribute that never reaches SQL (or
+    # raise, on a model with __slots__), leaving the row silently alive. Hard
+    # delete those instead: with no deleted_at there is nothing for
+    # /api/sync/changes to hand clients as a tombstone anyway.
+    if hasattr(type(obj), "deleted_at"):
+        obj.deleted_at = datetime.utcnow()
+        obj.updated_at = datetime.utcnow()
+    else:
+        db.delete(obj)
     db.flush()
