@@ -31,6 +31,27 @@ jobs:
       - name: Lint with Ruff
         run: ruff check .
 
+      # Ruff does not resolve imports, so deleting a module while an importer
+      # remains passes lint and then crash-loops the container at boot. This
+      # import is the only thing in CI that catches that class of failure.
+      - name: Import smoke test
+        env:
+          DEV_MODE: "true"
+          SECRET_KEY: "ci-only-not-a-real-secret"
+          DATABASE_URL: "sqlite:///./ci.db"
+        run: python -c "import app.main"
+
+      # Catches batch_alter_table mistakes on SQLite before they reach the
+      # production Postgres, and proves every migration is reversible.
+      - name: Migration round-trip
+        env:
+          DEV_MODE: "true"
+          SECRET_KEY: "ci-only-not-a-real-secret"
+          DATABASE_URL: "sqlite:///./ci.db"
+        run: |
+          python -m alembic upgrade head
+          python -m alembic downgrade base
+
       - name: Check formatting with Ruff
         run: ruff format --check .
 
