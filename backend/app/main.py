@@ -150,10 +150,13 @@ if STATIC_DIR.exists():
                 status_code=404, content={"detail": f"Not Found: /{full_path}"}
             )
 
-        # Security: prevent path traversal
+        # Security: prevent path traversal. The containment check is
+        # `Path.is_relative_to`, not `str.startswith`: a prefix comparison
+        # against ".../static" also accepts ".../static-anything", which is a
+        # different directory. Same reasoning as app/storage.py.
         try:
             file_path = (STATIC_DIR / full_path).resolve()
-            if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+            if not file_path.is_relative_to(STATIC_DIR.resolve()):
                 return FileResponse(STATIC_DIR / "index.html")
         except (ValueError, OSError):
             return FileResponse(STATIC_DIR / "index.html")

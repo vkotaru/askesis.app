@@ -542,11 +542,8 @@ async def upload_meal_photo(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to store photo: {e}")
 
-    # Drop the superseded file before repointing the row.
     old_path = meal.photo_path
     meal.photo_path = stored_path
-    if old_path and old_path != stored_path:
-        storage.delete_media(old_path, storage.MEALS_BUCKET)
 
     # Analyze with Gemini if requested
     analysis = None
@@ -562,6 +559,13 @@ async def upload_meal_photo(
 
     db.commit()
     db.refresh(meal)
+
+    # Only now that the new path is durably committed is the superseded file
+    # safe to unlink. Unlinking first (with the Gemini call in between) means
+    # any later failure rolls the row back to a path whose file is already
+    # gone. photos.py orders it the same way.
+    if old_path and old_path != stored_path:
+        storage.delete_media(old_path, storage.MEALS_BUCKET)
 
     return {
         **meal_to_response(meal),

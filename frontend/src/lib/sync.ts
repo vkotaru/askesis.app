@@ -6,7 +6,8 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { type Table } from 'dexie';
-import { db, type PendingSyncEntry, type SyncOperation } from './db';
+import { db, pickCanonicalRow, type PendingSyncEntry, type SyncOperation } from './db';
+import { serializeMerge } from './merge-lock';
 import { currentUserId } from './stores/user';
 import { browser } from '$app/environment';
 import { apiUrl } from './config';
@@ -427,43 +428,12 @@ export async function pullFromServer(): Promise<void> {
 
     const data = await res.json();
 
-    // Merge server changes into Dexie
-    if (data.dailyLogs) {
-      for (const log of data.dailyLogs) {
-        await mergeServerRecord(db.dailyLogs, log, ownerId, true);
-      }
-    }
-    if (data.dailyNutrition) {
-      for (const nutrition of data.dailyNutrition) {
-        await mergeServerRecord(db.dailyNutrition, nutrition, ownerId, true);
-      }
-    }
-    if (data.activities) {
-      for (const activity of data.activities) {
-        await mergeServerRecord(db.activities, activity, ownerId);
-      }
-    }
-    if (data.meals) {
-      for (const meal of data.meals) {
-        await mergeServerRecord(db.meals, meal, ownerId);
-      }
-    }
-    if (data.foods) {
-      for (const food of data.foods) {
-        // The food catalogue is shared and carries no owner.
-        await mergeServerRecord(db.foods, food, undefined);
-      }
-    }
-    if (data.measurements) {
-      for (const measurement of data.measurements) {
-        await mergeServerRecord(db.measurements, measurement, ownerId, true);
-      }
-    }
-    if (data.photos) {
-      for (const photo of data.photos) {
-        await mergeServerRecord(db.photos, photo, ownerId);
-      }
-    }
+    // The whole merge is one critical section. `mergeServerRecord` is a
+    // read-then-write per row, and cold start runs it concurrently with
+    // `hydrateFromServer`: without the lock the two interleave at an `await`,
+    // both conclude the table is empty, and both insert the full dataset — the
+    // user sees every row twice. See merge-lock.ts.
+    await serializeMerge(() => mergeServerChanges(data, ownerId));
 
     await saveLastSyncTime(new Date().toISOString());
   } catch {
@@ -471,9 +441,46 @@ export async function pullFromServer(): Promise<void> {
   }
 }
 
+const NO_PENDING: ReadonlySet<number> = new Set<number>();
+
+/**
+ * Apply one /api/sync/changes payload. Runs inside `serializeMerge`, so no
+ * other merge can insert between this function's reads and its writes.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function mergeServerChanges(data: any, ownerId: number): Promise<void> {
+  const pending = await queuedLocalIdsByTable();
+
+  /** Tables the payload can carry, with their one-row-per-date flag. */
+  const groups: Array<[string, boolean]> = [
+    ['dailyLogs', true],
+    ['dailyNutrition', true],
+    ['activities', false],
+    ['meals', false],
+    // The food catalogue is shared and carries no owner.
+    ['foods', false],
+    ['measurements', true],
+    ['photos', false],
+  ];
+
+  for (const [name, dateIsUnique] of groups) {
+    const rows = data[name];
+    if (!rows) continue;
+    for (const row of rows) {
+      await mergeServerRecord(
+        name,
+        row,
+        name === 'foods' ? undefined : ownerId,
+        dateIsUnique,
+        pending.get(name) ?? NO_PENDING
+      );
+    }
+  }
+}
+
 async function mergeServerRecord(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  table: Table<any, number>,
+  /** Dexie table name — also the key `pendingSync` rows are filed under. */
+  tableName: string,
   serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown },
   /** Account the pulled rows belong to. Stamped onto every row written here:
    *  an untagged row is invisible to the read layer, which filters by owner. */
@@ -487,10 +494,29 @@ async function mergeServerRecord(
   // to hold the invariant up. Activities, meals and photos legitimately hold
   // several rows per date, so matching on date there picks an arbitrary
   // unrelated row.
-  dateIsUnique = false
+  dateIsUnique = false,
+  /** localIds in this table with an unflushed mutation. Such a row is never
+   *  swept away as a stray: the local DB is the only copy of that work. */
+  pendingLocalIds: ReadonlySet<number> = NO_PENDING
 ): Promise<void> {
-  let existing = await table.where('serverId').equals(serverRecord.id).first();
+  const table = SYNCED_TABLES[tableName];
+  if (!table) return;
+
+  // `pickCanonicalRow` over every match, not `.first()`: two local rows can
+  // still claim one serverId (stranded by an older merge), and the survivor has
+  // to be the one the read layer serves. The losers are swept here — the bulk
+  // merge path has done this for a while; without it the incremental pull kept
+  // healing one copy and leaving the other on screen forever.
+  const serverIdMatches = await table.where('serverId').equals(serverRecord.id).toArray();
+  let existing = pickCanonicalRow(serverIdMatches);
   const matchedByServerId = existing !== undefined;
+
+  if (serverIdMatches.length > 1) {
+    const strays = serverIdMatches
+      .filter((r) => r !== existing && r.localId != null && !pendingLocalIds.has(r.localId))
+      .map((r) => r.localId as number);
+    if (strays.length > 0) await table.bulkDelete(strays);
+  }
 
   // Fall back to date only to adopt a local create the server hasn't assigned
   // an id to yet — that is the case this fallback was written for. Restricting
@@ -498,11 +524,13 @@ async function mergeServerRecord(
   // row that merely shares a date, and to the owner is what keeps one account's
   // pull from swallowing the other account's unsynced row for the same day.
   if (!existing && dateIsUnique && serverRecord.date) {
-    existing = await table
-      .where('date')
-      .equals(serverRecord.date)
-      .filter((r) => r.serverId == null && r.userId === ownerId)
-      .first();
+    existing = pickCanonicalRow(
+      await table
+        .where('date')
+        .equals(serverRecord.date)
+        .filter((r) => r.serverId == null && r.userId === ownerId)
+        .toArray()
+    );
   }
 
   if (serverRecord.deleted_at) {
@@ -557,7 +585,11 @@ interface MigrationCounts {
 /**
  * localId sets, per table, of rows that already have a queued mutation.
  *
- * These are NOT stranded: local-profile mode left its writes in pendingSync
+ * Two callers, one meaning — "the local DB holds work for this row that the
+ * server has not seen". `mergeServerRecord` uses it to refuse to sweep such a
+ * row as a duplicate; the migration below uses it to refuse to re-queue one.
+ *
+ * For the migration, these are NOT stranded: local-profile mode left its writes in pendingSync
  * (every write falls back to the queue when the API call 401s, which is what
  * every write did with no session), and now that nothing short-circuits
  * flushPendingSync they go up on the first sync after login, under the

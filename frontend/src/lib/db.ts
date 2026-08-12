@@ -202,27 +202,66 @@ interface DatedRow {
   date: string;
 }
 
+/** Anything the duplicate tie-break can be applied to. */
+export interface DedupeCandidate {
+  localId?: number;
+  serverId?: number;
+}
+
+/**
+ * THE duplicate tie-break rule. One rule, one place.
+ *
+ * When two local rows describe the same thing — same serverId, or same date in
+ * a one-row-per-date table — this decides which one is canonical:
+ *
+ *  1. A row the server has seen (`serverId != null`) beats one it hasn't. It is
+ *     the row every later merge will match by serverId, and the row whose edits
+ *     can actually be pushed under an existing id.
+ *  2. Otherwise the lowest `localId` wins: the oldest row is the one the rest of
+ *     the DB (and any queued mutation) is most likely to reference, and the
+ *     choice is stable across re-runs.
+ *
+ * Every caller must use this — list rendering, single-row lookups, saves and
+ * the cleanup sweeps alike. When the list view and the detail view disagreed
+ * about which duplicate is real, the detail view wrote to a row the list never
+ * rendered and the edit looked like it did nothing.
+ */
+export function preferRow<T extends DedupeCandidate>(a: T, b: T): T {
+  const aSynced = a.serverId != null;
+  const bSynced = b.serverId != null;
+  if (aSynced !== bSynced) return aSynced ? a : b;
+  // A row without a localId can't be addressed at all, so it never wins a tie.
+  const aLocal = a.localId ?? Number.MAX_SAFE_INTEGER;
+  const bLocal = b.localId ?? Number.MAX_SAFE_INTEGER;
+  return aLocal <= bLocal ? a : b;
+}
+
+/** The canonical row of a set of duplicates, per `preferRow`. */
+export function pickCanonicalRow<T extends DedupeCandidate>(rows: T[]): T | undefined {
+  let best: T | undefined;
+  for (const row of rows) best = best === undefined ? row : preferRow(best, row);
+  return best;
+}
+
 /**
  * For tables that hold at most one row per date (dailyLogs, measurements),
- * return the localIds of the rows that should be dropped. The row carrying a
- * serverId wins; otherwise the first one seen wins.
+ * return the localIds of the rows that should be dropped. The survivor is the
+ * one `preferRow` picks.
  */
 export function findDuplicateDateIds(rows: DatedRow[]): number[] {
-  const seen = new Map<string, DatedRow>();
+  const keep = new Map<string, DatedRow>();
   const toDelete: number[] = [];
 
   for (const row of rows) {
-    const existing = seen.get(row.date);
+    const existing = keep.get(row.date);
     if (!existing) {
-      seen.set(row.date, row);
+      keep.set(row.date, row);
       continue;
     }
-    if (row.serverId && !existing.serverId) {
-      if (existing.localId != null) toDelete.push(existing.localId);
-      seen.set(row.date, row);
-    } else if (row.localId != null) {
-      toDelete.push(row.localId);
-    }
+    const winner = preferRow(existing, row);
+    const loser = winner === existing ? row : existing;
+    keep.set(row.date, winner);
+    if (loser.localId != null) toDelete.push(loser.localId);
   }
 
   return toDelete;
@@ -281,19 +320,15 @@ export function shouldAdoptUntaggedRows(
   return distinctUserIds.every((id) => id === cachedUserId);
 }
 
-interface SyncedRow {
-  localId?: number;
-  serverId?: number;
-}
+type SyncedRow = DedupeCandidate;
 
 /**
  * Return the localIds of rows that duplicate another row's serverId.
  *
  * One server row must map to exactly one local row. Older merge logic could
  * insert a second copy under a fresh localId, which is how a browser ends up
- * rendering the same activity twice. The lowest localId wins — it is the one
- * the rest of the DB is most likely to reference, and the choice is stable
- * across re-runs.
+ * rendering the same activity twice. `preferRow` picks the survivor — with
+ * every candidate carrying a serverId that reduces to the lowest localId.
  *
  * Rows with a null serverId are never returned: those are local creates that
  * have not been pushed yet, so the local DB is their only copy. `findDuplicate-
@@ -301,21 +336,21 @@ interface SyncedRow {
  * holds many rows per date.
  */
 export function findDuplicateServerIds(rows: SyncedRow[]): number[] {
-  const keptLocalIdByServerId = new Map<number, number>();
+  const keptByServerId = new Map<number, SyncedRow>();
   const toDelete: number[] = [];
 
   for (const row of rows) {
     if (row.serverId == null || row.localId == null) continue;
 
-    const kept = keptLocalIdByServerId.get(row.serverId);
+    const kept = keptByServerId.get(row.serverId);
     if (kept == null) {
-      keptLocalIdByServerId.set(row.serverId, row.localId);
-    } else if (row.localId < kept) {
-      keptLocalIdByServerId.set(row.serverId, row.localId);
-      toDelete.push(kept);
-    } else {
-      toDelete.push(row.localId);
+      keptByServerId.set(row.serverId, row);
+      continue;
     }
+    const winner = preferRow(kept, row);
+    const loser = winner === kept ? row : kept;
+    keptByServerId.set(row.serverId, winner);
+    if (loser.localId != null) toDelete.push(loser.localId);
   }
 
   return toDelete;

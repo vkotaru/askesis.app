@@ -39,6 +39,8 @@ import {
   db,
   clearLocalUserData,
   findDuplicateDateIds,
+  preferRow,
+  pickCanonicalRow,
   DEDUPE_BY_DATE_FLAG,
   type LocalDailyLog,
   type LocalActivity,
@@ -72,6 +74,7 @@ import {
   pendingSyncCount,
   syncErrors,
 } from '$lib/sync';
+import { serializeMerge } from '$lib/merge-lock';
 import { currentUserId } from './user';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -97,18 +100,54 @@ function ownedBy(uid: number | undefined) {
  * account's row is not just a read guard: an update queued against it would be
  * pushed under the wrong session and rejected forever by the server.
  */
-async function findOwnedRow<T extends { localId?: number; userId?: number }>(
+async function findOwnedRow<T extends { localId?: number; serverId?: number; userId?: number }>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: Table<T, number>,
   id: number,
   uid: number | undefined
 ): Promise<T | undefined> {
   const owned = ownedBy(uid);
-  const byServerId = await table.where('serverId').equals(id).filter(owned).first();
+  // `pickCanonicalRow`, not `.first()`: if two local rows still claim this
+  // serverId, the row this resolves to has to be the same one the list view
+  // renders, or the update lands on a row nobody can see.
+  const byServerId = pickCanonicalRow(
+    await table.where('serverId').equals(id).filter(owned).toArray()
+  );
   if (byServerId) return byServerId;
 
   const byLocalId = await table.get(id);
   return byLocalId && owned(byLocalId) ? byLocalId : undefined;
+}
+
+/**
+ * The canonical row for one date in a one-row-per-date table (dailyLogs,
+ * measurements, dailyNutrition), scoped to the current account.
+ *
+ * Every single-row read and every save goes through this, so a duplicate can
+ * never send the detail view to a different row than the list view shows.
+ */
+async function findOwnedRowForDate<
+  T extends { date: string; localId?: number; serverId?: number; userId?: number },
+>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: Table<T, number>,
+  date: string,
+  uid: number | undefined
+): Promise<T | undefined> {
+  if (uid == null) return undefined;
+  return pickCanonicalRow(await table.where('date').equals(date).filter(ownedBy(uid)).toArray());
+}
+
+/** Collapse one-row-per-date rows to the canonical row per date, newest first. */
+function dedupeByDate<T extends { date: string; localId?: number; serverId?: number }>(
+  rows: T[]
+): T[] {
+  const byDate = new Map<string, T>();
+  for (const row of rows) {
+    const existing = byDate.get(row.date);
+    byDate.set(row.date, existing ? preferRow(existing, row) : row);
+  }
+  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,20 +174,6 @@ const REVALIDATE_MIN_INTERVAL_MS = 2000;
  *  collapse into a single bump instead of N re-reads. */
 const BUMP_COALESCE_MS = 50;
 let bumpTimer: ReturnType<typeof setTimeout> | null = null;
-
-/**
- * All Dexie merges run one at a time. The fetches stay parallel; only the
- * read-modify-write is serialized, so two concurrent revalidations (or a
- * revalidation racing initial hydration) can't both decide a row is missing
- * and insert it twice.
- */
-let mergeChain: Promise<unknown> = Promise.resolve();
-
-function serializeMerge<T>(fn: () => Promise<T>): Promise<T> {
-  const next = mergeChain.then(fn, fn);
-  mergeChain = next.catch(() => {});
-  return next;
-}
 
 /**
  * Serialized merge that is abandoned if the signed-in account changed while
@@ -265,9 +290,10 @@ async function mergeServerRows<T>(
   const byServerId = new Map<number, any>();
   // Two local rows claiming one serverId is a duplicate stranded by an older
   // merge. Keeping the last one seen — as this used to — silently orphans the
-  // twin, so it survives forever and the UI renders the row twice. Keep the
-  // lowest localId (same rule as the v4 Dexie upgrade) and delete the rest,
-  // unless the loser has an unflushed mutation: never drop unsent work.
+  // twin, so it survives forever and the UI renders the row twice. `preferRow`
+  // picks the survivor (the same rule the v4 Dexie upgrade and every read use)
+  // and the rest are deleted, unless the loser has an unflushed mutation:
+  // never drop unsent work.
   const strays: number[] = [];
   for (const row of existingRows) {
     const prev = byServerId.get(row.serverId);
@@ -275,7 +301,7 @@ async function mergeServerRows<T>(
       byServerId.set(row.serverId, row);
       continue;
     }
-    const keep = prev.localId <= row.localId ? prev : row;
+    const keep = preferRow(prev, row);
     const drop = keep === prev ? row : prev;
     byServerId.set(row.serverId, keep);
     if (drop.localId != null && !pendingLocalIds.has(drop.localId)) strays.push(drop.localId);
@@ -292,7 +318,9 @@ async function mergeServerRows<T>(
         // Someone else's unsynced row for the same day is not a candidate:
         // adopting it would overwrite their only copy with this account's data.
         if (row.userId !== ownerId) continue;
-        if (row.serverId == null && !orphansByDate.has(row.date)) orphansByDate.set(row.date, row);
+        if (row.serverId != null) continue;
+        const prev = orphansByDate.get(row.date);
+        orphansByDate.set(row.date, prev ? preferRow(prev, row) : row);
       }
     }
   }
@@ -576,6 +604,14 @@ async function hydrateTable<T>(
   // "Already hydrated" has to mean "hydrated for *this* account". Counting
   // every row is what left a second user on a shared browser staring at rows
   // they could not read and no fetch of their own ever firing.
+  //
+  // This count is taken before the fetch, so it is only an optimisation — by
+  // the time the merge runs, `sync()`'s pull may have populated the table. It
+  // deliberately is *not* re-checked inside the lock: /api/sync/changes can
+  // return a partial page, and aborting on "some rows exist now" would leave
+  // the table half-hydrated with no second chance. Correctness comes from the
+  // merge instead: it runs under `serializeMerge` and matches server rows by
+  // serverId, so a row the pull already inserted is updated, never duplicated.
   const localCount =
     ownerId == null ? await table.count() : await table.where('userId').equals(ownerId).count();
   if (localCount > 0) return;
@@ -723,17 +759,12 @@ export const offlineApi = {
       collection = db.dailyLogs.where('date').between(startDate, endDate, true, true).reverse();
     }
 
-    let results = (await collection.toArray()).filter(ownedBy(uid));
+    let results: LocalDailyLog[] = (await collection.toArray()).filter(ownedBy(uid));
 
-    // Deduplicate by date (keep the one with serverId, or the latest localId)
-    const byDate = new Map<string, LocalDailyLog>();
-    for (const r of results) {
-      const existing = byDate.get(r.date);
-      if (!existing || (r.serverId && !existing.serverId) || (r.localId! > existing.localId!)) {
-        byDate.set(r.date, r);
-      }
-    }
-    results = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+    // One row per date, chosen by the shared rule. The old condition here had
+    // two clauses and the second overrode the first, so an unsynced row with a
+    // higher localId hid the synced one the detail view would open.
+    results = dedupeByDate(results);
 
     if (limit) results = results.slice(0, limit);
     return results.map(fromLocalDailyLog);
@@ -746,10 +777,7 @@ export const offlineApi = {
     if (_userId) return api.getDailyLog(date, _userId);
 
     const uid = currentUserId();
-    const local =
-      uid == null
-        ? undefined
-        : await db.dailyLogs.where('date').equals(date).filter(ownedBy(uid)).first();
+    const local = await findOwnedRowForDate(db.dailyLogs, date, uid);
     if (local) {
       return fromLocalDailyLog(local);
     }
@@ -765,7 +793,7 @@ export const offlineApi = {
     // push it to the server under their serverId, which the server rejects —
     // wedging that entry in the queue forever.
     const uid = currentUserId();
-    const existing = await db.dailyLogs.where('date').equals(data.date).filter(ownedBy(uid)).first();
+    const existing = await findOwnedRowForDate(db.dailyLogs, data.date, uid);
     const localRecord: LocalDailyLog = {
       ...data,
       userId: uid,
@@ -1007,17 +1035,16 @@ export const offlineApi = {
       results = await db.measurements.orderBy('date').reverse().filter(ownedBy(uid)).toArray();
     }
 
-    return results.map(fromLocalMeasurement);
+    // One row per date, same rule `getMeasurement` resolves a date with — the
+    // list and the form must open the same row.
+    return dedupeByDate(results).map(fromLocalMeasurement);
   },
 
   async getMeasurement(date: string, _userId?: number): Promise<BodyMeasurement> {
     if (_userId) return api.getMeasurement(date, _userId);
 
     const uid = currentUserId();
-    const local =
-      uid == null
-        ? undefined
-        : await db.measurements.where('date').equals(date).filter(ownedBy(uid)).first();
+    const local = await findOwnedRowForDate(db.measurements, date, uid);
     if (local) {
       return fromLocalMeasurement(local);
     }
@@ -1029,7 +1056,7 @@ export const offlineApi = {
 
   async saveMeasurement(data: BodyMeasurementInput): Promise<BodyMeasurement> {
     const uid = currentUserId();
-    const existing = await db.measurements.where('date').equals(data.date).filter(ownedBy(uid)).first();
+    const existing = await findOwnedRowForDate(db.measurements, data.date, uid);
     const localRecord: LocalMeasurement = { ...data, userId: uid, updatedAt: now() };
 
     let localId: number;
@@ -1074,7 +1101,7 @@ export const offlineApi = {
     const uid = currentUserId();
     if (uid == null) return api.getDailyNutrition(date, undefined);
 
-    const local = await db.dailyNutrition.where('date').equals(date).filter(ownedBy(uid)).first();
+    const local = await findOwnedRowForDate(db.dailyNutrition, date, uid);
 
     if (local) {
       revalidate(`dailyNutritionDate:${uid}:${date}`, async () => {
@@ -1101,7 +1128,7 @@ export const offlineApi = {
   async saveDailyNutrition(data: DailyNutritionInput): Promise<DailyNutrition> {
     // Write to Dexie first so the macros survive an offline save
     const uid = currentUserId();
-    const existing = await db.dailyNutrition.where('date').equals(data.date).filter(ownedBy(uid)).first();
+    const existing = await findOwnedRowForDate(db.dailyNutrition, data.date, uid);
     const localRecord: LocalDailyNutrition = { ...data, userId: uid, updatedAt: now() };
 
     let localId: number;
@@ -1155,7 +1182,8 @@ export const offlineApi = {
       results = await db.dailyNutrition.orderBy('date').reverse().filter(ownedBy(uid)).toArray();
     }
 
-    results = [...results].sort((a, b) => b.date.localeCompare(a.date));
+    // One row per date, matching what `getDailyNutrition` resolves a date to.
+    results = dedupeByDate(results);
     if (limit) results = results.slice(0, limit);
     return results.map(fromLocalNutrition);
   },

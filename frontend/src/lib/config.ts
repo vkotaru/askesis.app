@@ -3,7 +3,8 @@
  *
  * There is only one client — the SvelteKit PWA — and it is always served from
  * the same origin as the API, so every request is same-origin and auth happens
- * via the access_token cookie set by /auth/callback.
+ * via the access_token cookie set by `POST /auth/login` (or `POST
+ * /auth/set-initial-password`).
  */
 
 /**

@@ -27,9 +27,17 @@ Outcomes, one per file:
     ADOPT           parsed, matched exactly one row, will be/was linked
     SKIP-ALREADY    row already points at this file, it exists, bytes match
     CONFLICT-DEST   destination exists with *different* bytes — never clobbered
+    CONFLICT-LINKED the matched row already points at a *different* file that
+                    exists — adopting would silently orphan it
     CONFLICT-ROWS   more than one candidate row — ambiguous, never guessed
     ORPHAN          filename parses but no row matches
     UNPARSEABLE     filename doesn't match any known pattern
+
+CONFLICT-LINKED is the Drive case: Drive keeps a superseded upload *and* the
+current one for the same (user, date, view), and both land in the inbox under
+different random suffixes. Only one can win, and picking silently would report
+a plain ADOPT while stranding the other file. So the second one stops here for
+a human to look at.
 
 Exit status is non-zero if any CONFLICT occurred, so this is safe to gate a
 deploy on.
@@ -253,6 +261,44 @@ def set_path(row, value: str) -> None:
         row.photo_path = value
 
 
+def linked_file(row, bucket: str) -> Path | None:
+    """Absolute path of the file this row already points at, if it exists.
+
+    Goes through storage.resolve_media_path so a legacy absolute path from a
+    pre-Drive host normalises to the same location a relative one would — a row
+    pointing at `/old/host/uploads/photos/x.jpg` and one pointing at
+    `photos/x.jpg` are the same file, not a conflict.
+    """
+    stored = current_path(row)
+    if not stored:
+        return None
+    try:
+        path = storage.resolve_media_path(stored, bucket)
+    except Exception:
+        return None
+    return path if path.is_file() else None
+
+
+def row_key(parsed: Parsed) -> tuple:
+    """Identity of the row a filename resolves to, matched or synthesized.
+
+    Not the row's primary key: under `--create-missing` a dry run hands back an
+    unsaved stand-in with id 0, so every synthesized row would collide. These
+    are exactly the fields the row lookups filter on, so the mapping to a real
+    row is one-to-one either way.
+    """
+    if parsed.kind == "progress":
+        return ("progress", parsed.user_id, parsed.photo_date, parsed.view)
+    return ("meal", parsed.user_id, parsed.meal_id)
+
+
+def shown_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(storage.UPLOADS_ROOT))
+    except ValueError:
+        return str(path)
+
+
 # ── Main adoption pass ───────────────────────────────────────────────────────
 
 
@@ -271,6 +317,12 @@ def adopt(apply: bool, create_missing: bool, prune_inbox: bool) -> Plan:
         return plan
 
     db = SessionLocal()
+    # Rows this run has already pointed at a file, keyed by row identity. In
+    # --apply this duplicates what the database would tell us on the next
+    # lookup; in a dry run (and for rows --create-missing only pretends to
+    # create) it is the only way to notice that two inbox files are competing
+    # for one row.
+    claimed: dict[tuple, str] = {}
     try:
         for source in files:
             parsed = parse_filename(source.name)
@@ -281,6 +333,7 @@ def adopt(apply: bool, create_missing: bool, prune_inbox: bool) -> Plan:
                 continue
 
             bucket = bucket_for(parsed.kind)
+            key = row_key(parsed)
             rows = (
                 find_progress_rows(db, parsed)
                 if parsed.kind == "progress"
@@ -325,6 +378,7 @@ def adopt(apply: bool, create_missing: bool, prune_inbox: bool) -> Plan:
                 and sha256_file(dest_abs) == source_digest
             ):
                 plan.add(source, "SKIP-ALREADY", row_label(row), dest_rel)
+                claimed[key] = dest_rel
                 if prune_inbox and apply:
                     source.unlink()
                 continue
@@ -339,10 +393,35 @@ def adopt(apply: bool, create_missing: bool, prune_inbox: bool) -> Plan:
                 )
                 continue
 
+            # CONFLICT-LINKED: the row is already backed by a different file
+            # that is still on disk. Repointing it would leave that file with
+            # nothing referencing it, and the row is the only mapping back to
+            # it — so refuse rather than pick a winner.
+            claimed_rel = claimed.get(key)
+            if claimed_rel is not None and claimed_rel != dest_rel:
+                plan.add(
+                    source,
+                    "CONFLICT-LINKED",
+                    f"{row_label(row)} already linked to {claimed_rel} earlier in this run",
+                    dest_rel,
+                )
+                continue
+
+            existing_file = linked_file(row, bucket)
+            if existing_file is not None and existing_file != dest_abs:
+                plan.add(
+                    source,
+                    "CONFLICT-LINKED",
+                    f"{row_label(row)} already linked to {shown_path(existing_file)} (exists on disk)",
+                    dest_rel,
+                )
+                continue
+
             label = row_label(row) + (
                 " (created)" if getattr(row, "_synthesized", False) else ""
             )
             plan.add(source, "ADOPT", label, dest_rel)
+            claimed[key] = dest_rel
 
             if not apply:
                 continue
@@ -496,6 +575,7 @@ def report(plan: Plan, root: Path, apply: bool) -> int:
         "ADOPT",
         "SKIP-ALREADY",
         "CONFLICT-DEST",
+        "CONFLICT-LINKED",
         "CONFLICT-ROWS",
         "ORPHAN",
         "UNPARSEABLE",
@@ -504,7 +584,9 @@ def report(plan: Plan, root: Path, apply: bool) -> int:
             print(f"  {outcome:<15} {counts[outcome]}")
     print(f"  {'TOTAL':<15} {len(plan.results)}")
 
-    conflicts = counts.get("CONFLICT-DEST", 0) + counts.get("CONFLICT-ROWS", 0)
+    conflicts = sum(
+        n for outcome, n in counts.items() if outcome.startswith("CONFLICT")
+    )
     if not apply:
         print("\nDRY RUN — nothing was written. Re-run with --apply to commit.")
     if conflicts:

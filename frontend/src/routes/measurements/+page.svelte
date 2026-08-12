@@ -7,7 +7,7 @@
   import { api, type BodyMeasurement } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
 import { settings } from '$lib/stores/settings';
-  import { getMeasurementLabel, formatMeasurement, measurementToMetric, measurementFromMetric } from '$lib/utils/units';
+  import { getMeasurementLabel, formatMeasurement, measurementToMetric, measurementFromMetric, roundMeasurement } from '$lib/utils/units';
 
   let recentMeasurements: BodyMeasurement[] = [];
 
@@ -34,10 +34,20 @@ import { settings } from '$lib/stores/settings';
   let calf_right: number | undefined;
   let notes = '';
 
-  // Helper to convert from metric (API stores cm, convert to user's unit for display)
+  // Helper to convert from metric (API stores cm, convert to user's unit for
+  // display). Rounded: these values are bound straight into `<input
+  // type="number" step="0.01">`, and an unrounded cm→in conversion put
+  // `10.987238867056993` in the box.
   function fromMetric(value: number | undefined | null): number | undefined {
     if (value == null) return undefined;
-    return measurementFromMetric(value, $settings.measurement_unit);
+    return roundMeasurement(measurementFromMetric(value, $settings.measurement_unit));
+  }
+
+  // The body-diagram overlay labels sit on top of the silhouette in a 12rem
+  // column, so they are formatted (and kept to one line) — a raw conversion
+  // wrapped across several lines and collided with the label above it.
+  function diagramValue(value: number | undefined): string {
+    return roundMeasurement(value)?.toString() ?? '--';
   }
 
   async function loadMeasurement() {
@@ -302,31 +312,29 @@ import { settings } from '$lib/stores/settings';
               <path d="M65 115 L70 160 L72 195 L62 195 L58 160 L55 120" fill="currentColor"/>
             </svg>
 
-            <!-- Measurement indicators -->
-            <div class="absolute top-[14%] left-1/2 -translate-x-1/2 w-full text-center">
-              <div class="text-xs text-gray-500">Neck</div>
-              <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">{neck ?? '--'}</div>
-            </div>
-            <div class="absolute top-[22%] left-1/2 -translate-x-1/2 w-full text-center">
-              <div class="text-xs text-gray-500">Shoulders</div>
-              <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">{shoulders ?? '--'}</div>
-            </div>
-            <div class="absolute top-[32%] left-1/2 -translate-x-1/2 w-full text-center">
-              <div class="text-xs text-gray-500">Chest</div>
-              <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">{chest ?? '--'}</div>
-            </div>
-            <div class="absolute top-[45%] left-1/2 -translate-x-1/2 w-full text-center">
-              <div class="text-xs text-gray-500">Waist</div>
-              <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">{waist ?? '--'}</div>
-            </div>
-            <div class="absolute top-[52%] left-1/2 -translate-x-1/2 w-full text-center">
-              <div class="text-xs text-gray-500">Abdomen</div>
-              <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">{abdomen ?? '--'}</div>
-            </div>
-            <div class="absolute top-[60%] left-1/2 -translate-x-1/2 w-full text-center">
-              <div class="text-xs text-gray-500">Hips</div>
-              <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">{hips ?? '--'}</div>
-            </div>
+            <!-- Measurement indicators.
+                 One line each (label and value side by side, never wrapping):
+                 the anchors are only ~7% of the figure's height apart — 27px at
+                 the default 12rem width — so a two-line block, or a value long
+                 enough to wrap, ran straight into its neighbour. -->
+            {#each [
+              { top: '14%', label: 'Neck', value: neck },
+              { top: '22%', label: 'Shoulders', value: shoulders },
+              { top: '32%', label: 'Chest', value: chest },
+              { top: '45%', label: 'Waist', value: waist },
+              { top: '52%', label: 'Abdomen', value: abdomen },
+              { top: '60%', label: 'Hips', value: hips },
+            ] as point}
+              <div
+                class="absolute left-1/2 -translate-x-1/2 flex items-baseline gap-1 whitespace-nowrap leading-none"
+                style="top: {point.top}"
+              >
+                <span class="text-[10px] text-gray-500">{point.label}</span>
+                <span class="text-xs font-semibold text-primary-600 dark:text-primary-400">
+                  {diagramValue(point.value)}
+                </span>
+              </div>
+            {/each}
           </div>
 
           <!-- Center inputs -->

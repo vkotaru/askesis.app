@@ -118,8 +118,37 @@ def get_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get list of all users (excluding myself) for sharing dropdown."""
-    users = db.query(User).filter(User.id != current_user.id).all()
+    """Candidates for the "share with" dropdown.
+
+    This is the one cross-user read that cannot go through
+    ``check_view_permission``: you have to be able to name someone *before* a
+    share with them exists. So it is a directory by construction, and the
+    honest question is how small the directory can be while the picker still
+    works.
+
+    Two narrowings that cost the UI nothing:
+
+    - drop anyone you are already sharing with. ``create_share`` rejects a
+      duplicate with a 400 and the settings page filters those out of the
+      ``<select>`` itself, so they were never selectable; returning them only
+      widened the disclosure.
+    - order by name, so the response is stable and doesn't leak insertion
+      order (i.e. roughly, account age).
+
+    ``email`` stays in the response because it is the *key* the create flow
+    posts back (``ShareCreate.shared_with_email``) and the label the picker
+    renders; removing it needs a matching frontend change to select by id.
+    """
+    already_shared = db.query(DataShare.shared_with_id).filter(
+        DataShare.owner_id == current_user.id
+    )
+    users = (
+        db.query(User)
+        .filter(User.id != current_user.id)
+        .filter(User.id.notin_(already_shared))
+        .order_by(User.name, User.id)
+        .all()
+    )
     return users
 
 
