@@ -83,6 +83,35 @@ clean release; `v0.2.0 (main@e4230a8)` means it isn't one. See `RELEASING.md`.
 > `sudo tailscale serve --https=8443 off` (on the host), then deploy — the
 > sidecar owns serving now.
 
+## Accounts that predate password sign-in
+
+Askesis used Google sign-in before v0.2.0. Those user rows survive with all their
+data, but their `password_hash` is NULL — there is no password to type, so they
+cannot log in at all. `manage_users.py list` shows them as **`CLAIMABLE`**.
+
+Such an account can be claimed from the login screen. Type its username or email
+with any password; the server answers `409 password_not_set` and the form turns
+into "set your password". Whatever is entered there becomes the account's
+password and signs that browser in immediately.
+
+> **This is unauthenticated.** An account with no password belongs to whoever
+> reaches the login screen first — there is no email round-trip, no invite code,
+> nothing to prove ownership. It is only tolerable because the app is reachable
+> solely from your tailnet. **Claim every account in the first session after the
+> first deploy**, or set their passwords on the box yourself:
+>
+> ```bash
+> docker compose exec app python backend/scripts/manage_users.py list
+> docker compose exec app python backend/scripts/manage_users.py set-password --email old@example.com
+> ```
+
+The path closes permanently for an account the moment it has a password: from
+then on `POST /auth/set-initial-password` refuses it, and the only way to change
+the password is `/auth/change-password`, which requires the current one. It is a
+claim, never a reset — a forgotten password is still a `set-password` on the box.
+
+Every successful claim is logged: `docker compose logs app | grep "Initial password claimed"`.
+
 ## Photo storage
 
 Photos are written to `./data/uploads` on the host, bind-mounted into the

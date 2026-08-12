@@ -71,6 +71,28 @@ def _prompt_password() -> str:
         return first
 
 
+def _warn_claimable(users: list[User]) -> None:
+    """Warn about accounts with no password.
+
+    An account whose ``password_hash`` is NULL can be claimed by *anyone* who
+    can reach the app: the login screen offers `POST /auth/set-initial-password`
+    for it, with no proof of ownership. That path closes permanently the moment
+    a password exists, so the fix is always to set one.
+    """
+    unclaimed = [u for u in users if not u.password_hash]
+    if not unclaimed:
+        return
+
+    names = ", ".join(u.username or u.email for u in unclaimed)
+    print(
+        f"\nWARNING: {len(unclaimed)} account(s) have no password: {names}\n"
+        "         Anyone who can reach the app can claim them from the login\n"
+        "         screen and take the account, with all of its data. Set a\n"
+        "         password now:  manage_users.py set-password --username <name>",
+        file=sys.stderr,
+    )
+
+
 def cmd_list(args) -> int:
     db = SessionLocal()
     try:
@@ -79,13 +101,14 @@ def cmd_list(args) -> int:
             print("No users.")
             return 0
 
-        print(f"{'ID':>4}  {'USERNAME':<24} {'EMAIL':<40} {'PASSWORD':<8} NAME")
+        print(f"{'ID':>4}  {'USERNAME':<24} {'EMAIL':<40} {'PASSWORD':<11} NAME")
         for user in users:
-            has_pw = "set" if user.password_hash else "-"
+            has_pw = "set" if user.password_hash else "CLAIMABLE"
             print(
                 f"{user.id:>4}  {user.username or '':<24} {user.email:<40} "
-                f"{has_pw:<8} {user.name or ''}"
+                f"{has_pw:<11} {user.name or ''}"
             )
+        _warn_claimable(users)
         return 0
     finally:
         db.close()
@@ -131,6 +154,10 @@ def cmd_create(args) -> int:
         db.commit()
         db.refresh(user)
         print(f"Created user id={user.id} username={user.username} email={user.email}")
+        # _prompt_password() never returns empty, so this should not fire —
+        # it's here so that a future code path which skips the prompt can't
+        # quietly mint a claimable account.
+        _warn_claimable([user])
         return 0
     finally:
         db.close()

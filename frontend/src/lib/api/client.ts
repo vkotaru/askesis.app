@@ -325,6 +325,24 @@ export interface ImportResult {
 import { apiUrl } from '$lib/config';
 import { tryRefreshToken } from '$lib/auth';
 
+/**
+ * An HTTP-level failure. Extends Error so every existing `err instanceof Error`
+ * / `err.message` call site keeps working; `status` and `code` are additive, for
+ * callers that need to branch on the machine-readable part of a body (e.g. the
+ * 409 `password_not_set` that /auth/login returns for an unclaimed account).
+ */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function doFetch(url: string, options?: RequestInit): Promise<Response> {
   return fetch(apiUrl(url), {
     ...options,
@@ -389,15 +407,24 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error('Unauthorized');
+      throw new ApiError('Unauthorized', 401);
     }
     // Try to get error detail from response body
     try {
       const errorData = await res.json();
-      throw new Error(errorData.detail || `HTTP ${res.status}`);
+      // FastAPI's 422 `detail` is an array of field errors, not a string —
+      // never render it raw. Fall back to something a person can act on
+      // rather than "HTTP 422".
+      const detail =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : res.status === 422
+            ? 'That value is not valid. Please check and try again.'
+            : null;
+      throw new ApiError(detail || `HTTP ${res.status}`, res.status, errorData.code);
     } catch (e) {
       if (e instanceof Error && e.message !== `HTTP ${res.status}`) throw e;
-      throw new Error(`HTTP ${res.status}`);
+      throw new ApiError(`HTTP ${res.status}`, res.status);
     }
   }
 
@@ -428,6 +455,15 @@ export const api = {
   // SPA stays mounted; the session cookie rides back on the response.
   login: (username: string, password: string) =>
     fetchJSON<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  // Claim an account that predates password auth (password_hash IS NULL), and
+  // sign in with the password just set. Returns the same shape as login(), so
+  // the caller reuses the post-login bootstrap. Rejected — with a body that
+  // does not say why — for any account that already has a password.
+  setInitialPassword: (username: string, password: string) =>
+    fetchJSON<LoginResponse>('/auth/set-initial-password', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),

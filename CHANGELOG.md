@@ -17,6 +17,21 @@ does not roll the database back — that head is what you would need to
 
 ### Added
 
+- **Self-service first password.** Accounts created under the old Google sign-in
+  carry `password_hash = NULL` and could not log in at all; the only fix was
+  `manage_users.py set-password` on the server. Now `POST /auth/login` answers
+  `409 {"code": "password_not_set"}` for such an account and the login screen turns
+  into "set your password", which calls the new `POST /auth/set-initial-password`
+  and signs the browser straight in.
+  The endpoint is gated on `password_hash IS NULL`, so it closes permanently once
+  an account has a password — it is a claim, not a reset, and cannot be used to
+  take over an account that already has one. Every claim is logged at INFO.
+  The trade-off: it does reveal that an unclaimed account exists for an identifier,
+  and anyone who can reach the app can claim one. Accounts that already have a
+  password keep the byte-identical generic 401. See `SELF_HOSTING.md` — claim your
+  accounts promptly.
+- `manage_users.py list` marks passwordless accounts `CLAIMABLE` and warns about
+  them on stderr.
 - A real release process. `./scripts/release.sh X.Y.Z` guards (semver, increasing,
   clean `main` in sync with origin, unused tag, non-empty `[Unreleased]`), runs the
   CI-equivalent checks, writes `VERSION`, rolls this changelog, commits and creates
