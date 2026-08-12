@@ -31,6 +31,14 @@ COPY VERSION ./VERSION
 # FastAPI serves the built SPA from backend/static (see app/main.py).
 COPY --from=frontend /app/frontend/build ./static
 
+# Which commit this image is. Declared this late on purpose: an ARG invalidates
+# every layer after it, and these change on every deploy — keeping them below
+# the pip install and the COPYs preserves the expensive cache.
+ARG GIT_SHA=unknown
+ARG GIT_REF=unknown
+ENV GIT_SHA=$GIT_SHA \
+    GIT_REF=$GIT_REF
+
 EXPOSE 8000
 
 # Migrate, seed the shared food list (best-effort), then serve.

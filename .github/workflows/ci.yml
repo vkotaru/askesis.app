@@ -3,10 +3,71 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
 jobs:
+  # Cheap guards against version drift. No dependencies beyond git.
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history to diff against the base of the PR / previous push.
+          fetch-depth: 0
+
+      # A release tag must agree with the VERSION file it points at, or
+      # /api/version and the UI will confidently report the wrong release.
+      # Scoped to plain vX.Y.Z: the historical checkpoint tags
+      # (v0.1.0-pre-simplify, v0.2.0-simplified) predate this rule and must not
+      # fail CI if anyone ever re-runs them.
+      - name: Tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag '$tag' is not a release tag (vX.Y.Z) — skipping the VERSION check."
+            exit 0
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::Tag $tag does not match VERSION ($version). Expected tag v$version."
+            exit 1
+          fi
+          echo "Tag $tag matches VERSION $version."
+
+      # A version bump with no changelog entry is a release nobody can read, and
+      # release.sh writes both together — so this only fires on a hand edit.
+      - name: VERSION bump requires a CHANGELOG entry
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            git fetch --quiet origin "$BASE_REF"
+            base="$(git merge-base FETCH_HEAD HEAD)"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          else
+            echo "No usable base commit to diff against — skipping."
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          if printf '%s\n' "$changed" | grep -qx 'VERSION'; then
+            if printf '%s\n' "$changed" | grep -qx 'CHANGELOG.md'; then
+              echo "VERSION changed and CHANGELOG.md changed with it."
+            else
+              echo "::error::VERSION changed but CHANGELOG.md did not. Use ./scripts/release.sh."
+              exit 1
+            fi
+          else
+            echo "VERSION unchanged — nothing to check."
+          fi
+
   backend:
     name: Backend
     runs-on: ubuntu-latest

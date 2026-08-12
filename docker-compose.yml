@@ -43,7 +43,15 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    # GIT_SHA/GIT_REF are exported by deploy.sh and baked into the image so the
+    # container can report what it is (GET /api/version). .dockerignore excludes
+    # .git/, so there is no way for the build to work this out for itself.
+    # They default to "unknown" — a bare `docker compose build` still works.
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        GIT_REF: ${GIT_REF:-unknown}
     restart: unless-stopped
     # App secrets / config come from .env (read into the container as env vars).
     env_file: .env

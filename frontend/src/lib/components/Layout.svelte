@@ -5,7 +5,7 @@
   import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
   import { user as userStore, clearCachedUser } from '$lib/stores/user';
-  import { APP_VERSION } from '$lib/version';
+  import { deployedVersion, formatVersionLabel, formatVersionTitle } from '$lib/version';
   import SyncStatus from './SyncStatus.svelte';
 
   export let user: User;
@@ -155,7 +155,9 @@
       <p class="text-xs text-gray-400 mt-1">
         Health & Fitness Tracker
         <span class="text-gray-300 dark:text-gray-600" aria-hidden="true">·</span>
-        <span title="App version">v{APP_VERSION}</span>
+        <span title={formatVersionTitle($deployedVersion)}
+          >{formatVersionLabel($deployedVersion)}</span
+        >
       </p>
     </div>
 

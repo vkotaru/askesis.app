@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from pathlib import Path
 from fastapi import FastAPI, Request
@@ -55,6 +56,13 @@ def _read_version() -> str:
 
 APP_VERSION = _read_version()
 
+# Which commit/ref this image was built from. Baked in as build args by
+# deploy.sh (see docker-compose.yml + Dockerfile) because .git is excluded from
+# the build context. "unknown" whenever the image was built by hand or the app
+# is running straight from a dev checkout.
+GIT_SHA = os.environ.get("GIT_SHA") or "unknown"
+GIT_REF = os.environ.get("GIT_REF") or "unknown"
+
 app = FastAPI(title="Askesis", version=APP_VERSION)
 
 
@@ -110,8 +118,13 @@ def health_check():
 def version():
     """What is actually deployed. Unauthenticated on purpose — it exposes
     nothing but the version string, and being able to check it without a
-    session is the entire point."""
-    return {"version": APP_VERSION}
+    session is the entire point.
+
+    `ref` is the git ref deploy.sh checked out: "v0.2.0" for a release,
+    "main" for a deliberate continuous deploy, "unknown" for a hand-built
+    image. The UI uses it to mark anything that is not exactly v<VERSION>.
+    """
+    return {"version": APP_VERSION, "commit": GIT_SHA, "ref": GIT_REF}
 
 
 # Serve frontend static files with SPA fallback

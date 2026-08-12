@@ -6,6 +6,9 @@ tailnet. Nothing about it phones home: no OAuth provider, no cloud storage.
 Files: `Dockerfile`, `docker-compose.yml`, `deploy.sh`, `.env.example`,
 `tailscale/serve.json`.
 
+Release and rollback mechanics live in **`RELEASING.md`** — read it before you
+roll back, because the database does not roll back with the container.
+
 ## What runs
 Three containers:
 - **app** — builds the SvelteKit SPA and serves it **same-origin** with the
@@ -37,8 +40,11 @@ Database backups download straight to whatever device you clicked from
 
 2. **Deploy**
    ```bash
-   ./deploy.sh             # git pull, docker compose down, up --build
+   ./deploy.sh             # latest vX.Y.Z tag: fetch, checkout, down, up --build
    ```
+   `deploy.sh` deploys the **latest release tag**, not the tip of `main` —
+   unreleased work never reaches the box by accident. It leaves the checkout on a
+   detached HEAD, which is correct; don't `git pull` here.
    The sidecar joins the tailnet as **`askesis`** and serves HTTPS. Open:
    **`https://askesis.<your-tailnet>.ts.net`**
    (First run, confirm it came up: `docker compose logs tailscale` — look for it
@@ -55,7 +61,23 @@ Database backups download straight to whatever device you clicked from
    It prompts for the password twice and never takes it as a flag (shell history).
    `set-password --username you` resets one later; `list` shows every account.
 
-Updating later is just `./deploy.sh` again.
+Updating later is just `./deploy.sh` again — it picks up whatever the newest
+`vX.Y.Z` tag is. To pin, roll back, or deploy unreleased work:
+
+```bash
+./deploy.sh v0.2.0      # a specific release (rollback / pin)
+./deploy.sh main        # tip of main, deliberately
+```
+
+Check what actually landed:
+
+```bash
+curl -s https://askesis.<your-tailnet>.ts.net/api/version
+# {"version":"0.2.0","commit":"<sha>","ref":"v0.2.0"}
+```
+
+The same information is under the logo in the sidebar. A bare `v0.2.0` means a
+clean release; `v0.2.0 (main@e4230a8)` means it isn't one. See `RELEASING.md`.
 
 > Migrating from a port-based setup? Remove the old manual mapping first:
 > `sudo tailscale serve --https=8443 off` (on the host), then deploy — the
@@ -153,6 +175,11 @@ because a meal needs a date and a label that the filename doesn't carry.
   service. Don't remove it.
 - **CORS_ORIGINS** only matters for cross-origin clients; the PWA is served
   same-origin with the API. Put your `ts.net` host there anyway.
+- **Rolling back the container does not roll back the database.** The container
+  runs `alembic upgrade head` on every start, so an older image ends up talking
+  to a newer schema. Usually harmless (migrations are additive); when it isn't,
+  `alembic downgrade` to the head recorded in that release's `CHANGELOG.md`
+  entry, and take a `pg_dump` before every deploy. Full detail in `RELEASING.md`.
 - **`deploy.sh` runs `docker compose down`, which is safe** — it stops and
   removes containers, and leaves both volumes (`pgdata`, `tailscale-state`) and
   the `./data/uploads` bind mount untouched. **Never run `docker compose
