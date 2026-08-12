@@ -35,7 +35,27 @@ logger = logging.getLogger("askesis")
 app_settings = get_settings()
 
 
-app = FastAPI(title="Askesis", version="0.1.0")
+def _read_version() -> str:
+    """Read the repo-root VERSION file — the single source of truth.
+
+    The frontend inlines the same file at build time (see vite.config.ts), so
+    the UI and the API can never disagree about what is deployed. Nothing
+    derives this from git: .git is excluded from the Docker build context.
+    """
+    for candidate in (
+        Path(__file__).parent.parent / "VERSION",  # in the image (COPY VERSION)
+        Path(__file__).parent.parent.parent / "VERSION",  # repo checkout
+    ):
+        try:
+            return candidate.read_text().strip()
+        except OSError:
+            continue
+    return "unknown"
+
+
+APP_VERSION = _read_version()
+
+app = FastAPI(title="Askesis", version=APP_VERSION)
 
 
 @app.middleware("http")
@@ -84,6 +104,14 @@ app.include_router(training.router, prefix="/api/training", tags=["training"])
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/api/version")
+def version():
+    """What is actually deployed. Unauthenticated on purpose — it exposes
+    nothing but the version string, and being able to check it without a
+    session is the entire point."""
+    return {"version": APP_VERSION}
 
 
 # Serve frontend static files with SPA fallback

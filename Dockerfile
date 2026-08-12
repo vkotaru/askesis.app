@@ -8,6 +8,9 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# Single source of truth for the version; vite.config.ts inlines it at build
+# time. .git is not in the build context, so this file is the only way in.
+COPY VERSION /app/VERSION
 # Served same-origin by the backend, so no API host needs baking in here.
 RUN npm run build   # -> /app/frontend/build  (adapter-static, SPA fallback)
 
@@ -22,6 +25,9 @@ COPY backend/requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY backend/ ./
+# Same VERSION file the frontend was built with — app/main.py reads it for the
+# OpenAPI version and GET /api/version.
+COPY VERSION ./VERSION
 # FastAPI serves the built SPA from backend/static (see app/main.py).
 COPY --from=frontend /app/frontend/build ./static
 

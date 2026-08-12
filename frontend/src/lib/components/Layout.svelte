@@ -5,6 +5,7 @@
   import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
   import { user as userStore, clearCachedUser } from '$lib/stores/user';
+  import { APP_VERSION } from '$lib/version';
   import SyncStatus from './SyncStatus.svelte';
 
   export let user: User;
@@ -151,7 +152,11 @@
       <h1 class="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent">
         Askesis
       </h1>
-      <p class="text-xs text-gray-400 mt-1">Health & Fitness Tracker</p>
+      <p class="text-xs text-gray-400 mt-1">
+        Health & Fitness Tracker
+        <span class="text-gray-300 dark:text-gray-600" aria-hidden="true">·</span>
+        <span title="App version">v{APP_VERSION}</span>
+      </p>
     </div>
 
     <nav class="flex-1 px-3 overflow-y-auto">

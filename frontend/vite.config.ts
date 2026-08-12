@@ -1,8 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import { defineConfig } from 'vite';
 
+// Single source of truth for the app version, shared with the backend.
+// Read at build time and inlined — .git is excluded from the Docker build
+// context, so `git describe` is not available when the image is built.
+const version = readFileSync(
+  fileURLToPath(new URL('../VERSION', import.meta.url)),
+  'utf-8'
+).trim();
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   plugins: [
     sveltekit(),
     SvelteKitPWA({
