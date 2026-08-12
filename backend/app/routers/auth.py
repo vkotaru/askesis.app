@@ -231,9 +231,29 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = _PASSWORD_FIELD
 
 
+class SetInitialPasswordRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=255)
+    password: str = _PASSWORD_FIELD
+
+
 # Deliberately identical for "no such user" and "wrong password" so the
 # response body doesn't reveal whether an account exists.
 _BAD_CREDENTIALS = "Incorrect username or password"
+
+# The one deliberate exception to that. Accounts that predate password auth
+# (they signed in with Google) carry password_hash = NULL and cannot log in at
+# all, so the login form has to be able to say "claim this one". That does leak
+# "an unclaimed account exists for this identifier" — acceptable on a
+# tailnet-private app, and strictly limited to accounts with no password: the
+# moment a hash exists the account falls back to the generic 401 above.
+_PASSWORD_NOT_SET = "This account has no password yet. Set one to finish signing in."
+
+# Returned by /set-initial-password for both "no such account" and "that
+# account already has a password". Keeping them identical means the claim
+# endpoint is no more of an oracle than it has to be — and, more importantly,
+# it is never a password *reset*: a claimed account can only be changed through
+# /change-password, which requires the current password.
+_CANNOT_CLAIM = "That account cannot set an initial password."
 
 
 @router.post("/login")
@@ -250,13 +270,27 @@ async def password_login(payload: LoginRequest, db: Session = Depends(get_db)):
         .first()
     )
 
+    # An account that exists but has never had a password set can't ever
+    # satisfy the check below, so tell the client to offer the claim flow
+    # instead of bouncing it off an unwinnable 401. Machine-readable `code` so
+    # the SPA branches on that and not on prose.
+    if user is not None and user.password_hash is None:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": _PASSWORD_NOT_SET, "code": "password_not_set"},
+        )
+
     # verify_password burns a bcrypt round against a dummy hash when the user
-    # is missing or has no password set, so timing doesn't leak account
-    # existence.
+    # is missing, so timing doesn't leak account existence.
     stored_hash = user.password_hash if user else None
     if not verify_password(payload.password, stored_hash):
         raise HTTPException(status_code=401, detail=_BAD_CREDENTIALS)
 
+    return _login_response(user)
+
+
+def _login_response(user: User) -> JSONResponse:
+    """The signed-in response: user JSON plus the session cookie."""
     access_token = create_access_token({"sub": user.email})
     response = JSONResponse(
         {
@@ -268,6 +302,49 @@ async def password_login(payload: LoginRequest, db: Session = Depends(get_db)):
     )
     set_auth_cookie(response, access_token)
     return response
+
+
+@router.post("/set-initial-password")
+async def set_initial_password(
+    payload: SetInitialPasswordRequest, db: Session = Depends(get_db)
+):
+    """Claim an account that has never had a password (the Google-era rows).
+
+    Strictly one-shot per account: it is gated on ``password_hash IS NULL``, so
+    once a password exists this endpoint can never touch the account again.
+    This is **not** a password reset and must never become one — there is no
+    email round-trip here, so anything it could overwrite would be a takeover.
+    """
+    identifier = payload.username.strip()
+
+    user = (
+        db.query(User)
+        .filter(or_(User.username == identifier, User.email == identifier))
+        .first()
+    )
+
+    if user is None or user.password_hash is not None:
+        raise HTTPException(status_code=409, detail=_CANNOT_CLAIM)
+
+    try:
+        user.password_hash = hash_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    db.commit()
+
+    # Visible in `docker compose logs`: the one event where an account gains a
+    # password without anyone proving they already had one.
+    logger.info(
+        "Initial password claimed for user id=%s username=%s email=%s",
+        user.id,
+        user.username,
+        user.email,
+    )
+
+    # Log them straight in — same shape as /login, so the SPA reuses its
+    # post-login bootstrap.
+    return _login_response(user)
 
 
 @router.post("/change-password")
