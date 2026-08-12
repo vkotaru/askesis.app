@@ -102,9 +102,16 @@ httponly `access_token` cookie; the cookie is the only session mechanism (no bea
 There is **no self-signup**. Accounts are created on the server:
 
 ```bash
-python backend/scripts/manage_users.py create --username u --email u@x --name "U"
-python backend/scripts/manage_users.py set-password --username u
+cd backend            # required — config is read relative to the working dir
+python scripts/manage_users.py create --username u --email u@x --name "U"
+python scripts/manage_users.py set-password --username u
 ```
+
+Run it from `backend/`, not the repo root: `Settings.Config.env_file = ".env"` resolves
+against the cwd, so from the root it finds no `.env` and exits on the placeholder
+`SECRET_KEY` guard. In the container the same rule applies — `WORKDIR` is `/app/backend`,
+so it is `docker compose exec app python scripts/manage_users.py`, without a `backend/`
+prefix.
 
 `DEV_MODE=true` short-circuits auth entirely and returns a synthetic `dev@askesis.local`
 user, and disables secure cookies. Anything gated on real identity can't be exercised in dev
