@@ -37,9 +37,29 @@ cd backend
 ./db.sh fresh                 # DESTRUCTIVE — dev only
 ```
 
-**Deploy**: `./deploy.sh` (git pull → `docker compose down` → `up -d --build`).
+**Releasing** (`RELEASING.md` is the full process):
+
+```bash
+./scripts/release.sh 0.3.0   # guards + CI checks, writes VERSION, rolls CHANGELOG,
+                             # commits, annotated tag v0.3.0 — does NOT push
+```
+
+`VERSION` at the repo root is the single source of truth (backend reads it, Vite inlines
+it). Release tags are plain `vX.Y.Z`; `v0.1.0-pre-simplify` and `v0.2.0-simplified` are
+historical checkpoints, not releases. Write notes under `## [Unreleased]` in
+`CHANGELOG.md` as you go — `release.sh` refuses to run with an empty section, and CI
+fails any change to `VERSION` that doesn't touch `CHANGELOG.md`. Each released entry
+records the Alembic head it shipped with, because that's what a rollback needs.
+
+**Deploy**: `./deploy.sh` deploys the **latest `vX.Y.Z` tag** (fetch → `checkout
+--detach` → `docker compose down` → `up -d --build`), not the tip of main.
+`./deploy.sh v0.2.0` pins/rolls back; `./deploy.sh main` deploys unreleased work
+explicitly. It exports `GIT_SHA`/`GIT_REF` as build args so the container can report
+itself via `GET /api/version`, which is what the sidebar label reads at runtime.
 Read `SELF_HOSTING.md` first — it covers the Tailscale sidecar, the photo-uploads bind
-mount, and why the app gets its own tailnet hostname.
+mount, and why the app gets its own tailnet hostname. **Rolling the container back does
+not roll the database back** (`alembic upgrade head` runs on every start) — see
+`RELEASING.md`.
 
 ## One client
 
