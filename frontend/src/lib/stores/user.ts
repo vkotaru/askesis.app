@@ -1,9 +1,23 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { User } from '$lib/api/client';
 import { db } from '$lib/db';
 
 export const user = writable<User | null>(null);
 export const userLoading = writable(true);
+
+/**
+ * Id of the account this browser tab is currently acting as, or undefined when
+ * signed out.
+ *
+ * Everything that touches the local cache is scoped by this: a row is only
+ * readable by the account that owns it, and a queued mutation is only pushed
+ * under the account that made it. Reading the store synchronously (rather than
+ * threading the id through every call site) keeps the guarantee in one place —
+ * a new cache read cannot forget to scope itself.
+ */
+export function currentUserId(): number | undefined {
+  return get(user)?.id ?? undefined;
+}
 
 // ── Cached identity ──────────────────────────────────────────────────────────
 // The layout renders from this snapshot immediately instead of blocking first

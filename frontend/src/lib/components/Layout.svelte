@@ -4,7 +4,8 @@
   import { clsx } from 'clsx';
   import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
-  import { user as userStore, clearCachedUser } from '$lib/stores/user';
+  import { user as userStore } from '$lib/stores/user';
+  import { clearLocalSession, prepareSignOut } from '$lib/stores/data';
   import { deployedVersion, formatVersionLabel, formatVersionTitle } from '$lib/version';
   import SyncStatus from './SyncStatus.svelte';
 
@@ -25,6 +26,14 @@
     { href: '/settings', icon: Settings, label: 'Settings', color: 'text-gray-500' },
   ];
 
+  // Sign-out has to erase this account's offline cache: the browser is shared
+  // (household app), and anything left in IndexedDB is readable by whoever
+  // signs in next. The one thing that cannot simply be deleted is the offline
+  // mutation queue — those rows exist nowhere else — so if any are still
+  // unsent after a flush attempt, the user is asked instead of guessed at.
+  let signOutBusy = false;
+  let unsentCount = 0;
+
   async function handleSignout(e: MouseEvent) {
     // Always handled in-page. A bare <a href="/auth/logout"> gets intercepted by
     // SvelteKit's client router — it throws "Not found: /auth/logout" before
@@ -32,14 +41,49 @@
     // navigateFallback can serve it from cache without ever reaching the
     // server, leaving the cookie intact.
     e.preventDefault();
+    if (signOutBusy) return;
 
+    signOutBusy = true;
+    try {
+      const { pending } = await prepareSignOut();
+      if (pending > 0) {
+        unsentCount = pending;
+        return;
+      }
+      await completeSignout(true);
+    } finally {
+      signOutBusy = false;
+    }
+  }
+
+  async function completeSignout(keepUnsent: boolean) {
     try {
       await api.logout();
     } catch {
       // Offline or already logged out — drop the local session regardless.
     }
-    await clearCachedUser();
+    await clearLocalSession(keepUnsent);
     userStore.set(null);
+  }
+
+  async function signOutKeepingUnsent() {
+    unsentCount = 0;
+    signOutBusy = true;
+    try {
+      await completeSignout(true);
+    } finally {
+      signOutBusy = false;
+    }
+  }
+
+  async function signOutDiscardingUnsent() {
+    unsentCount = 0;
+    signOutBusy = true;
+    try {
+      await completeSignout(false);
+    } finally {
+      signOutBusy = false;
+    }
   }
 
   let showMobileMenu = false;
@@ -135,6 +179,7 @@
         >
           <button
             type="button"
+            disabled={signOutBusy}
             on:click={handleSignout}
             class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors px-2 py-2"
           >
@@ -205,6 +250,7 @@
       <div class="flex items-center justify-between px-2">
         <button
           type="button"
+          disabled={signOutBusy}
           on:click={handleSignout}
           class="flex items-center gap-2 text-sm text-gray-500 hover:text-accent-500 transition-colors"
         >
@@ -241,6 +287,55 @@
       {/each}
     </div>
   </nav>
+
+  <!-- Unsent-changes prompt. Signing out wipes this device's copy of the
+       account's data, and unsent mutations have no other copy, so the choice
+       is the user's to make explicitly. -->
+  {#if unsentCount > 0}
+    <div
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="signout-unsent-title"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 p-5 shadow-xl">
+        <h2 id="signout-unsent-title" class="text-base font-semibold text-gray-900 dark:text-white">
+          {unsentCount} change{unsentCount === 1 ? '' : 's'} not yet saved to the server
+        </h2>
+        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          Signing out clears this device's copy of your data. These changes only exist
+          here. Keeping them parks them on this device — they upload the next time you
+          sign in, and no other account can see or send them.
+        </p>
+        <div class="mt-5 flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={signOutBusy}
+            on:click={signOutKeepingUnsent}
+            class="w-full rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+          >
+            Sign out, keep them on this device
+          </button>
+          <button
+            type="button"
+            disabled={signOutBusy}
+            on:click={signOutDiscardingUnsent}
+            class="w-full rounded-xl px-4 py-2.5 text-sm font-medium text-accent-600 hover:bg-accent-50 dark:hover:bg-gray-700 disabled:opacity-50"
+          >
+            Sign out and discard them
+          </button>
+          <button
+            type="button"
+            disabled={signOutBusy}
+            on:click={() => (unsentCount = 0)}
+            class="w-full rounded-xl px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+          >
+            Stay signed in
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>

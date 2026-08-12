@@ -10,7 +10,7 @@
   import SWUpdatePrompt from '$lib/components/SWUpdatePrompt.svelte';
   import SyncErrorToast from '$lib/components/SyncErrorToast.svelte';
   import MigrateLocalDataBanner from '$lib/components/MigrateLocalDataBanner.svelte';
-  import { hydrateFromServer } from '$lib/stores/data';
+  import { clearLocalSession, hydrateFromServer } from '$lib/stores/data';
   import { sync } from '$lib/sync';
 
   // Public routes bypass auth
@@ -34,6 +34,16 @@
     // …then revalidate in the background.
     try {
       const userData = await api.getMe();
+
+      // The session belongs to a different account than the one this device
+      // cached — a sign-in that skipped our sign-out path, e.g. the cookie was
+      // replaced in another tab. Drop the previous account's cache before a
+      // single read can serve it. Unsent mutations are parked, not destroyed:
+      // they stay tagged to their owner and only push under that account.
+      if (cached && cached.id !== userData.id) {
+        await clearLocalSession(true);
+      }
+
       user.set(userData);
       await cacheUser(userData);
       await settings.load();
