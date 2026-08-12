@@ -3,6 +3,7 @@
   import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
+  import { APP_VERSION } from '$lib/version';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
 
   // Report link state
@@ -927,7 +928,7 @@
         Askesis is a personal health tracking app for you and your family.
       </p>
       <div class="mt-4 flex items-center gap-4 text-sm text-gray-500">
-        <span>Version 0.2.0</span>
+        <span>Version {APP_VERSION}</span>
         <span class="w-1 h-1 rounded-full bg-gray-300"></span>
         <span>Settings sync across devices</span>
       </div>

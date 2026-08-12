@@ -4,6 +4,7 @@
   import { hydrateFromServer } from '$lib/stores/data';
   import { api } from '$lib/api/client';
   import { sync } from '$lib/sync';
+  import { APP_VERSION } from '$lib/version';
 
   let usernameInput = '';
   let passwordInput = '';
@@ -128,7 +129,7 @@
     </div>
 
     <p class="text-center text-xs text-gray-400 dark:text-gray-500 mt-6">
-      Askesis — health logging made simple
+      Askesis v{APP_VERSION} — health logging made simple
     </p>
   </div>
 </div>
