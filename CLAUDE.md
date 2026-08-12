@@ -90,8 +90,15 @@ Key modules:
 - `app/storage.py` — resolves every stored media path against `UPLOADS_DIR`. Progress and
   meal photos are written to the server's own disk; the DB stores a path relative to that dir.
 - `app/security.py` — bcrypt hashing for password auth, with a constant-time miss path.
-- `app/routers/settings.py` — `POST /api/settings/backup` streams a DB snapshot back as a
-  download (SQLite via the online `backup()` API, so it is WAL-safe; Postgres as JSON).
+- `app/routers/settings.py` — `POST /api/settings/backup` streams **the caller's own rows**
+  back as portable JSON (same format on SQLite and Postgres); `POST /api/settings/restore`
+  puts one back. Both are governed by `_BACKUP_SPEC`, a per-table allow-list with the
+  column set taken from SQLAlchemy metadata. `users`, `report_tokens` and `data_shares`
+  are never read or written — password hashes and share grants are out of the format by
+  construction. Restore overwrites `user_id` with the caller's, so an uploaded file can
+  never grant cross-user access, and it builds statements from `Table` objects rather than
+  interpolating any name from the file. A whole-DB snapshot is an operator task
+  (`pg_dump` on the box) — see `SELF_HOSTING.md`.
 
 ### Auth
 

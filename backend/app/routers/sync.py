@@ -191,8 +191,32 @@ def push_changes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Accept a batch of client mutations and apply them."""
+    """Accept a batch of client mutations and apply them.
+
+    Every change is applied in its own transaction and committed on its own.
+    That is deliberate, not laziness about batching:
+
+    * The response is per-change, and the client deletes exactly the queue
+      entries it was told succeeded. Any scheme where a later failure could
+      undo an earlier success (one transaction for the batch, or a savepoint
+      per change with a single final commit that can still fail) would have
+      the client drop work that was never persisted. Per-change commit is the
+      only shape where "ok" means "durable".
+    * A failed ``flush`` leaves the session in needs-rollback state, so without
+      the rollback below every *subsequent* change in the batch dies with
+      ``PendingRollbackError`` and the final commit turns the whole request
+      into a 500 — which makes the client keep the entire batch queued and
+      retry the same poison forever. One bad row must never wedge the queue.
+    """
     results: list[SyncPushResult] = []
+
+    # (table, localId) -> the server id this batch just assigned to that client
+    # row. A client that created a row offline has no server id to send for the
+    # follow-up update/delete it queued against the same localId, so resolve it
+    # here from the create that came earlier in the same batch. Without this an
+    # offline create+delete pair leaves the row alive on the server, and an
+    # offline create+update pair inserts a second copy.
+    created_ids: dict[tuple[str, int], int] = {}
 
     for i, change in enumerate(body.changes):
         try:
@@ -205,17 +229,24 @@ def push_changes(
                 )
                 continue
 
+            created_in_batch = False
+            if not change.serverId:
+                known = created_ids.get((change.table, change.localId))
+                if known is not None:
+                    change = change.model_copy(update={"serverId": known})
+                    created_in_batch = True
+
             if change.operation == "create":
                 server_id = _handle_create(db, model, change, current_user)
-                results.append(SyncPushResult(index=i, ok=True, serverId=server_id))
 
             elif change.operation == "update":
-                server_id = _handle_update(db, model, change, current_user)
-                results.append(SyncPushResult(index=i, ok=True, serverId=server_id))
+                server_id = _handle_update(
+                    db, model, change, current_user, created_in_batch=created_in_batch
+                )
 
             elif change.operation == "delete":
                 _handle_delete(db, model, change, current_user)
-                results.append(SyncPushResult(index=i, ok=True))
+                server_id = None
 
             else:
                 results.append(
@@ -225,12 +256,22 @@ def push_changes(
                         error=f"Unknown operation: {change.operation}",
                     )
                 )
+                continue
+
+            db.commit()
+
+            if server_id is not None:
+                created_ids[(change.table, change.localId)] = server_id
+
+            results.append(SyncPushResult(index=i, ok=True, serverId=server_id))
 
         except Exception as e:
+            # Discard this change's partial work and hand the session back
+            # usable, so the next change in the batch starts clean.
+            db.rollback()
             logger.warning(f"Sync push failed for change {i}: {e}")
             results.append(SyncPushResult(index=i, ok=False, error=str(e)))
 
-    db.commit()
     return SyncPushResponse(results=results)
 
 
@@ -319,14 +360,20 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
             db.flush()
             return existing.id
 
-    # For DailyLog, check if record already exists for this date (upsert)
-    if model == DailyLog and "date" in data:
+    # DailyLog and BodyMeasurement are one-row-per-date by design — the UI edits
+    # "the log for this day" / "the measurements for this day", and the client
+    # looks a row up by date before writing — so a create pushed for a date that
+    # already has a row must upsert. Nothing at the DB level enforces that:
+    # daily_nutrition is the only one of the three with a UniqueConstraint on
+    # (user_id, date); these two carry a plain non-unique Index. Without this
+    # branch a second offline create for the same date just inserts a twin.
+    if model in (DailyLog, BodyMeasurement) and "date" in data:
         existing = (
-            db.query(DailyLog)
+            db.query(model)
             .filter(
-                DailyLog.user_id == user.id,
-                DailyLog.date == data["date"],
-                DailyLog.deleted_at.is_(None),
+                model.user_id == user.id,
+                model.date == data["date"],
+                model.deleted_at.is_(None),
             )
             .first()
         )
@@ -378,8 +425,22 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
     return obj.id
 
 
-def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> int:
-    """Update an existing record. Returns server ID."""
+def _handle_update(
+    db: Session,
+    model: type,
+    change: SyncChange,
+    user: User,
+    created_in_batch: bool = False,
+) -> int:
+    """Update an existing record. Returns server ID.
+
+    ``created_in_batch`` says the row this update targets was inserted by an
+    earlier change in this same push, so its ``updated_at`` is the moment of
+    the push rather than a real edit from another device. The server-wins
+    check below must be skipped in that case: it would compare the client's
+    (older, offline) edit timestamp against a server timestamp the client just
+    caused, and throw the edit away.
+    """
     if not change.serverId:
         # No server ID — might be a create that was queued as update
         return _handle_create(db, model, change, user)
@@ -403,7 +464,7 @@ def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> 
     except (ValueError, AttributeError):
         client_dt = datetime.utcnow()
 
-    if obj.updated_at and obj.updated_at > client_dt:
+    if not created_in_batch and obj.updated_at and obj.updated_at > client_dt:
         # Server version is newer — skip this update (server wins)
         return obj.id
 
@@ -461,7 +522,12 @@ def _handle_update(db: Session, model: type, change: SyncChange, user: User) -> 
 def _handle_delete(db: Session, model: type, change: SyncChange, user: User) -> None:
     """Soft-delete a record."""
     if not change.serverId:
-        return  # Nothing to delete on server
+        # No server id, and `push_changes` could not resolve one from a create
+        # earlier in this batch, so this row has never reached the server and
+        # there is nothing here to delete. (A client that pushed the create in
+        # an earlier batch must have written the returned serverId back onto
+        # its queued delete — see `applyServerIds` in frontend/src/lib/sync.ts.)
+        return
 
     obj = db.query(model).filter(model.id == change.serverId).first()
 

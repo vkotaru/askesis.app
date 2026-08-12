@@ -189,7 +189,7 @@
 
     if (!confirm(isDb
       ? 'Import data from this .db export? It adds records to your account (best on a fresh account). Continue?'
-      : 'This will restore data from the backup. Existing records with the same ID will be skipped. Continue?')) {
+      : 'Restore this backup into your account? Records that already exist are skipped, and everything restored is owned by you. Continue?')) {
       return;
     }
 
@@ -213,7 +213,9 @@
       const result = await response.json();
       restoreMessage = isDb
         ? result.message
-        : `${result.message} Tables: ${result.tables_restored.join(', ')}`;
+        : [result.message, result.tables_restored.length ? `Tables: ${result.tables_restored.join(', ')}` : '']
+            .filter(Boolean)
+            .join(' ');
       restoreFile = null;
     } catch (err) {
       restoreMessage = err instanceof Error ? err.message : 'Restore failed';
@@ -823,11 +825,13 @@
         Your data lives on this server. Download a snapshot to keep your own copy.
       </p>
 
-      <!-- Database Backup -->
+      <!-- Data Backup -->
       <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
-        <h3 class="font-medium mb-2">Database Backup</h3>
+        <h3 class="font-medium mb-2">Backup My Data</h3>
         <p class="text-sm text-gray-500 mb-3">
-          Download a full snapshot of the database to this device.
+          Downloads a JSON copy of <strong>your own</strong> records — logs, meals, activities,
+          measurements, photos metadata, plans and preferences. It contains nobody else's data
+          and no passwords or share links.
         </p>
         <button
           on:click={downloadBackup}
@@ -856,8 +860,9 @@
       <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
         <h3 class="font-medium mb-2">Restore from Backup</h3>
         <p class="text-sm text-gray-500 mb-3">
-          Restore from a <strong>.json</strong> backup (IDs that already exist are skipped), or
+          Restore from a <strong>.json</strong> backup (records that already exist are skipped), or
           import a <strong>.db</strong> data export (adds records — best on a fresh account).
+          Either way the restored records become yours.
         </p>
         <div class="flex flex-wrap items-center gap-3">
           <input
