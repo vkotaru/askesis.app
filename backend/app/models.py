@@ -81,6 +81,17 @@ class User(Base):
     # Nullable on purpose: rows created before password auth have no password
     # until the operator sets one. Making this NOT NULL locks them out.
     password_hash: Mapped[str | None] = mapped_column(String(255))
+    # Token epoch. Every access token is stamped with the value this held when
+    # it was issued; a token stamped older than this is refused, so changing a
+    # password kills every session that predates the change.
+    #
+    # NULL means "never changed since this column existed" — for those rows the
+    # check is skipped entirely, which is what keeps sessions issued before the
+    # migration alive across the deploy that adds it. It stops being NULL the
+    # first time the account sets or changes a password, and never returns.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     name: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

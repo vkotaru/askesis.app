@@ -34,12 +34,34 @@ export function distanceFromMetric(km: number, unit: DistanceUnit): number {
 }
 
 // Body measurements (cm <-> in)
+
+/** Decimals every measurement is shown and edited at (matches `step="0.01"`). */
+export const MEASUREMENT_DECIMALS = 2;
+
+/**
+ * Round a measurement that is already in the user's display unit.
+ *
+ * A cm→in conversion is an irrational-looking float — 27.9 cm is
+ * 10.98325... in — and putting that straight into a bound `<input>` or a
+ * diagram label is what rendered `10.987238867056993` on screen and made the
+ * body-diagram labels wrap into each other. Everything user-visible goes
+ * through this or `formatMeasurement`; nothing renders a raw conversion.
+ *
+ * Returns a number (not a string) so it can be bound to `<input type="number">`.
+ * The precision loss is bounded by the input's own step: 0.01 in = 0.25 mm.
+ */
+export function roundMeasurement(value: number | undefined | null): number | undefined {
+  if (value == null || !Number.isFinite(value)) return undefined;
+  const factor = 10 ** MEASUREMENT_DECIMALS;
+  return Math.round(value * factor) / factor;
+}
+
 export function formatMeasurement(cm: number | undefined | null, unit: MeasurementUnit): string {
   if (cm == null) return '—';
   if (unit === 'in') {
-    return `${(cm * CM_TO_IN).toFixed(2)} in`;
+    return `${(cm * CM_TO_IN).toFixed(MEASUREMENT_DECIMALS)} in`;
   }
-  return `${cm.toFixed(2)} cm`;
+  return `${cm.toFixed(MEASUREMENT_DECIMALS)} cm`;
 }
 
 export function measurementToMetric(value: number, unit: MeasurementUnit): number {

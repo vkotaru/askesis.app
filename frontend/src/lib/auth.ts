@@ -1,8 +1,11 @@
 /**
  * Auth request helpers.
  *
- * The app relies on the access_token cookie set by /auth/callback. There is no
- * token to persist or attach — fetch just has to send `credentials: 'include'`.
+ * The app relies on the access_token cookie the server sets on a successful
+ * `POST /auth/login` (or `POST /auth/set-initial-password`, which signs the
+ * account in as part of the same response) and refreshes on `POST
+ * /auth/refresh`. There is no token to persist or attach — fetch just has to
+ * send `credentials: 'include'`.
  */
 
 /**
