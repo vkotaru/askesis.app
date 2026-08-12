@@ -55,7 +55,7 @@ Database backups download straight to whatever device you clicked from
 3. **Create your account.** There is no sign-up page and no OAuth; accounts are
    made on the box:
    ```bash
-   docker compose exec app python backend/scripts/manage_users.py \
+   docker compose exec app python scripts/manage_users.py \
        create --username you --email you@example.com --name "Your Name"
    ```
    It prompts for the password twice and never takes it as a flag (shell history).
@@ -101,8 +101,8 @@ password and signs that browser in immediately.
 > first deploy**, or set their passwords on the box yourself:
 >
 > ```bash
-> docker compose exec app python backend/scripts/manage_users.py list
-> docker compose exec app python backend/scripts/manage_users.py set-password --email old@example.com
+> docker compose exec app python scripts/manage_users.py list
+> docker compose exec app python scripts/manage_users.py set-password --email old@example.com
 > ```
 
 The path closes permanently for an account the moment it has a password: from

@@ -7,7 +7,10 @@
 # Python (host venv + local SQLite + legacy local uploads)
 backend/venv/
 backend/.venv/
+# *.db alone leaves askesis.db-wal / -shm behind, and a WAL sidecar holds real
+# committed pages from the dev database — that is data leaking into the image.
 backend/*.db
+backend/*.db-*
 backend/uploads/
 
 # Server-side photo storage (bind-mounted at runtime, never baked into the image)
@@ -21,5 +24,11 @@ backend/static/
 
 # Native app — not part of the server image
 
-# Local env
-.env
+# Local env. MUST be **/.env, not .env — a bare pattern matches only the
+# context root, so backend/.env would be COPYed to /app/backend/.env, which is
+# exactly where pydantic-settings looks (WORKDIR is /app/backend). run-dev.sh
+# creates that file with DEV_MODE=true, and DEV_MODE makes get_current_user
+# return a user with no authentication at all — baking it into the image would
+# ship an auth bypass and silently defeat the placeholder-SECRET_KEY guard.
+**/.env
+**/.env.local

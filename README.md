@@ -101,7 +101,7 @@ Tailscale sidecar, and the gotchas.
 There is no sign-up page. Accounts are created on the server:
 
 ```bash
-docker compose exec app python backend/scripts/manage_users.py \
+docker compose exec app python scripts/manage_users.py \
     create --username you --email you@example.com --name "Your Name"
 ```
 

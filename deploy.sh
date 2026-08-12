@@ -135,11 +135,21 @@ git checkout --detach "$SHA" --
 export GIT_SHA="$SHA"
 export GIT_REF="$REF"
 
-echo "==> Stopping current containers"
-$DC down
+# Build BEFORE stopping anything. A failed build then leaves the current
+# deployment running instead of taking the site down and stranding it on a
+# freshly checked-out commit with no automatic recovery.
+echo "==> Building  (GIT_REF=$GIT_REF GIT_SHA=$SHORT_SHA)"
+if ! $DC build; then
+  echo
+  echo "ERROR: build failed. The running deployment was left untouched." >&2
+  echo "       The working tree is now at $REF ($SHORT_SHA); re-run with a" >&2
+  echo "       known-good tag to put it back." >&2
+  exit 1
+fi
 
-echo "==> Building & starting  (GIT_REF=$GIT_REF GIT_SHA=$SHORT_SHA)"
-$DC up -d --build
+echo "==> Restarting"
+$DC down
+$DC up -d
 
 echo "==> Status"
 $DC ps
