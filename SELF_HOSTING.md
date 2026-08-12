@@ -24,8 +24,19 @@ matters: Android associates an installed PWA with its *host*, so two PWAs on the
 same host but different ports collide — a distinct hostname installs cleanly.
 
 Progress/meal photos live on **the server's own disk** (see *Photo storage*).
-Database backups download straight to whatever device you clicked from
-(Settings → Backup & Restore); nothing is uploaded anywhere.
+Personal data backups download straight to whatever device you clicked from
+(Settings → Backup & Restore); nothing is uploaded anywhere. That in-app backup
+is **per-user**: it contains the signed-in account's own rows only, and never
+`users`, `report_tokens` or `data_shares`. A **whole-database** snapshot is an
+operator job, not something an account can pull over HTTP — take it on the box:
+
+```bash
+docker compose exec -T postgres pg_dump -U askesis askesis > askesis-$(date +%F).sql
+```
+
+That split is deliberate: the app has no admin role, so a logged-in household
+member must not be able to download another member's health data — or their
+bcrypt password hash — through a "backup" button.
 
 ## First-time setup (on the server)
 

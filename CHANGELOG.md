@@ -61,6 +61,35 @@ does not roll the database back — that head is what you would need to
   run against a dirty working tree, and prints the target ref/commit alongside what
   is currently deployed before it touches anything.
 
+### Security
+
+- **`POST /api/settings/backup` handed every logged-in user the whole database.**
+  It dumped every table for every user behind a bare `get_current_user`, bypassing
+  `check_view_permission` entirely — so one household member could download the
+  other's complete health data. Once password auth landed (0.2.0) that dump also
+  carried `users.password_hash`, a bcrypt hash to crack offline and take the
+  account over. It is now a **per-user** export: portable JSON, the caller's own
+  rows only, driven by an explicit table allow-list (`_BACKUP_SPEC`) whose column
+  set comes from SQLAlchemy metadata. `users`, `report_tokens` and `data_shares`
+  are outside the format by construction, so no credential can be in a backup even
+  if a future column is added. A whole-database snapshot is now an operator task
+  (`pg_dump` on the box, see `SELF_HOSTING.md`); the app has no admin role and
+  inventing one for two people was the wrong lever.
+- **`POST /api/settings/restore` was an arbitrary-row-insert primitive.** It built
+  `INSERT INTO "<table>" (<cols>)` from the uploaded file with no allow-list, so any
+  authenticated user could insert a `data_shares` row granting themselves the other
+  person's data, or a `users` row with a password hash of their choosing — and a
+  table or column name containing `"` broke out of the quoting into raw SQL. Restore
+  now validates every table and column against SQLAlchemy's metadata *before* it
+  writes anything, builds statements from the `Table` object (no identifier from the
+  file ever reaches SQL) with bound parameters for values, overwrites `user_id` with
+  the caller's id, and skips rows whose parent meal/activity/plan is not theirs.
+  `users`, `data_shares`, `report_tokens` and `alembic_version` are never written —
+  an old v1 backup naming them is reported as skipped rather than failing.
+- Both endpoints keep working for what they were for: back up your data, restore it.
+  Value coercion is now driven by column type instead of guessing from the string's
+  shape, so a note that looks like a date is no longer parsed into one.
+
 ## [0.2.0] - 2026-08-09
 
 Alembic head: `normalize_photo_paths`

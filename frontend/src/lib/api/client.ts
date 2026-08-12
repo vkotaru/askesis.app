@@ -620,8 +620,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  // Streams the backup straight to the browser as a download; there is no
-  // server-side copy to point at, so this returns nothing.
+  // Streams a JSON backup of the signed-in user's OWN rows straight to the
+  // browser as a download; there is no server-side copy to point at, so this
+  // returns nothing. Not a whole-database dump — see backend settings.py.
   downloadBackup: () => downloadFile('/api/settings/backup', { method: 'POST' }),
 
   // Body Measurements

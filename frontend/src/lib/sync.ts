@@ -18,6 +18,22 @@ export const isSyncing = writable(false);
 export const lastSyncTime = writable<string | null>(null);
 export const syncErrors = writable<string[]>([]);
 
+/**
+ * Every Dexie table a pendingSync entry's `table` field can name, so a queue
+ * entry can be resolved back to the table it belongs to. Keep in step with
+ * TABLE_MAP in backend/app/routers/sync.py.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const SYNCED_TABLES: Record<string, Table<any, number>> = {
+  dailyLogs: db.dailyLogs,
+  dailyNutrition: db.dailyNutrition,
+  activities: db.activities,
+  meals: db.meals,
+  foods: db.foods,
+  measurements: db.measurements,
+  photos: db.photos,
+};
+
 export const syncStatus = derived(
   [isOnline, pendingSyncCount, isSyncing],
   ([$online, $pending, $syncing]) => ({
@@ -99,20 +115,100 @@ export async function queueSync(
   await refreshPendingSyncCount();
 }
 
+// ── Queue collapsing ─────────────────────────────────────────────────────────
+
+export interface CollapsedQueue {
+  /** Entries that still have to go to the server, in push order. */
+  toPush: PendingSyncEntry[];
+  /** pendingSync ids that can simply be dropped without pushing anything. */
+  dropIds: number[];
+}
+
+/**
+ * Collapse create→…→delete chains that never reached the server.
+ *
+ * A row created offline and deleted again while still offline queues
+ * `create(localId=L, serverId=undefined)` and later
+ * `delete(localId=L, serverId=undefined)`. Pushed as-is, the create inserts a
+ * server row and the delete — which carries no server id — has nothing to aim
+ * at, so the row survives and the next revalidation pulls the user's deleted
+ * entry straight back into the local DB.
+ *
+ * `push_changes` on the server resolves a same-batch pair from the create's
+ * assigned id, and `applyServerIds` below backfills the id onto a still-queued
+ * delete when the two land in different batches. This is the third guard and
+ * the cheapest: if the whole life of a row is in the queue, don't push it at
+ * all.
+ *
+ * Only fully-unsynced groups qualify. A single entry carrying a serverId means
+ * the row exists on the server, so the delete has real work to do and the
+ * group is pushed untouched.
+ *
+ * Entries must be in push (timestamp) order.
+ */
+export function collapseQueue(entries: PendingSyncEntry[]): CollapsedQueue {
+  const groups = new Map<string, PendingSyncEntry[]>();
+  for (const entry of entries) {
+    const key = `${entry.table}:${entry.localId}`;
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
+  }
+
+  const dead = new Set<string>();
+  for (const [key, group] of groups) {
+    if (group[group.length - 1].operation !== 'delete') continue;
+    if (group.some((e) => e.serverId != null)) continue;
+    if (!group.some((e) => e.operation === 'create')) continue;
+    dead.add(key);
+  }
+
+  if (dead.size === 0) return { toPush: entries, dropIds: [] };
+
+  const toPush: PendingSyncEntry[] = [];
+  const dropIds: number[] = [];
+  for (const entry of entries) {
+    if (dead.has(`${entry.table}:${entry.localId}`)) {
+      if (entry.id != null) dropIds.push(entry.id);
+    } else {
+      toPush.push(entry);
+    }
+  }
+
+  return { toPush, dropIds };
+}
+
 // ── Flush pending sync queue ─────────────────────────────────────────────────
 
 export async function flushPendingSync(): Promise<void> {
   if (!get(isOnline)) return;
   if (get(isSyncing)) return;
 
-  const entries = await db.pendingSync.orderBy('timestamp').toArray();
-  if (entries.length === 0) return;
+  const queued = await db.pendingSync.orderBy('timestamp').toArray();
+  if (queued.length === 0) return;
 
   isSyncing.set(true);
 
   try {
-    const result = await pushToServer(entries);
+    // Ties on `timestamp` (two writes in the same millisecond) fall back to
+    // insertion order, which is the order the user actually made them in.
+    queued.sort((a, b) => a.timestamp.localeCompare(b.timestamp) || (a.id ?? 0) - (b.id ?? 0));
+
+    const { toPush, dropIds } = collapseQueue(queued);
+    if (dropIds.length > 0) {
+      await db.pendingSync.bulkDelete(dropIds);
+      await refreshPendingSyncCount();
+    }
+    if (toPush.length === 0) return;
+
+    const result = await pushToServer(toPush);
     if (result.pushed) {
+      // Adopt server-assigned ids before dropping the queue entries. If this
+      // throws, the entries are still queued and the push is retried — the
+      // alternative is a row stranded with serverId == null and nothing left
+      // to tell it what its id is.
+      await applyServerIds(result.resolutions);
+
       // Only delete entries that the server confirmed as ok
       if (result.successIds.length > 0) {
         await db.pendingSync.bulkDelete(result.successIds);
@@ -140,10 +236,114 @@ export async function flushPendingSync(): Promise<void> {
 
 // ── Server communication ─────────────────────────────────────────────────────
 
+/** One row's server id, as reported by a successful push. */
+export interface ServerIdResolution {
+  table: string;
+  localId: number;
+  serverId: number;
+}
+
 interface PushResult {
   pushed: boolean;
   successIds: number[];
+  resolutions: ServerIdResolution[];
   errors: string[];
+}
+
+/** Shape of one entry in the /api/sync/push response. */
+interface ServerPushResult {
+  index: number;
+  ok: boolean;
+  serverId?: number | null;
+  error?: string | null;
+}
+
+/**
+ * Pair up the server's per-change results with the entries that produced them.
+ *
+ * Split out from the fetch so it can be reasoned about (and tested) without a
+ * network or a Dexie.
+ */
+export function readPushResponse(
+  entries: PendingSyncEntry[],
+  results: ServerPushResult[]
+): { successIds: number[]; resolutions: ServerIdResolution[]; errors: string[] } {
+  const successIds: number[] = [];
+  const resolutions: ServerIdResolution[] = [];
+  const errors: string[] = [];
+
+  for (const r of results) {
+    const entry = entries[r.index];
+    if (!entry) continue;
+
+    if (r.ok) {
+      if (entry.id != null) successIds.push(entry.id);
+      // The server returns the row's real id for creates and updates (an
+      // update for a row it has never seen falls through to a create there, so
+      // that can mint an id too). Deletes return none. Throwing this away is
+      // what left offline-created rows with serverId == null forever.
+      if (r.serverId != null && entry.operation !== 'delete') {
+        resolutions.push({ table: entry.table, localId: entry.localId, serverId: r.serverId });
+      }
+    } else if (r.error) {
+      errors.push(`Sync error (${entry.table || '?'}): ${r.error}`);
+    }
+  }
+
+  return { successIds, resolutions, errors };
+}
+
+/**
+ * Write server-assigned ids back onto the local rows they belong to.
+ *
+ * Without this a row created offline never learns its server id: the next
+ * revalidation can't match it, inserts a second copy alongside it, and every
+ * later edit of that ghost sends its *local* id to the server as if it were a
+ * server id — overwriting an unrelated record.
+ *
+ * Concurrency:
+ * - Only the `serverId` field is written, so an edit the user made while the
+ *   push was in flight is untouched.
+ * - A row deleted meanwhile is not re-added; resurrecting it would undo the
+ *   delete. Its queue entries are still backfilled, so the queued delete can
+ *   find the right server row.
+ * - A row that already carries a serverId is left alone: something already
+ *   reconciled it (a direct online write, or a merge), and that id is the one
+ *   the rest of the DB has been referring to.
+ */
+async function applyServerIds(resolutions: ServerIdResolution[]): Promise<void> {
+  if (resolutions.length === 0) return;
+
+  // Queue entries for the same row that still have no server id — typically a
+  // delete or update queued while the create was in flight, which would
+  // otherwise be a no-op on the server and lose the mutation.
+  const unresolvedByRow = new Map<string, PendingSyncEntry[]>();
+  for (const entry of await db.pendingSync.toArray()) {
+    if (entry.id == null || entry.serverId != null) continue;
+    const key = `${entry.table}:${entry.localId}`;
+    const list = unresolvedByRow.get(key);
+    if (list) list.push(entry);
+    else unresolvedByRow.set(key, [entry]);
+  }
+
+  for (const { table, localId, serverId } of resolutions) {
+    try {
+      const target = SYNCED_TABLES[table];
+      if (target) {
+        const row = await target.get(localId);
+        if (row && row.serverId == null) {
+          await target.update(localId, { serverId });
+        }
+      }
+
+      for (const entry of unresolvedByRow.get(`${table}:${localId}`) ?? []) {
+        await db.pendingSync.update(entry.id!, { serverId });
+      }
+    } catch (err) {
+      // One row failing to adopt its id must not abort the others.
+      console.warn(`[askesis] Failed to adopt serverId for ${table}#${localId}:`, err);
+    }
+  }
 }
 
 async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
@@ -156,33 +356,21 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
     });
 
     if (res.status === 404) {
-      return { pushed: false, successIds: [], errors: [] };
+      return { pushed: false, successIds: [], resolutions: [], errors: [] };
     }
 
     if (!res.ok) {
       throw new Error(`Sync push failed: HTTP ${res.status}`);
     }
 
-    const data = await res.json();
-    const successIds: number[] = [];
-    const errors: string[] = [];
+    const data: { results?: ServerPushResult[] } = await res.json();
+    const { successIds, resolutions, errors } = readPushResponse(entries, data.results ?? []);
 
-    if (data.results) {
-      for (const r of data.results) {
-        if (r.ok) {
-          const entryId = entries[r.index]?.id;
-          if (entryId != null) successIds.push(entryId);
-        } else if (r.error) {
-          errors.push(`Sync error (${entries[r.index]?.table || '?'}): ${r.error}`);
-        }
-      }
-    }
-
-    return { pushed: true, successIds, errors };
+    return { pushed: true, successIds, resolutions, errors };
   } catch (err) {
     if (err instanceof TypeError) {
       // Network error — we're offline
-      return { pushed: false, successIds: [], errors: [] };
+      return { pushed: false, successIds: [], resolutions: [], errors: [] };
     }
     throw err;
   }
@@ -253,10 +441,15 @@ async function mergeServerRecord(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: Table<any, number>,
   serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown },
-  // Only true for tables the server keeps at one row per date (daily logs,
-  // measurements, daily nutrition — all of which have a unique (user_id, date)
-  // constraint). Activities, meals and photos legitimately hold several rows
-  // per date, so matching on date there picks an arbitrary unrelated row.
+  // Only true for tables the app treats as one row per date: daily logs,
+  // measurements and daily nutrition, all of which the UI edits as "the row
+  // for this day". That is an application invariant, not a schema one — of the
+  // three, only `daily_nutrition` actually has a UniqueConstraint on
+  // (user_id, date); `daily_logs` and `body_measurements` carry a plain
+  // non-unique Index, and the server upserts them by date in `_handle_create`
+  // to hold the invariant up. Activities, meals and photos legitimately hold
+  // several rows per date, so matching on date there picks an arbitrary
+  // unrelated row.
   dateIsUnique = false
 ): Promise<void> {
   let existing = await table.where('serverId').equals(serverRecord.id).first();
