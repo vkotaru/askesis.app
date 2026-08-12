@@ -7,6 +7,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { type Table } from 'dexie';
 import { db, type PendingSyncEntry, type SyncOperation } from './db';
+import { currentUserId } from './stores/user';
 import { browser } from '$app/environment';
 import { apiUrl } from './config';
 
@@ -79,12 +80,30 @@ if (browser) {
   });
 }
 
+// ── Queue ownership ──────────────────────────────────────────────────────────
+
+/**
+ * True if `entry` may be pushed under the session of `userId`.
+ *
+ * An untagged entry (queued before per-user tagging, and left untagged by the
+ * v5 upgrade because the browser had seen more than one account) is still
+ * pushed: the local DB is its only copy, and refusing to push it would strand
+ * the user's work forever. That is the one case where ownership is a guess,
+ * and it is bounded — nothing writes untagged entries any more.
+ */
+export function isQueueEntryOwnedBy(entry: PendingSyncEntry, userId?: number): boolean {
+  return entry.userId == null || entry.userId === userId;
+}
+
 // ── Pending sync count ───────────────────────────────────────────────────────
 
+/** Counts only what the current account can actually push, so another
+ *  account's parked queue never shows up as this account's backlog. */
 async function refreshPendingSyncCount() {
   try {
-    const count = await db.pendingSync.count();
-    pendingSyncCount.set(count);
+    const uid = currentUserId();
+    const entries = await db.pendingSync.toArray();
+    pendingSyncCount.set(entries.filter((e) => isQueueEntryOwnedBy(e, uid)).length);
   } catch {
     // DB might not be open yet
   }
@@ -111,6 +130,7 @@ export async function queueSync(
     serverId,
     data,
     timestamp: new Date().toISOString(),
+    userId: currentUserId(),
   });
   await refreshPendingSyncCount();
 }
@@ -184,7 +204,14 @@ export async function flushPendingSync(): Promise<void> {
   if (!get(isOnline)) return;
   if (get(isSyncing)) return;
 
-  const queued = await db.pendingSync.orderBy('timestamp').toArray();
+  // Only this account's mutations. A queue parked by whoever signed out last
+  // stays put until they sign back in; pushing it here would file their data
+  // into the current account, because the server takes the owner from the
+  // session and not from the payload.
+  const uid = currentUserId();
+  const queued = (await db.pendingSync.orderBy('timestamp').toArray()).filter((e) =>
+    isQueueEntryOwnedBy(e, uid)
+  );
   if (queued.length === 0) return;
 
   isSyncing.set(true);
@@ -317,9 +344,11 @@ async function applyServerIds(resolutions: ServerIdResolution[]): Promise<void> 
   // Queue entries for the same row that still have no server id — typically a
   // delete or update queued while the create was in flight, which would
   // otherwise be a no-op on the server and lose the mutation.
+  const uid = currentUserId();
   const unresolvedByRow = new Map<string, PendingSyncEntry[]>();
   for (const entry of await db.pendingSync.toArray()) {
     if (entry.id == null || entry.serverId != null) continue;
+    if (!isQueueEntryOwnedBy(entry, uid)) continue;
     const key = `${entry.table}:${entry.localId}`;
     const list = unresolvedByRow.get(key);
     if (list) list.push(entry);
@@ -378,6 +407,10 @@ async function pushToServer(entries: PendingSyncEntry[]): Promise<PushResult> {
 
 export async function pullFromServer(): Promise<void> {
   if (!get(isOnline)) return;
+  // Signed out there is no account to file the rows under, and an untagged row
+  // is unreadable anyway. /api/sync/changes would 401 regardless.
+  const ownerId = currentUserId();
+  if (ownerId == null) return;
 
   try {
     const lastSync = get(lastSyncTime) || '1970-01-01T00:00:00Z';
@@ -397,37 +430,38 @@ export async function pullFromServer(): Promise<void> {
     // Merge server changes into Dexie
     if (data.dailyLogs) {
       for (const log of data.dailyLogs) {
-        await mergeServerRecord(db.dailyLogs, log, true);
+        await mergeServerRecord(db.dailyLogs, log, ownerId, true);
       }
     }
     if (data.dailyNutrition) {
       for (const nutrition of data.dailyNutrition) {
-        await mergeServerRecord(db.dailyNutrition, nutrition, true);
+        await mergeServerRecord(db.dailyNutrition, nutrition, ownerId, true);
       }
     }
     if (data.activities) {
       for (const activity of data.activities) {
-        await mergeServerRecord(db.activities, activity);
+        await mergeServerRecord(db.activities, activity, ownerId);
       }
     }
     if (data.meals) {
       for (const meal of data.meals) {
-        await mergeServerRecord(db.meals, meal);
+        await mergeServerRecord(db.meals, meal, ownerId);
       }
     }
     if (data.foods) {
       for (const food of data.foods) {
-        await mergeServerRecord(db.foods, food);
+        // The food catalogue is shared and carries no owner.
+        await mergeServerRecord(db.foods, food, undefined);
       }
     }
     if (data.measurements) {
       for (const measurement of data.measurements) {
-        await mergeServerRecord(db.measurements, measurement, true);
+        await mergeServerRecord(db.measurements, measurement, ownerId, true);
       }
     }
     if (data.photos) {
       for (const photo of data.photos) {
-        await mergeServerRecord(db.photos, photo);
+        await mergeServerRecord(db.photos, photo, ownerId);
       }
     }
 
@@ -441,6 +475,9 @@ async function mergeServerRecord(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: Table<any, number>,
   serverRecord: { id: number; deleted_at?: string; date?: string; [key: string]: unknown },
+  /** Account the pulled rows belong to. Stamped onto every row written here:
+   *  an untagged row is invisible to the read layer, which filters by owner. */
+  ownerId: number | undefined,
   // Only true for tables the app treats as one row per date: daily logs,
   // measurements and daily nutrition, all of which the UI edits as "the row
   // for this day". That is an application invariant, not a schema one — of the
@@ -458,12 +495,13 @@ async function mergeServerRecord(
   // Fall back to date only to adopt a local create the server hasn't assigned
   // an id to yet — that is the case this fallback was written for. Restricting
   // it to serverId == null is what keeps it from overwriting an already-synced
-  // row that merely shares a date.
+  // row that merely shares a date, and to the owner is what keeps one account's
+  // pull from swallowing the other account's unsynced row for the same day.
   if (!existing && dateIsUnique && serverRecord.date) {
     existing = await table
       .where('date')
       .equals(serverRecord.date)
-      .filter((r) => r.serverId == null)
+      .filter((r) => r.serverId == null && r.userId === ownerId)
       .first();
   }
 
@@ -480,6 +518,9 @@ async function mergeServerRecord(
   const merged = {
     ...serverRecord,
     serverId: serverRecord.id,
+    // The server row's own user_id wins; `ownerId` covers models that don't
+    // carry one. Rows written without an owner are unreadable by design.
+    userId: typeof serverRecord.user_id === 'number' ? serverRecord.user_id : ownerId,
     updatedAt: serverRecord.updated_at || new Date().toISOString(),
   };
 

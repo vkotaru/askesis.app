@@ -174,6 +174,17 @@ export interface PendingSyncEntry {
   serverId?: number;
   data?: Record<string, unknown>;
   timestamp: string;
+  /**
+   * The account that queued this mutation.
+   *
+   * A shared browser can hold a queue belonging to whoever was signed in last,
+   * and pushing it under a different session would file one person's data into
+   * the other's account (`_handle_create` on the server takes the *session's*
+   * user, not the payload's). The flush therefore only pushes entries owned by
+   * the current user. Undefined means "queued before per-user tagging existed"
+   * — see `shouldAdoptUntaggedRows` for how those are resolved.
+   */
+  userId?: number;
 }
 
 // ── One-shot duplicate cleanup ───────────────────────────────────────────────
@@ -227,6 +238,48 @@ export const SYNCED_TABLES = [
   'photos',
   'dailyNutrition',
 ] as const;
+
+/**
+ * The synced tables whose rows belong to exactly one account.
+ *
+ * `foods` is deliberately absent: the food database is a shared catalogue and
+ * local food rows carry no userId at all, so there is nothing to scope them by.
+ * Sign-out still wipes it along with everything else.
+ */
+export const USER_OWNED_TABLES = [
+  'dailyLogs',
+  'activities',
+  'meals',
+  'measurements',
+  'photos',
+  'dailyNutrition',
+] as const;
+
+/** Workbox runtime cache holding the raw photo bytes (see vite.config.ts). */
+export const PROGRESS_PHOTO_CACHE = 'progress-photos';
+
+/**
+ * Decide whether rows/queue entries with no `userId` can be adopted by the
+ * cached account during the v5 upgrade.
+ *
+ * Untagged rows are ambiguous by construction: before this version only the
+ * cold-start hydration stamped an owner, so every row written by a background
+ * revalidation or a local save came out with `userId === undefined`. On a
+ * single-account browser they are obviously that account's, and adopting them
+ * keeps the app from looking empty after the upgrade. On a browser that has
+ * seen two accounts there is no way to tell whose they are, so they stay
+ * untagged — which, under the new read filter, means invisible to everyone
+ * until the server re-confirms them and the merge stamps the real owner.
+ *
+ * `distinctUserIds` is every non-null userId present in the local DB.
+ */
+export function shouldAdoptUntaggedRows(
+  distinctUserIds: number[],
+  cachedUserId?: number
+): boolean {
+  if (cachedUserId == null) return false;
+  return distinctUserIds.every((id) => id === cachedUserId);
+}
 
 interface SyncedRow {
   localId?: number;
@@ -365,8 +418,93 @@ class AskesisDB extends Dexie {
         }
       });
 
+    // ── Version 5: own every row and queue entry by userId ─────────────────
+    // Only `pendingSync` changes shape (a userId index); the rest are carried
+    // forward unchanged so the upgrade can run.
+    this.version(5)
+      .stores({
+        dailyLogs: '++localId, serverId, date, userId, updatedAt',
+        activities: '++localId, serverId, date, userId, updatedAt',
+        meals: '++localId, serverId, date, userId, updatedAt',
+        foods: '++localId, serverId, name, updatedAt',
+        measurements: '++localId, serverId, date, userId, updatedAt',
+        photos: '++localId, serverId, date, userId, view, updatedAt',
+        dailyNutrition: '++localId, serverId, date, userId, updatedAt',
+        settings: 'key',
+        pendingSync: '++id, table, operation, localId, serverId, timestamp, userId',
+      })
+      .upgrade(async (tx) => {
+        // Reads are now filtered by userId, and a row that never got one would
+        // be invisible. Adopt those rows for the cached account, but only when
+        // this browser shows no evidence of a second account — see
+        // `shouldAdoptUntaggedRows`. Never guess on a shared browser: guessing
+        // wrong is exactly the cross-user leak this version exists to close.
+        const cached = await tx.table('settings').get('cachedUser');
+        const cachedUserId = (cached?.value as { id?: number } | undefined)?.id;
+
+        const seen = new Set<number>();
+        for (const name of USER_OWNED_TABLES) {
+          for (const row of await tx.table(name).toArray()) {
+            if (row.userId != null) seen.add(row.userId);
+          }
+        }
+        for (const entry of await tx.table('pendingSync').toArray()) {
+          if (entry.userId != null) seen.add(entry.userId);
+        }
+
+        if (!shouldAdoptUntaggedRows([...seen], cachedUserId)) return;
+
+        for (const name of USER_OWNED_TABLES) {
+          const table = tx.table(name);
+          const untagged = (await table.toArray()).filter((r) => r.userId == null);
+          if (untagged.length > 0) {
+            await table.bulkPut(untagged.map((r) => ({ ...r, userId: cachedUserId })));
+          }
+        }
+        // Queue entries too: an untagged entry is only pushable while it can be
+        // attributed, and on a single-account browser it is that account's.
+        const queue = tx.table('pendingSync');
+        const untaggedQueue = (await queue.toArray()).filter((e) => e.userId == null);
+        if (untaggedQueue.length > 0) {
+          await queue.bulkPut(untaggedQueue.map((e) => ({ ...e, userId: cachedUserId })));
+        }
+      });
+
     // ── Future versions go here ────────────────────────────────────────────
   }
 }
 
 export const db = new AskesisDB();
+
+/**
+ * Erase every trace of the signed-in account from this device.
+ *
+ * Called on sign-out. Everything in this database is per-account — the synced
+ * tables, the cached identity, the cached user settings and the sync cursor —
+ * so the whole database goes, along with the service worker's photo cache,
+ * which holds the raw image bytes and would otherwise still serve them to
+ * whoever signs in next.
+ *
+ * `keepPendingSync` preserves the offline mutation queue, which is the only
+ * copy of work that never reached the server. Kept entries stay tagged with
+ * the account that made them and are pushed only when that account signs back
+ * in (see `flushPendingSync`), so keeping them cannot leak into another
+ * account. The caller decides; nothing here discards queued work implicitly.
+ */
+export async function clearLocalUserData(keepPendingSync = false): Promise<void> {
+  const preserved = keepPendingSync ? await db.pendingSync.toArray() : [];
+
+  await Promise.all(db.tables.map((table) => table.clear()));
+
+  if (preserved.length > 0) {
+    await db.pendingSync.bulkAdd(preserved);
+  }
+
+  if (typeof caches !== 'undefined') {
+    try {
+      await caches.delete(PROGRESS_PHOTO_CACHE);
+    } catch {
+      // Best effort — a Cache Storage failure must not block sign-out.
+    }
+  }
+}
