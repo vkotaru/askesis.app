@@ -15,6 +15,26 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Operator docs pointed `pg_dump` at a service that doesn't exist.**
+  `SELF_HOSTING.md` said `docker compose exec -T postgres`; the Compose service is
+  `db`, so the documented backup command failed outright.
+- **The documented volume migration could silently do nothing.** The one-time copy
+  out of the old `uploads` named volume hardcoded `askesis_uploads`, but Compose
+  derives the project name from the directory (`askesis.app` → `askesisapp`), so
+  the real name is `askesisapp_uploads`. `docker run -v <name>:/from` *creates* a
+  missing volume rather than failing, and the command swallowed errors with
+  `2>/dev/null || true`, so a wrong name copied nothing and read as "nothing to
+  migrate". Now it confirms the name first and fails loudly.
+
+### Changed
+
+- **Database dumps are written to `~/.askesis/backups/`**, not into the checkout.
+  Both docs used a bare redirect, which put a file containing every health record
+  and the `users` bcrypt hash inside the git working tree. `*.sql` is now
+  gitignored as well, so a stray dump can't be committed.
+
 ## [1.0.0] - 2026-08-12
 
 Alembic head: `add_password_changed_at`

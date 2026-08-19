@@ -11,6 +11,10 @@ venv/
 *.db-wal
 *.db-journal
 
+# pg_dump output. Backups belong in ~/.askesis/backups/, but a stray dump in the
+# checkout must never be committable: it holds every row plus bcrypt hashes.
+*.sql
+
 # Environment
 .env
 .env.local

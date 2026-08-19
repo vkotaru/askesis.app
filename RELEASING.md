@@ -110,10 +110,13 @@ therefore leaves the **database** on the newer schema, and the old code runs aga
 - **The real safety net is a dump taken before you deploy.** Take one every time:
 
   ```bash
-  docker compose exec -T db pg_dump -U askesis askesis > askesis-$(date +%F-%H%M).sql
+  mkdir -p ~/.askesis/backups
+  docker compose exec -T db pg_dump -U askesis askesis \
+    > ~/.askesis/backups/db-$(date +%F-%H%M).sql
   ```
 
-  Photos live on the host at `./data/uploads` and are not in that dump. A database whose
+  Dumps go to `~/.askesis/backups/`, **not** into the checkout — see
+  `SELF_HOSTING.md`. Photos live on the host at `./data/uploads` and are not in that dump. A database whose
   `file_path` rows point at files you no longer have restores to broken images, so back
   up both halves together (see `SELF_HOSTING.md`).
 

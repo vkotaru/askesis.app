@@ -31,8 +31,24 @@ is **per-user**: it contains the signed-in account's own rows only, and never
 operator job, not something an account can pull over HTTP — take it on the box:
 
 ```bash
-docker compose exec -T postgres pg_dump -U askesis askesis > askesis-$(date +%F).sql
+mkdir -p ~/.askesis/backups
+docker compose exec -T db pg_dump -U askesis askesis \
+  > ~/.askesis/backups/db-$(date +%F-%H%M).sql
 ```
+
+**Write dumps to `~/.askesis/backups/`, never into the checkout.** A bare
+redirect lands the file in whatever directory you ran the command from, which is
+this git repo — and a dump holds every health record plus the `users` row with
+its bcrypt hash. `.gitignore` covers `*.sql` so it can't be committed by
+accident, but keeping backups outside `/srv/apps/askesis.app` entirely is the
+real protection: they then survive `rm -rf` on the checkout, a re-clone, or a
+`deploy.sh` gone wrong, none of which should be able to take the backups with
+them.
+
+Same disk, though — this protects you from a bad migration, not from the drive
+failing. Getting a copy **off the box** (restic/Borg to an external drive or a
+cloud bucket) is still an open task, and it needs to cover both halves: these
+dumps *and* `./data/uploads`.
 
 That split is deliberate: the app has no admin role, so a logged-in household
 member must not be able to download another member's health data — or their
@@ -145,22 +161,32 @@ into an anonymous volume path is needlessly awkward.
 
 ### One-time: copy the old named volume across
 
-Earlier builds mounted a named volume called `askesis_uploads` here. If it has
-anything in it, move it before the first deploy on the new compose file —
-switching the mount does **not** migrate the contents, and the named volume
-simply stops being attached:
+Earlier builds mounted a named volume here. If it has anything in it, move it
+before the first deploy on the new compose file — switching the mount does
+**not** migrate the contents, and the named volume simply stops being attached.
+
+**Find the real name first.** Compose prefixes the volume with the project name,
+which it derives from the directory (`askesis.app` → `askesisapp`), so the
+volume is typically `askesisapp_uploads` — not `askesis_uploads`. Getting this
+wrong is silent, not loud: `docker run -v <name>:/from` **creates an empty
+volume** when the name doesn't exist, so a typo copies nothing and looks like
+"there was nothing to migrate".
 
 ```bash
+docker volume ls | grep -E '_uploads$'          # confirm the exact name
+VOL=askesisapp_uploads                          # ...and set it here
+
 mkdir -p data/uploads
+docker volume inspect "$VOL" >/dev/null         # fails loudly if the name is wrong
 docker run --rm \
-  -v askesis_uploads:/from \
+  -v "$VOL":/from \
   -v "$PWD/data/uploads":/to \
-  alpine sh -c 'cp -a /from/. /to/ 2>/dev/null || true; ls -la /to'
-# once you've confirmed the copy:  docker volume rm askesis_uploads
+  alpine sh -c 'cp -a /from/. /to/ && ls -la /to'
 ```
 
-(`docker volume ls` to confirm the exact name — Compose prefixes it with the
-project directory name.)
+No `2>/dev/null || true` on the copy on purpose — a failure here must stop you,
+not scroll past. Once you have confirmed the files landed in `data/uploads`:
+`docker volume rm "$VOL"`.
 
 ### Adopting a photo dump
 
