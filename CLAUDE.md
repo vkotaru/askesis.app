@@ -17,7 +17,7 @@ repo is expected to follow (offline-first, PWA, real auth).
 `DEV_MODE=true`. Vite proxies `/api` and `/auth` to `:8000`, so the frontend is same-origin
 in dev. API docs at `:8000/docs`.
 
-**Pre-commit checks** (these are exactly what CI runs — `.github/workflows/ci.yml`):
+**Pre-commit checks**:
 
 ```bash
 cd backend  && ruff check . && ruff format --check .
@@ -26,6 +26,22 @@ cd frontend && npm run check && npm run build     # svelte-check, then vite buil
 
 There is no test suite in this repo. `npm run check` + `npm run build` is the only frontend
 safety net, so run both.
+
+CI (`.github/workflows/ci.yml`) runs two backend checks that lint can't stand in for, and
+both catch failures that only appear at container boot. Run them locally after deleting a
+module or adding a migration:
+
+```bash
+cd backend
+python -c "import app.main"                       # ruff doesn't resolve imports; a dangling
+                                                  # importer passes lint and crash-loops
+python -m alembic upgrade head && python -m alembic downgrade base   # every migration must
+                                                  # be reversible, and this catches SQLite
+                                                  # batch_alter_table mistakes before Postgres
+```
+
+CI also guards releases: a `vX.Y.Z` tag must match `VERSION`, and a `VERSION` change must
+touch `CHANGELOG.md`. Both only fire on hand edits — `scripts/release.sh` does it right.
 
 **Migrations** (`backend/db.sh` wraps Alembic; details in `backend/MIGRATIONS.md`):
 
@@ -68,9 +84,10 @@ to the FastAPI backend same-origin over cookie auth.
 
 The native Kotlin app (`android-native/`) and the Capacitor wrapper (`frontend/android/`) were
 both deleted at tag `v0.1.0-pre-simplify`, along with Railway support. Check out that tag if
-you need any of it. **This repo is mid-simplification** — see
-`~/.claude/plans/lots-of-changes-in-eager-hinton.md` for the phased plan. Google Drive,
-Sheets and OAuth are gone; the local-profile mode is the last piece still to go.
+you need any of it. The simplification is **done** as of v1.0.0 — Google Drive, Sheets, OAuth
+and the local-profile mode are all gone (`~/.claude/plans/lots-of-changes-in-eager-hinton.md`
+is the plan that was executed, kept for rationale). What remains of that work is data, not
+code: the dead Google columns below, and the Drive photo export (`backend/scripts/adopt_photos.py`).
 
 ## Backend (`backend/`)
 
@@ -90,6 +107,14 @@ Key modules:
 - `app/storage.py` — resolves every stored media path against `UPLOADS_DIR`. Progress and
   meal photos are written to the server's own disk; the DB stores a path relative to that dir.
 - `app/security.py` — bcrypt hashing for password auth, with a constant-time miss path.
+- `app/food_search.py` — falls back to USDA FoodData Central + Open Food Facts when the local
+  `foods` table has few hits. `USDA_API_KEY` is optional (Open Food Facts needs no key); with
+  it unset that half is simply skipped.
+- `app/routers/training.py` — race-plan generation (`RACE_DISTANCES` bounds each distance's
+  plan length); `TrainingPlan`/`PlannedWorkout` rows, matched against logged `Activity` rows.
+- `app/routers/nutrition.py` — meal CRUD plus optional Gemini meal-photo analysis
+  (`gemini-1.5-flash`). Without `GEMINI_API_KEY`, `/api/nutrition/analyze-photo` returns 503
+  and nothing else changes. This is the only LLM call in the app.
 - `app/routers/settings.py` — `POST /api/settings/backup` streams **the caller's own rows**
   back as portable JSON (same format on SQLite and Postgres); `POST /api/settings/restore`
   puts one back. Both are governed by `_BACKUP_SPEC`, a per-table allow-list with the
@@ -99,6 +124,19 @@ Key modules:
   never grant cross-user access, and it builds statements from `Table` objects rather than
   interpolating any name from the file. A whole-DB snapshot is an operator task
   (`pg_dump` on the box) — see `SELF_HOSTING.md`.
+
+**Three data-movement paths, easy to confuse.** They are not interchangeable:
+
+| Path | Endpoints | Format | For |
+|---|---|---|---|
+| Backup/restore | `POST /api/settings/backup`, `/restore` | JSON, `_BACKUP_SPEC` allow-list | the caller's own rows, round-trippable |
+| Export/import DB | `GET /api/export/sqlite`, `POST /api/export/import-db` | a `.db` file | handing a snapshot to `analysis/` |
+| CSV import | `POST /api/import/{preview,activities,daily-logs,measurements,meals}` | CSV | pulling in data from another tracker |
+
+`backend/scripts/` holds the operator-side counterparts: `manage_users.py` (the only way to
+create an account), `restore_backup.py` (restore a backup JSON from the shell), and
+`adopt_photos.py` (match hand-copied photo files in `<uploads>/_inbox/` to their DB rows;
+dry-run by default, `--apply` to commit).
 
 ### Auth
 
@@ -141,7 +179,7 @@ Two separate mechanisms, easy to confuse:
 
 ## Frontend (`frontend/`)
 
-SvelteKit 4 with `adapter-static` in **pure SPA mode** — `+layout.ts` sets
+SvelteKit 2 (on Svelte 4) with `adapter-static` in **pure SPA mode** — `+layout.ts` sets
 `ssr = false, prerender = false`. There are no server routes; don't add `+page.server.ts`.
 Tailwind, `lucide-svelte`, `layerchart`. `vite-plugin-pwa` with `registerType: 'prompt'`
 (the `SWUpdatePrompt.svelte` component is what guarantees new JS lands before Dexie opens, so
@@ -155,6 +193,9 @@ Three layers, and the distinction matters:
    `serverId` (null until first sync) and `updatedAt`.
 3. `lib/stores/data.ts` (`offlineApi`) — the offline-aware layer components should call.
    Writes hit Dexie first, then queue into `pendingSync`.
+
+Plus one file that exists only to hold an invariant: `lib/merge-lock.ts` (`serializeMerge`).
+Read its header before touching either merge path.
 
 `lib/config.ts` is just an `apiUrl()` passthrough (every request is same-origin) and
 `lib/auth.ts` is only `tryRefreshToken()` — auth rides on the `access_token` cookie, so every
@@ -176,9 +217,43 @@ read:   component ← Dexie ← GET /api/sync/changes?since=<cursor>
   `date` to avoid duplicating a locally-created row.
 - `_EXCLUDE_FIELDS` in `sync.py` strips client-only fields (`localId`, `userId`, …) before
   they touch a model — extend it when adding client-side bookkeeping fields.
-- The local-only profile (`askesis_local_user` in localStorage) disables sync entirely.
-  `migrateLocalToCloud()` re-targets those rows at a real user; photos are counted but
-  deliberately not migrated (they need a real upload, not a queue entry).
+- `collapseQueue` folds the queue before pushing, so a create-then-delete of a row the server
+  never saw doesn't insert it and then delete it — it pushes nothing.
+- `applyServerIds` writes each server-assigned id back onto its local row **and** onto the
+  queue entries still referencing it. Skipping that sends a local id to the server as if it
+  were a server id.
+- Local-profile mode is **gone**. What's left is a one-time rescue: a browser that used it
+  still holds those rows in IndexedDB and nowhere else, so `countLocalProfileData()` /
+  `migrateLocalToCloud()` behind `MigrateLocalDataBanner.svelte` offer to re-target them at
+  the logged-in user. Photos are counted but deliberately not migrated (they need a real
+  upload, not a queue entry). "Not now" hides the banner for the session only — those rows
+  are the single copy of that data.
+
+**Invariants that no single file makes obvious:**
+
+*Every server→Dexie merge runs under `serializeMerge` (`lib/merge-lock.ts`).* Two independent
+paths write server data into Dexie — `hydrateFromServer` → `mergeServerRows` (cold start, bulk)
+and `pullFromServer` → `mergeServerRecord` (the incremental feed). Both are read-then-write
+over `await`s, so unserialized they interleave and a fresh browser imports the whole dataset
+twice. Ordering the calls at startup does not fix it; both are reachable independently
+afterwards. Any new merge path must take the same lock.
+
+*Rows are owned, and the cache is one account's alone.* This is a household app on shared
+browsers, so every cached read filters `userId === currentUserId()` and every cached write
+stamps it. Consequences: a row with no `userId` is served to nobody until a server merge
+confirms its owner; signed out, nothing is served from Dexie at all; and reads scoped to
+another user (the "shared with me" path, `_userId` truthy) bypass Dexie in **both**
+directions — never served from it, never written to it.
+
+Duplicate resolution is shared, not per-call-site: `preferRow` / `pickCanonicalRow` /
+`findDuplicateDateIds` / `findDuplicateServerIds` in `db.ts` are the single tie-break, used by
+both `sync.ts` and `data.ts`. Match with `pickCanonicalRow`, never `.first()` — two local rows
+can claim the same server row. Dexie is at **version 5**; v3, v4 and v5 exist only to run
+dedupe/ownership `.upgrade()` sweeps over the same stores.
+
+Reads revalidate in the background and bump the `dataVersion` store only when a merge actually
+changed something. Components re-read on it:
+`$: if ($dataVersion !== seen) { seen = $dataVersion; reload(); }`.
 
 ## Gotchas
 
