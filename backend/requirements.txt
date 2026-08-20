@@ -11,6 +11,10 @@ httpx==0.26.0
 python-multipart==0.0.6
 Pillow==10.2.0
 pillow-heif==0.15.0
+# Scheduler for the nightly Garmin pull (app/scheduler.py). Same library
+# briefing-bot uses, keeping one scheduling story across the workspace.
+APScheduler==3.10.4
+
 # Garmin Connect import (app/garmin.py). Unofficial client — there is no
 # personal Garmin API. Pinned because this library tracks a moving target: the
 # March 2026 auth change deprecated `garth` and forced a rewrite onto curl_cffi.

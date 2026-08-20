@@ -34,6 +34,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models import Activity, ActivityType, DailyLog, TimeOfDay, User
 
 logger = logging.getLogger(__name__)
@@ -252,21 +253,57 @@ def _fill_daily_log(
 # ── Client ───────────────────────────────────────────────────────────────────
 
 
-def connect(tokenstore: str, email: str | None = None, password: str | None = None):
-    """Return a logged-in Garmin client, preferring the cached session.
+class GarminAuthUnavailable(RuntimeError):
+    """No cached session, and no credentials to build one with."""
 
-    `login(tokenstore)` both loads an existing token file and writes one after a
-    fresh credential login, so there is no separate save step. Imported lazily
-    so the rest of the app still boots when `garminconnect` isn't installed.
+
+def connect(
+    tokenstore: str,
+    email: str | None = None,
+    password: str | None = None,
+    prompt_mfa=None,
+):
+    """Return a logged-in Garmin client. Cached session first, always.
+
+    `login(tokenstore)` both loads an existing token file and writes a new one
+    after a credential login, so there is no separate save step -- and it
+    refreshes a nearly-expired token on the way through. That is why a session
+    which syncs on a schedule never needs logging in again: every run renews it
+    and writes the renewed token back to disk.
+
+    Credentials are the fallback path, not the normal one. They come from the
+    arguments (the CLI's --login) or, failing that, from GARMIN_EMAIL /
+    GARMIN_PASSWORD, so a lost token volume can recover without a shell.
+
+    A 429 is re-raised untouched and never escalated into a credential login:
+    Garmin rate-limits by IP, and answering a rate limit with a fresh login is
+    how a temporary block becomes a longer one.
+
+    Imported lazily so the rest of the app still boots without garminconnect.
     """
-    from garminconnect import Garmin
+    from garminconnect import Garmin, GarminConnectTooManyRequestsError
 
-    if not (email and password):
+    try:
         api = Garmin()
-        api.login(tokenstore)  # raises if there is no usable cached session
+        api.login(tokenstore)
+        logger.info("Garmin: resumed cached session")
         return api
+    except GarminConnectTooManyRequestsError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any failure here means "no session"
+        logger.info("Garmin: no usable cached session (%s)", type(exc).__name__)
 
-    api = Garmin(email, password, prompt_mfa=lambda: input("Garmin MFA code: ").strip())
+    settings = get_settings()
+    email = email or settings.garmin_email
+    password = password or settings.garmin_password
+    if not (email and password):
+        raise GarminAuthUnavailable(
+            "No cached Garmin session and no credentials to recover with. "
+            "Run: python scripts/garmin_sync.py --login"
+        )
+
+    logger.info("Garmin: falling back to a credential login")
+    api = Garmin(email, password, prompt_mfa=prompt_mfa)
     api.login(tokenstore)
     return api
 

@@ -17,6 +17,21 @@ does not roll the database back — that head is what you would need to
 
 ### Added
 
+- **Nightly Garmin sync** (`app/scheduler.py`, APScheduler — the same library
+  `briefing-bot` uses). Off unless `GARMIN_SYNC_ENABLED=true`. Once enabled the
+  integration needs no shell at all: the cached session refreshes itself on
+  every run and writes the renewed token back, so a schedule that runs keeps
+  itself logged in indefinitely.
+  The job never raises — a failed night logs and waits for tomorrow — and it
+  refuses to guess which account the watch belongs to when more than one exists.
+  Started from a FastAPI lifespan rather than at import, so `import app.main`
+  still spins up no threads and touches no network.
+- **`GARMIN_EMAIL` / `GARMIN_PASSWORD` as unattended recovery.** Consulted only
+  when the cached token is missing or rejected — a lost volume, a changed
+  password — so recovery doesn't need a terminal. Unset by default: a password
+  in `.env` is readable through `docker inspect`, and it cannot help an account
+  with 2FA. A 429 is never escalated into a credential login, because answering
+  a rate limit with a fresh login is how a short block becomes a long one.
 - **Garmin Connect import** (`app/garmin.py`, `scripts/garmin_sync.py`). Pulls
   steps, sleep and activities into `DailyLog` and `Activity`. Two rules make it
   safe to re-run on an overlapping window, which is the intended mode:

@@ -218,6 +218,28 @@ docker compose exec app python scripts/garmin_sync.py --days 7
 Daily is the right cadence; hourly will get you rate limited. Overlapping
 windows are deliberate — they pick up a device that uploaded late.
 
+**Then stop doing it by hand.** Set `GARMIN_SYNC_ENABLED=true` and the app runs
+the pull itself, daily, in-process:
+
+```bash
+GARMIN_SYNC_ENABLED=true
+GARMIN_SYNC_HOUR=4      # container-local hour; the image runs UTC
+GARMIN_SYNC_DAYS=3
+GARMIN_SYNC_USER=       # only needed once a second account exists
+```
+
+**You will not have to log in again.** Each run refreshes the session token and
+writes it back to the volume, so the login survives indefinitely as long as the
+schedule runs and the volume lives. A re-login is needed only if you change your
+Garmin password, Garmin revokes the token, or the box sits idle long enough for
+the refresh token itself to lapse.
+
+If you want even that recovery to happen without a shell, set `GARMIN_EMAIL` and
+`GARMIN_PASSWORD`. They are consulted **only** when the cached token is missing
+or rejected — never for a normal sync. The trade is a plaintext password on the
+box, readable via `docker inspect`; and it does nothing for an account with 2FA,
+which still needs an interactive code. Leaving them unset is the safer default.
+
 What lands where: `totalSteps` → `DailyLog.steps`, `sleepTimeSeconds` →
 `DailyLog.sleep_hours`, `valueInML` → `DailyLog.water_ml`, and each activity →
 one `Activity` keyed by its Garmin `activityId`. **Daily logs are only ever

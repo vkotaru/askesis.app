@@ -1,7 +1,8 @@
 import sys
-from pathlib import Path
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
 
 # backend/ — the default uploads dir sits next to app/, and the Docker image
 # bind-mounts the host's ./data/uploads over it.
@@ -36,6 +37,26 @@ class Settings(BaseSettings):
     # a persisted volume in Docker or every rebuild forces a re-login — and
     # Garmin rate-limits logins.
     garmin_tokenstore: str = str(_BACKEND_DIR / ".garminconnect")
+
+    # Optional unattended-recovery credentials for the Garmin import.
+    #
+    # These are a FALLBACK, not the mechanism. Normal operation uses the cached
+    # session in garmin_tokenstore, which refreshes itself on every sync and so
+    # never expires while the schedule runs. These are only consulted when that
+    # token is missing or rejected -- e.g. the volume was lost, or you changed
+    # your Garmin password -- so that recovery doesn't require a shell.
+    #
+    # Leaving them unset is the safer default: a password here is readable via
+    # `docker inspect` and the container's environment. They also cannot help an
+    # account with 2FA enabled, which needs an interactive code.
+    garmin_email: str = ""
+    garmin_password: str = ""
+
+    # Nightly Garmin pull. Off unless explicitly enabled.
+    garmin_sync_enabled: bool = False
+    garmin_sync_hour: int = 4  # container-local hour (the image runs UTC)
+    garmin_sync_days: int = 3  # overlapping window catches late device uploads
+    garmin_sync_user: str = ""  # required only when >1 account exists
 
     # Where progress/meal photos are written. Override with UPLOADS_DIR when the
     # container mounts storage elsewhere. app/storage.py resolves this once at

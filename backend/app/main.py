@@ -1,25 +1,27 @@
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import (
+    activities,
     auth,
     daily_log,
-    nutrition,
-    activities,
-    settings,
-    measurements,
-    photos,
-    sharing,
-    import_router,
     export,
-    sync,
+    import_router,
+    measurements,
+    nutrition,
+    photos,
     report,
+    settings,
+    sharing,
+    sync,
     training,
 )
 
@@ -63,7 +65,25 @@ APP_VERSION = _read_version()
 GIT_SHA = os.environ.get("GIT_SHA") or "unknown"
 GIT_REF = os.environ.get("GIT_REF") or "unknown"
 
-app = FastAPI(title="Askesis", version=APP_VERSION)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Own the background scheduler for the life of the process.
+
+    Started here rather than at import time so that `python -c "import app.main"`
+    — which CI runs as a smoke test, and which every management script triggers —
+    never spins up a thread or reaches for the network.
+    """
+    from app.scheduler import shutdown_scheduler, start_scheduler
+
+    start_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_scheduler()
+
+
+app = FastAPI(title="Askesis", version=APP_VERSION, lifespan=lifespan)
 
 
 @app.middleware("http")

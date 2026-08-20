@@ -1,0 +1,131 @@
+"""Background jobs owned by the app process. Currently the nightly Garmin pull.
+
+Why in-process rather than host cron: the container is the only thing that knows
+the token store, the database URL and the config, and `docker compose up` is the
+only setup step. A cron entry on the host is a second place to configure, a
+second thing to forget when the box is rebuilt, and it needs a shell — which is
+the whole thing this is meant to avoid.
+
+**This assumes one worker.** The image runs a single uvicorn process, so there is
+exactly one scheduler. Adding `--workers N` would give you N schedulers all
+firing the same job; that would need a shared lock instead.
+
+Every job here must be defensive to the point of paranoia. A background task that
+raises on a bad night must not take the API down with it, so the wrapper catches
+everything and logs.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+from app.config import get_settings
+from app.database import SessionLocal
+from app.models import User
+
+logger = logging.getLogger(__name__)
+
+_scheduler: BackgroundScheduler | None = None
+
+
+def _resolve_sync_user(db, configured: str) -> User | None:
+    """The account to sync: the configured one, or the only one there is.
+
+    The Garmin token store is a single directory today, so it belongs to one
+    account. Guessing between several would silently attach one person's watch
+    data to another person's log, so with more than one account and no explicit
+    setting this refuses rather than picks.
+    """
+    if configured:
+        user = (
+            db.query(User)
+            .filter((User.username == configured) | (User.email == configured))
+            .one_or_none()
+        )
+        if user is None:
+            logger.error(
+                "Garmin sync: GARMIN_SYNC_USER=%r matches no account", configured
+            )
+        return user
+
+    users = db.query(User).all()
+    if len(users) == 1:
+        return users[0]
+    logger.error(
+        "Garmin sync: %d accounts exist and GARMIN_SYNC_USER is unset — refusing "
+        "to guess which one the watch belongs to.",
+        len(users),
+    )
+    return None
+
+
+def run_garmin_sync() -> None:
+    """One scheduled pull. Never raises — a bad night must not kill the app."""
+    from app import garmin
+
+    settings = get_settings()
+    db = SessionLocal()
+    try:
+        user = _resolve_sync_user(db, settings.garmin_sync_user)
+        if user is None:
+            return
+
+        api = garmin.connect(settings.garmin_tokenstore)
+        report = garmin.sync_user(api, db, user, days=settings.garmin_sync_days)
+        logger.info("Garmin sync for %s — %s", user.username, report.summary())
+        for err in report.errors:
+            logger.warning("Garmin sync: %s", err)
+    except Exception as exc:  # noqa: BLE001 - a scheduled job may never propagate
+        # Includes GarminAuthUnavailable (no token, no fallback credentials) and
+        # the 429 that connect() deliberately refuses to work around. Both are
+        # "try again tomorrow", not "crash the server".
+        logger.error("Garmin sync failed: %s: %s", type(exc).__name__, exc)
+    finally:
+        db.close()
+
+
+def start_scheduler() -> None:
+    """Start background jobs if any are enabled. Safe to call once, at startup."""
+    global _scheduler
+
+    settings = get_settings()
+    if not settings.garmin_sync_enabled:
+        logger.info("Scheduler: no jobs enabled")
+        return
+
+    if _scheduler is not None:
+        logger.warning("Scheduler: already started, ignoring")
+        return
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        run_garmin_sync,
+        CronTrigger(hour=settings.garmin_sync_hour, minute=17),
+        id="garmin_sync",
+        name="Garmin Connect pull",
+        # One at a time, and a run missed while the container was down is
+        # folded into a single catch-up rather than replayed N times. The pull
+        # re-reads an overlapping window anyway, so nothing is lost by skipping.
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.start()
+    _scheduler = scheduler
+    logger.info(
+        "Scheduler: Garmin pull scheduled daily at %02d:17 (container time), %d-day window",
+        settings.garmin_sync_hour,
+        settings.garmin_sync_days,
+    )
+
+
+def shutdown_scheduler() -> None:
+    """Stop background jobs on app shutdown."""
+    global _scheduler
+    if _scheduler is not None:
+        _scheduler.shutdown(wait=False)
+        _scheduler = None
+        logger.info("Scheduler: stopped")

@@ -79,7 +79,12 @@ def main() -> int:
         email = input("Garmin email: ").strip()
         password = getpass.getpass("Garmin password: ")
         try:
-            garmin.connect(tokenstore, email, password)
+            garmin.connect(
+                tokenstore,
+                email,
+                password,
+                prompt_mfa=lambda: input("Garmin MFA code: ").strip(),
+            )
         except Exception as exc:  # noqa: BLE001 - report cleanly, no traceback
             sys.exit(f"Login failed: {type(exc).__name__}: {exc}")
         print(
