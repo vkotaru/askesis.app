@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     max_image_size: int = 50 * 1024 * 1024  # 50MB (iPhone photos can be 25MB+)
     max_csv_size: int = 10 * 1024 * 1024  # 10MB
 
+    # Directory holding the cached Garmin Connect session (garmin_tokens.json,
+    # written 0600 inside a 0700 dir by the client). An operator creates it once
+    # with `scripts/garmin_sync.py --login`; syncs afterwards need no password,
+    # so no Garmin credential is ever stored in .env or the database. Must be on
+    # a persisted volume in Docker or every rebuild forces a re-login — and
+    # Garmin rate-limits logins.
+    garmin_tokenstore: str = str(_BACKEND_DIR / ".garminconnect")
+
     # Where progress/meal photos are written. Override with UPLOADS_DIR when the
     # container mounts storage elsewhere. app/storage.py resolves this once at
     # import and every stored path is relative to it.

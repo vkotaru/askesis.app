@@ -15,6 +15,23 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Garmin Connect import** (`app/garmin.py`, `scripts/garmin_sync.py`). Pulls
+  steps, sleep and activities into `DailyLog` and `Activity`. Two rules make it
+  safe to re-run on an overlapping window, which is the intended mode:
+  activities dedupe on `(user_id, source, external_id)` via the new unique
+  constraint, and daily logs **only fill blank fields** — a hand-entered step
+  count or sleep figure is never overwritten by the watch.
+  Garmin rate-limits logins by IP, so the session token is cached on disk and
+  reused: an operator runs `--login` once, interactively, answering MFA at the
+  prompt. **No Garmin password is stored** in `.env` or the database, which
+  keeps the reversible-secret mechanism removed in v1.0.0 removed.
+  Units convert at the boundary as everywhere else — Garmin's metres and float
+  seconds become km and minutes — and the activity date comes from
+  `startTimeLocal`, the device's own wall clock, so an evening workout stays on
+  the day it happened.
+
 ### Fixed
 
 - **Operator docs pointed `pg_dump` at a service that doesn't exist.**

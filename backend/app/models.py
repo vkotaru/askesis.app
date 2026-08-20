@@ -294,6 +294,11 @@ class Activity(Base):
     icon: Mapped[str | None] = mapped_column(
         String(50)
     )  # Icon name (e.g., 'dumbbell', 'bike')
+    # Provenance. NULL means hand-entered, which is every row that predates the
+    # first importer. A non-NULL pair is the provider's own identity for this
+    # activity and is what makes a re-sync idempotent.
+    source: Mapped[str | None] = mapped_column(String(32))  # e.g. 'garmin'
+    external_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -303,7 +308,18 @@ class Activity(Base):
     user: Mapped["User"] = relationship(back_populates="activities")
     exercises: Mapped[list["Exercise"]] = relationship(back_populates="activity")
 
-    __table_args__ = (Index("ix_activities_user_date", "user_id", "date"),)
+    __table_args__ = (
+        Index("ix_activities_user_date", "user_id", "date"),
+        # One row per (account, provider, provider id). Both SQLite and Postgres
+        # treat NULLs as distinct in a UNIQUE constraint, so this binds imported
+        # rows without ever constraining the hand-entered ones.
+        UniqueConstraint(
+            "user_id",
+            "source",
+            "external_id",
+            name="uq_activities_user_source_external",
+        ),
+    )
 
 
 class Exercise(Base):

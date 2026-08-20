@@ -188,6 +188,43 @@ No `2>/dev/null || true` on the copy on purpose — a failure here must stop you
 not scroll past. Once you have confirmed the files landed in `data/uploads`:
 `docker volume rm "$VOL"`.
 
+## Garmin Connect sync
+
+Optional. There is no official personal Garmin API, so this uses the unofficial
+`garminconnect` client — expect it to need version bumps when Garmin changes
+its auth flow (it did in March 2026, which deprecated the library everything
+previously depended on).
+
+**One-time login.** Garmin rate-limits logins by IP and answers `429` to a
+burst, so the session is cached and reused rather than re-established per run:
+
+```bash
+docker compose exec app python scripts/garmin_sync.py --login
+```
+
+That prompts for your Garmin email, password, and an MFA code if the account
+has 2FA. It writes a token to the `garmin-tokens` volume (`GARMIN_TOKENSTORE`,
+default `/app/backend/.garminconnect`) and **nothing else stores the password** —
+not `.env`, not the database. Losing that volume costs another login, so leave
+it out of `docker compose down -v` territory like the others.
+
+**Then sync** — safe to re-run, and meant to be:
+
+```bash
+docker compose exec app python scripts/garmin_sync.py --days 7 --dry-run
+docker compose exec app python scripts/garmin_sync.py --days 7
+```
+
+Daily is the right cadence; hourly will get you rate limited. Overlapping
+windows are deliberate — they pick up a device that uploaded late.
+
+What lands where: `totalSteps` → `DailyLog.steps`, `sleepTimeSeconds` →
+`DailyLog.sleep_hours`, `valueInML` → `DailyLog.water_ml`, and each activity →
+one `Activity` keyed by its Garmin `activityId`. **Daily logs are only ever
+filled in, never overwritten** — if you typed a value yourself, it stays.
+Weight is not imported: it only exists in Garmin if a connected scale or a
+linked nutrition app is feeding it.
+
 ### Adopting a photo dump
 
 If you have an export of photos from an earlier hosting setup, copy the tree into

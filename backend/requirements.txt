@@ -11,6 +11,11 @@ httpx==0.26.0
 python-multipart==0.0.6
 Pillow==10.2.0
 pillow-heif==0.15.0
+# Garmin Connect import (app/garmin.py). Unofficial client — there is no
+# personal Garmin API. Pinned because this library tracks a moving target: the
+# March 2026 auth change deprecated `garth` and forced a rewrite onto curl_cffi.
+garminconnect==0.3.11
+
 # Gemini meal-photo analysis. Authenticates with a plain GEMINI_API_KEY, not
 # OAuth; it pulls google-auth in transitively, which is expected.
 google-generativeai==0.4.0

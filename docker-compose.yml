@@ -73,7 +73,12 @@ services:
     # old `uploads` named volume.
     volumes:
       - ./data/uploads:/app/backend/uploads
+      # Garmin session token. A named volume, not a bind mount: the client
+      # writes it 0600 inside a 0700 dir and nothing on the host should need to
+      # read it. Losing it costs a re-login, and Garmin rate-limits those.
+      - garmin-tokens:/app/backend/.garminconnect
 
 volumes:
   pgdata:
   tailscale-state:
+  garmin-tokens:
