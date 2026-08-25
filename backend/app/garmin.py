@@ -359,12 +359,19 @@ def connect(
     return api
 
 
-def sync_user(api, db: Session, user: User, days: int = 7) -> SyncReport:
-    """Pull the last `days` days for one account and commit.
+def sync_user(
+    api, db: Session, user: User, days: int = 7, dry_run: bool = False
+) -> SyncReport:
+    """Pull the last `days` days for one account, and commit unless `dry_run`.
 
     Re-running is safe and is the intended mode: activities dedupe on their
     provider id, and daily logs only fill blanks. Overlapping windows are how
     a late-arriving device upload gets picked up.
+
+    **The transaction is owned here, so `dry_run` has to be too.** A caller
+    cannot undo this by calling `rollback()` afterwards -- by then the commit
+    below has already happened and the rollback is a no-op that reports success.
+    That is exactly the bug this parameter replaces.
     """
     report = SyncReport()
     # The civil date *where the user lives*, which is the only boundary Garmin
@@ -425,5 +432,8 @@ def sync_user(api, db: Session, user: User, days: int = 7) -> SyncReport:
             partial_day=(day == today),
         )
 
-    db.commit()
+    if dry_run:
+        db.rollback()
+    else:
+        db.commit()
     return report

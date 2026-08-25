@@ -15,6 +15,20 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **`garmin_sync.py --dry-run` wrote everything and said it hadn't.**
+  `sync_user` owns the transaction and commits at the end of its own body; the
+  script then called `db.rollback()`, which by that point is a no-op on an
+  already-committed transaction. So a dry run performed a full sync and printed
+  "DRY RUN — rolled back." The flag existed to make a first sync safe to try,
+  and it did the one thing it promised not to.
+  `dry_run` is now a parameter of `sync_user`, next to the commit it has to
+  suppress — a caller cannot undo that commit from outside, so it cannot be the
+  caller's decision. No data was ever lost by this, only written earlier than
+  intended: the fill-blanks and dedupe rules mean a sync is the same operation
+  whenever it runs.
+
 ## [1.1.1] - 2026-08-25
 
 Alembic head: `add_daily_log_sources`

@@ -104,11 +104,10 @@ def main() -> int:
     try:
         user = resolve_user(db, args.user)
         print(f"Syncing {args.days}d for {user.username} (id={user.id})")
-        report = garmin.sync_user(api, db, user, days=args.days)
+        report = garmin.sync_user(api, db, user, days=args.days, dry_run=args.dry_run)
 
         if args.dry_run:
-            db.rollback()
-            print("DRY RUN — rolled back.")
+            print("DRY RUN — rolled back, nothing written.")
 
         print(report.summary())
         for err in report.errors:
