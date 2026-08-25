@@ -5,6 +5,7 @@ from datetime import date
 
 from app.database import get_db
 from app.models import User, DailyLog
+from app.provenance import mark_manual, parse_sources
 from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
@@ -38,6 +39,9 @@ class DailyLogResponse(BaseModel):
     caffeine_mg: int | None = None
     ate_outside: bool | None = None
     notes: str | None = None
+    # Server-owned: which fields came from an importer rather than the user.
+    # Absent from DailyLogCreate on purpose -- a client can never assert it.
+    sources: dict[str, str] | None = None
 
     class Config:
         from_attributes = True
@@ -57,6 +61,7 @@ class DailyLogResponse(BaseModel):
             caffeine_mg=log.caffeine_mg,
             ate_outside=log.ate_outside,
             notes=log.notes,
+            sources=parse_sources(log.sources) or None,
         )
 
 
@@ -128,9 +133,14 @@ def create_or_update_log(
 
     if existing:
         # Update only provided fields (preserve existing data)
-        for key, value in data.items():
-            if key != "date":  # Don't update date
-                setattr(existing, key, value)
+        touched = [k for k in data if k != "date"]
+        for key in touched:
+            setattr(existing, key, data[key])
+        # A person set these, including any they set to empty. That claim is
+        # what stops an importer refilling a field the user deliberately
+        # cleared -- see app/provenance.py.
+        if touched:
+            existing.sources = mark_manual(existing.sources, touched)
         db.commit()
         db.refresh(existing)
         return DailyLogResponse.from_orm_with_feelings(existing)
@@ -139,7 +149,11 @@ def create_or_update_log(
     create_data = log_data.model_dump()
     if create_data.get("feelings"):
         create_data["feelings"] = ",".join(create_data["feelings"])
-    log = DailyLog(user_id=current_user.id, **create_data)
+    log = DailyLog(
+        user_id=current_user.id,
+        sources=mark_manual(None, [k for k in data if k != "date"]),
+        **create_data,
+    )
     db.add(log)
     db.commit()
     db.refresh(log)

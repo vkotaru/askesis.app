@@ -34,6 +34,11 @@ export interface LocalDailyLog {
   caffeine_mg?: number;
   ate_outside?: boolean;
   notes?: string;
+  // Per-field provenance from the server, e.g. { steps: 'garmin' }. Not
+  // indexed, so it needs no schema version bump — Dexie is schemaless for
+  // anything it is not asked to index. Rows cached before this existed simply
+  // lack it, and absent means unknown, which is the pre-existing behaviour.
+  sources?: Record<string, string>;
   updatedAt: string;
 }
 
@@ -52,6 +57,9 @@ export interface LocalActivity {
   notes?: string;
   tags?: string;
   icon?: string;
+  // Importer that created this row; absent for hand-entered ones. Not indexed.
+  source?: string;
+  external_id?: string;
   exercises: Array<{
     id?: number;
     name: string;

@@ -223,10 +223,21 @@ the pull itself, daily, in-process:
 
 ```bash
 GARMIN_SYNC_ENABLED=true
-GARMIN_SYNC_HOUR=4      # container-local hour; the image runs UTC
+GARMIN_SYNC_TZ=Area/City         # your IANA zone; see below. Do not leave this at UTC.
+GARMIN_SYNC_HOUR=3               # hour in GARMIN_SYNC_TZ
 GARMIN_SYNC_DAYS=3
-GARMIN_SYNC_USER=       # only needed once a second account exists
+GARMIN_SYNC_USER=                # only needed once a second account exists
 ```
+
+**Set `GARMIN_SYNC_TZ` to where you actually live.** It drives two things: the
+hour the job fires, and — more importantly — which calendar day counts as
+"today". The image runs UTC, so leaving this unset means both are UTC, and for
+anywhere west of Greenwich the "nightly" pull fires in the *evening*, on a day
+that has not finished. Garmin's own `calendarDate` is your device's local day,
+so the two disagree and the pull reaches for a day that has barely started.
+
+With the zone set, `GARMIN_SYNC_HOUR=3` means 03:17 local wherever you are:
+after midnight, before you wake up, with the previous day fully closed.
 
 **You will not have to log in again.** Each run refreshes the session token and
 writes it back to the volume, so the login survives indefinitely as long as the
@@ -242,10 +253,26 @@ which still needs an interactive code. Leaving them unset is the safer default.
 
 What lands where: `totalSteps` → `DailyLog.steps`, `sleepTimeSeconds` →
 `DailyLog.sleep_hours`, `valueInML` → `DailyLog.water_ml`, and each activity →
-one `Activity` keyed by its Garmin `activityId`. **Daily logs are only ever
-filled in, never overwritten** — if you typed a value yourself, it stays.
+one `Activity` keyed by its Garmin `activityId`. **A value you entered is never
+overwritten** — and since per-field provenance landed, that covers a field you
+deliberately *cleared* too: a blank you made by hand is left blank rather than
+refilled. What Garmin may now update is its own earlier readings, which is what
+lets a bad or partial number correct itself on the next pass.
 Weight is not imported: it only exists in Garmin if a connected scale or a
 linked nutrition app is feeding it.
+
+Steps and hydration are **not** written for a day still in progress — they are
+running totals, and because a log only ever fills a blank, a midday figure would
+be frozen there for good. They land once the day closes, which the overlapping
+window takes care of.
+
+**Watching it from the app.** Settings → Garmin Connect shows whether the
+schedule is on, when it last ran, what it filled, and any errors, plus a **Sync
+now** button. Values it filled carry a small watch icon in the daily log. The
+panel diagnoses a dead session and prints the `--login` command, but it never
+asks for your Garmin password — connecting is still the shell step above. Run
+state lives in memory, so a container restart resets it to "not since the server
+started".
 
 ### Adopting a photo dump
 

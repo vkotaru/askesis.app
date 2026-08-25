@@ -3,6 +3,7 @@
   import { format, addDays, subDays, parseISO } from 'date-fns';
   import { Scale, Moon, Footprints, Droplets, Coffee, FileText, Check, Utensils, ChevronLeft, ChevronRight, Heart, Upload, History, Calendar, CheckCircle } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
+  import SourceBadge from '$lib/components/SourceBadge.svelte';
   import { clsx } from 'clsx';
   import { type DailyLog } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
@@ -36,6 +37,19 @@
   // Track saved state per field for visual feedback
   let fieldSaved: Record<string, boolean> = {};
 
+  // Which values came from a device rather than from you. Server-owned; this
+  // page only ever reads it. The UI names for these fields aren't the column
+  // names, so keep the translation in one place.
+  let sources: Record<string, string> = {};
+  const COLUMN_FOR: Record<string, string> = {
+    weight: 'weight',
+    sleep: 'sleep_hours',
+    steps: 'steps',
+    water: 'water_ml',
+    caffeine: 'caffeine_mg',
+    notes: 'notes',
+  };
+
   // Form fields - directly bound (water stored in user's preferred unit)
   let weight: number | undefined;
   let sleep_hours: number | undefined;
@@ -61,6 +75,13 @@
         ate_outside,
         notes: notes || undefined,
       });
+      // You just typed over it, so it is yours now — the server records the
+      // same thing. Reflect it here instead of leaving a stale watch icon
+      // beside a number the watch no longer owns.
+      const column = COLUMN_FOR[fieldName];
+      if (column && sources[column]) {
+        sources = { ...sources, [column]: 'manual' };
+      }
       // Show saved indicator for this field
       fieldSaved[fieldName] = true;
       fieldSaved = fieldSaved; // trigger reactivity
@@ -87,6 +108,7 @@
       caffeine_mg = log.caffeine_mg;
       ate_outside = log.ate_outside ?? false;
       notes = log.notes ?? '';
+      sources = log.sources ?? {};
     } catch {
       // No log for this date, reset to defaults
       weight = undefined;
@@ -97,6 +119,7 @@
       caffeine_mg = undefined;
       ate_outside = false;
       notes = '';
+      sources = {};
     }
   }
 
@@ -258,6 +281,7 @@
         <label for="sleep" class="label flex items-center gap-2">
           <Moon size={16} class="text-strength-500" />
           Sleep <span class="text-gray-400 font-normal">(hours)</span>
+          <SourceBadge source={sources['sleep_hours']} />
           {#if fieldSaved['sleep']}
             <Check size={14} class="text-primary-500 animate-pulse" />
           {/if}
@@ -278,6 +302,7 @@
         <label for="steps" class="label flex items-center gap-2">
           <Footprints size={16} class="text-cardio-500" />
           Steps
+          <SourceBadge source={sources['steps']} />
           {#if fieldSaved['steps']}
             <Check size={14} class="text-primary-500 animate-pulse" />
           {/if}
@@ -297,6 +322,7 @@
         <label for="water" class="label flex items-center gap-2">
           <Droplets size={16} class="text-cardio-400" />
           Water <span class="text-gray-400 font-normal">({getWaterLabel($settings.water_unit)})</span>
+          <SourceBadge source={sources['water_ml']} />
           {#if fieldSaved['water']}
             <Check size={14} class="text-primary-500 animate-pulse" />
           {/if}
@@ -483,6 +509,7 @@
                 <span class="flex items-center gap-1">
                   <Footprints size={12} class="text-cardio-500" />
                   {log.steps.toLocaleString()}
+                  <SourceBadge source={log.sources?.steps} size={10} />
                 </span>
               {/if}
               {#if log.water_ml}
@@ -574,6 +601,7 @@
                     <span class="flex items-center gap-1">
                       <Footprints size={14} class="text-cardio-500" />
                       {log.steps.toLocaleString()}
+                      <SourceBadge source={log.sources?.steps} />
                     </span>
                   {:else}
                     <span class="text-gray-400">—</span>

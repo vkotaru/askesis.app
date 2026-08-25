@@ -54,7 +54,12 @@ class Settings(BaseSettings):
 
     # Nightly Garmin pull. Off unless explicitly enabled.
     garmin_sync_enabled: bool = False
-    garmin_sync_hour: int = 4  # container-local hour (the image runs UTC)
+    # Both the cron hour and the day boundary are read in this zone. The image
+    # runs UTC, so leaving this at UTC means the pull fires mid-evening local
+    # time for the Americas and closes the day before it has ended. An IANA
+    # name (tzdata ships the database in the image, so any zone resolves).
+    garmin_sync_tz: str = "UTC"
+    garmin_sync_hour: int = 4  # hour in garmin_sync_tz
     garmin_sync_days: int = 3  # overlapping window catches late device uploads
     garmin_sync_user: str = ""  # required only when >1 account exists
 

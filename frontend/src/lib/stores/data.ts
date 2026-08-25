@@ -374,6 +374,7 @@ function toLocalDailyLog(log: DailyLog, userId?: number): UpdateSpec {
     caffeine_mg: log.caffeine_mg,
     ate_outside: log.ate_outside,
     notes: log.notes,
+    sources: log.sources,
     updatedAt: now(),
   };
 }
@@ -391,6 +392,7 @@ function fromLocalDailyLog(local: any): DailyLog {
     caffeine_mg: local.caffeine_mg,
     ate_outside: local.ate_outside,
     notes: local.notes,
+    sources: local.sources,
   };
 }
 
@@ -409,6 +411,8 @@ function toLocalActivity(activity: Activity, userId?: number): UpdateSpec {
     notes: activity.notes,
     tags: activity.tags,
     icon: activity.icon,
+    source: activity.source,
+    external_id: activity.external_id,
     exercises: activity.exercises,
     updatedAt: now(),
   };
@@ -429,6 +433,8 @@ function fromLocalActivity(local: any): Activity {
     notes: local.notes,
     tags: local.tags,
     icon: local.icon,
+    source: local.source,
+    external_id: local.external_id,
     exercises: local.exercises,
   };
 }

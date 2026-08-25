@@ -24,6 +24,13 @@ export interface DailyLog {
   caffeine_mg?: number;
   ate_outside?: boolean;
   notes?: string;
+  /**
+   * Per-field provenance, e.g. `{ steps: 'garmin', weight: 'manual' }`.
+   * Server-owned and read-only — it is stripped from anything pushed back, so
+   * a client can never relabel an importer's value as the user's own. A field
+   * missing from the map is unknown, which is every row predating the column.
+   */
+  sources?: Record<string, string>;
 }
 
 export interface DailyNutrition {
@@ -38,7 +45,7 @@ export interface DailyNutrition {
 
 export type DailyNutritionInput = Omit<DailyNutrition, 'id' | 'user_id'>;
 
-export type DailyLogInput = Omit<DailyLog, 'id'>;
+export type DailyLogInput = Omit<DailyLog, 'id' | 'sources'>;
 
 export interface FoodItem {
   id: number;
@@ -155,10 +162,42 @@ export interface Activity {
   notes?: string;
   tags?: string;
   icon?: string;
+  /** Importer that created this row; absent for anything hand-entered. Not the
+   *  same claim as `url` pointing at garmin.com, which only means you pasted a
+   *  link. Read-only. */
+  source?: string;
+  external_id?: string;
   exercises: Exercise[];
 }
 
-export type ActivityInput = Omit<Activity, 'id'>;
+export type ActivityInput = Omit<Activity, 'id' | 'source' | 'external_id'>;
+
+export interface GarminRun {
+  started_at: string;
+  finished_at: string | null;
+  ok: boolean;
+  running: boolean;
+  trigger: string;
+  summary: Record<string, number>;
+  errors: string[];
+}
+
+export interface GarminStatus {
+  enabled: boolean;
+  configured: boolean;
+  scheduled_hour: number | null;
+  timezone: string;
+  lookback_days: number;
+  sync_username: string | null;
+  is_owner: boolean;
+  running: boolean;
+  /** The token is gone or rejected — a person has to go and re-login. */
+  needs_reauth: boolean;
+  /** Garmin is rate-limiting. Deliberately distinct from needs_reauth: logging
+   *  in again to "fix" a 429 is what turns a short block into a long one. */
+  rate_limited: boolean;
+  last_run: GarminRun | null;
+}
 
 export interface CalendarEvent {
   id: number;
@@ -750,4 +789,16 @@ export const api = {
     fetchJSON<WeeklyProgress[]>(`/api/training/plans/${planId}/progress`),
   getTrainingCalendar: (year: number, month: number) =>
     fetchJSON<Record<string, PlannedWorkout[]>>(`/api/training/calendar/${year}/${month}`),
+
+  // Integrations. Server operational state — always api.*, never offlineApi.*:
+  // this must not enter Dexie, and offline it should read as unavailable rather
+  // than as a stale "last synced" that was true an hour ago.
+  getGarminStatus: () => fetchJSON<GarminStatus>('/api/integrations/garmin/status'),
+  // 202 and returns immediately; the pull is a blocking chain of rate-limited
+  // requests. Poll getGarminStatus() for the outcome — failures inside the run
+  // cannot come back as a status code here.
+  runGarminSync: () =>
+    fetchJSON<{ started: boolean; reason?: string }>('/api/integrations/garmin/sync', {
+      method: 'POST',
+    }),
 };

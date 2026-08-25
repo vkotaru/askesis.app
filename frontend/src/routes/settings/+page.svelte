@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame } from 'lucide-svelte';
   import { clsx } from 'clsx';
+  import GarminCard from '$lib/components/settings/GarminCard.svelte';
   import { settings } from '$lib/stores/settings';
   import { APP_VERSION } from '$lib/version';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
@@ -814,6 +815,9 @@
         </div>
       {/if}
     </div>
+
+    <!-- Garmin Connect -->
+    <GarminCard />
 
     <!-- Backup & Restore -->
     <div class="card p-6">

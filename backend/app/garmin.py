@@ -31,11 +31,13 @@ from dataclasses import dataclass, field
 from datetime import date as date_type
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Activity, ActivityType, DailyLog, TimeOfDay, User
+from app.provenance import is_manual, mark_provider, owned_by
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +171,15 @@ def water_ml_from(payload: dict[str, Any] | None) -> int | None:
     return round(value) if value else None
 
 
+def steps_from(value: Any) -> int | None:
+    """A day's step total. Same falsy guard as its two neighbours, and for a
+    sharper reason: `_fill_daily_log` only ever writes into a NULL column, so a
+    zero written once can never be corrected — not by Garmin, and not by a
+    later sync. A day Garmin has no count for reads as 0 here, so letting that
+    through would freeze the blank at zero permanently."""
+    return round(value) if value else None
+
+
 # ── Database side ────────────────────────────────────────────────────────────
 
 
@@ -208,21 +219,43 @@ def _upsert_activity(
         report.activities_updated += 1
 
 
+# Fields that are cumulative over a calendar day, and so are meaningless until
+# that day is over. Sleep is not one of them: under Askesis's wake-up-day
+# convention the night ending this morning is already complete, so it is safe
+# to write for the current day.
+_DAY_TOTALS = ("steps", "water_ml")
+
+
 def _fill_daily_log(
     db: Session,
     user: User,
     day: date_type,
     fields: dict[str, Any],
     report: SyncReport,
+    partial_day: bool = False,
 ) -> None:
     """Write Garmin's wellness numbers into that day's log.
 
-    **Only fills blanks.** If you already typed a step count or a sleep figure
-    for that day, Garmin does not overwrite it. The device is not more
-    authoritative than the person, and silently rewriting hand-entered health
-    data is the kind of surprise that makes a tracker untrustworthy.
+    **Never overwrites a person.** If you typed a step count or a sleep figure
+    for that day, Garmin leaves it alone. The device is not more authoritative
+    than the person, and silently rewriting hand-entered health data is the kind
+    of surprise that makes a tracker untrustworthy. Since app/provenance.py
+    landed that rule is *stricter*, not looser: a field the user deliberately
+    cleared is marked `manual` on a NULL, and is left blank rather than refilled.
+
+    **Does overwrite itself.** A field this importer wrote is one it may correct.
+    Without that, fill-blanks-only freezes whatever first landed in a NULL column
+    for good — a partial count or a bad reading included.
+
+    A field with no recorded owner is unknown, which is every row predating the
+    provenance column. Unknown keeps the original behaviour exactly: filled if
+    blank, otherwise untouched.
+
+    `partial_day` marks a day still in progress; see `_DAY_TOTALS`.
     """
     supplied = {k: v for k, v in fields.items() if v is not None}
+    if partial_day:
+        supplied = {k: v for k, v in supplied.items() if k not in _DAY_TOTALS}
     if not supplied:
         return
 
@@ -237,16 +270,34 @@ def _fill_daily_log(
     )
 
     if log is None:
-        db.add(DailyLog(user_id=user.id, date=day, **supplied))
+        db.add(
+            DailyLog(
+                user_id=user.id,
+                date=day,
+                sources=mark_provider(None, supplied, SOURCE),
+                **supplied,
+            )
+        )
         report.daily_logs_created += 1
         return
 
-    filled = False
+    # Only fields that actually moved, so a re-read of an unchanged day reports
+    # nothing rather than counting itself as work.
+    written = []
     for key, value in supplied.items():
-        if getattr(log, key) is None:
+        if is_manual(log.sources, key):
+            continue  # a person's blank is still a person's answer
+        mine = owned_by(log.sources, key, SOURCE)
+        current = getattr(log, key)
+        if current is not None and not mine:
+            continue  # someone else's, or from before provenance existed
+        if current != value:
             setattr(log, key, value)
-            filled = True
-    if filled:
+            written.append(key)
+        elif not mine:
+            written.append(key)  # same number, but now on the record as ours
+    if written:
+        log.sources = mark_provider(log.sources, written, SOURCE)
         report.daily_logs_filled += 1
 
 
@@ -316,15 +367,18 @@ def sync_user(api, db: Session, user: User, days: int = 7) -> SyncReport:
     a late-arriving device upload gets picked up.
     """
     report = SyncReport()
-    # Local civil date (DTZ011), matching how the rest of the app keys days.
-    today = date_type.today()  # noqa: DTZ011
+    # The civil date *where the user lives*, which is the only boundary Garmin
+    # agrees with — its `calendarDate` is the device's local day. The container
+    # runs UTC, so `date.today()` here would roll over mid-evening for anyone
+    # west of Greenwich and pull a day that has not started yet.
+    today = datetime.now(ZoneInfo(get_settings().garmin_sync_tz)).date()
     start = today - timedelta(days=days)
 
     # One ranged call instead of one per day — fewer requests is the whole game
     # against a rate-limited endpoint.
     try:
         steps_by_day = {
-            row["calendarDate"]: row.get("totalSteps")
+            row["calendarDate"]: steps_from(row.get("totalSteps"))
             for row in api.get_daily_steps(start.isoformat(), today.isoformat())
         }
     except Exception as exc:  # noqa: BLE001 - one endpoint failing isn't fatal
@@ -368,6 +422,7 @@ def sync_user(api, db: Session, user: User, days: int = 7) -> SyncReport:
                 "water_ml": water_ml_from(hydration),
             },
             report,
+            partial_day=(day == today),
         )
 
     db.commit()

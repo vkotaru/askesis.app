@@ -29,6 +29,7 @@ from app.models import (
     ActivityType,
     TimeOfDay,
 )
+from app.provenance import mark_manual, parse_sources
 from app.routers.auth import get_current_user
 
 logger = logging.getLogger("askesis.sync")
@@ -134,6 +135,13 @@ def model_to_dict(obj, include_relationships: bool = False) -> dict:
     # Convert feelings from comma-separated to list for daily logs
     if isinstance(obj, DailyLog) and d.get("feelings"):
         d["feelings"] = d["feelings"].split(",")
+
+    # Provenance is stored packed and served as a map, and it has to be parsed
+    # HERE as well as in daily_log.py -- this feed and GET /api/daily-log/ both
+    # write the same Dexie rows, so if one of them emitted the raw string the
+    # cached shape would depend on which path happened to run last.
+    if isinstance(obj, DailyLog):
+        d["sources"] = parse_sources(d.get("sources")) or None
 
     return d
 
@@ -287,6 +295,10 @@ _EXCLUDE_FIELDS = {
     "id",
     "user_id",
     "userId",
+    # Server-owned. The client is served this field and caches it, so it would
+    # otherwise come straight back on the next push and let a round-trip
+    # relabel Garmin's values as the user's own.
+    "sources",
 }
 
 
@@ -378,9 +390,11 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
             .first()
         )
         if existing:
-            for key, value in data.items():
-                if key != "date" and hasattr(existing, key):
-                    setattr(existing, key, value)
+            touched = [k for k in data if k != "date" and hasattr(existing, k)]
+            for key in touched:
+                setattr(existing, key, data[key])
+            if model == DailyLog and touched:
+                existing.sources = mark_manual(existing.sources, touched)
             existing.updated_at = datetime.utcnow()
             db.flush()
             return existing.id
@@ -405,6 +419,8 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
             return existing.id
 
     obj = model(user_id=user.id, **data)
+    if model == DailyLog:
+        obj.sources = mark_manual(None, [k for k in data if k != "date"])
     obj.updated_at = datetime.utcnow()
     db.add(obj)
     db.flush()
@@ -510,9 +526,17 @@ def _handle_update(
     # Only set actual model columns
     model_columns = {c.name for c in model.__table__.columns}
     data = _coerce_column_types(model, data)
-    for key, value in data.items():
-        if key in model_columns:
-            setattr(obj, key, value)
+    touched = [k for k in data if k in model_columns]
+    for key in touched:
+        setattr(obj, key, data[key])
+
+    # An edit made offline earns the same provenance an online one would, or
+    # the queue would become a way to launder a hand-entered value into
+    # looking like an importer's.
+    if model == DailyLog:
+        touched = [k for k in touched if k != "date"]
+        if touched:
+            obj.sources = mark_manual(obj.sources, touched)
 
     obj.updated_at = datetime.utcnow()
     db.flush()

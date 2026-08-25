@@ -17,6 +17,37 @@ does not roll the database back — that head is what you would need to
 
 ### Added
 
+- **A Garmin panel in Settings**, and the two endpoints behind it
+  (`GET/POST /api/integrations/garmin/{status,sync}`). The import had no UI at
+  all: no way to tell whether it was alive, when it last ran, what it filled, or
+  whether a value came from the watch or from you. It now reports all four and
+  gives you a **Sync now** button.
+  It diagnoses but does not connect — logging in stays the one-time
+  `scripts/garmin_sync.py --login`, because that needs an interactive MFA code
+  and would otherwise mean this app handling a Garmin password. When the cached
+  session dies the panel says so and shows the command to run. A 429 is reported
+  as its own state, deliberately distinct: telling someone to log in again while
+  Garmin is rate-limiting them is how a short block becomes a long one.
+  The manual trigger runs on a thread and shares a lock with the scheduled job,
+  so a hand-pressed sync can never land on top of the nightly one — two
+  concurrent Garmin sessions is precisely the 429 trap the module warns about.
+  Run state is held in memory and lost on restart, which the panel reports as
+  "not since the server started" rather than as "never".
+- **Per-field provenance on daily logs** (`daily_logs.sources`,
+  `app/provenance.py`), surfaced as a small watch icon next to any value your
+  device filled in. Comma-separated `field:owner` pairs, matching how `feelings`
+  is already stored. An absent entry means *unknown*, which is every row
+  predating the column and which behaves exactly as before, so the migration
+  changes the meaning of no stored data.
+  The badge is the visible half. The half that matters is that Garmin can now
+  correct **its own** values: fill-blanks-only was the only safe rule without
+  provenance, and it froze whatever first landed in a NULL column forever. The
+  rule is now "fill a blank, or update a value I wrote myself", and the
+  never-overwrite-a-person guarantee gets *stricter* — a field you deliberately
+  cleared is marked `manual` on a NULL and is left blank rather than refilled.
+  `sources` is server-owned: it is stripped from anything the client pushes
+  back, so a cached row round-tripping through the sync queue can't relabel the
+  watch's numbers as your own.
 - **Nightly Garmin sync** (`app/scheduler.py`, APScheduler — the same library
   `briefing-bot` uses). Off unless `GARMIN_SYNC_ENABLED=true`. Once enabled the
   integration needs no shell at all: the cached session refreshes itself on
@@ -49,6 +80,25 @@ does not roll the database back — that head is what you would need to
 
 ### Fixed
 
+- **Garmin wrote the in-progress day as if it were finished.** `sync_user`
+  always included today, and steps and hydration are running totals — so a pull
+  at midday recorded a lunchtime figure. Because daily logs only ever fill NULL
+  columns, that partial number was then frozen: no later sync could correct it,
+  and the day stayed wrong until you noticed and retyped it. Day totals are now
+  skipped for a day still in progress and picked up once it closes. Sleep is
+  still written for the current day — under the wake-up-day convention the night
+  ending this morning is already complete.
+- **A zero step count from Garmin was permanent.** `sleep_hours_from` and
+  `water_ml_from` both guard against a falsy reading; the steps path did not, so
+  a `0` for a day Garmin had no data on was written into the blank and locked
+  there. Same guard now applies.
+- **The Garmin schedule ran on the container's clock, not yours.** The image
+  runs UTC, so both the cron hour and the day boundary were UTC — for anyone
+  west of Greenwich the "nightly" pull fired in the evening and closed a day
+  that had not ended. New `GARMIN_SYNC_TZ` (an IANA zone) drives both; with it
+  set, `GARMIN_SYNC_HOUR=3` means 03:17 local everywhere. `tzdata` is now a
+  dependency — a pure-Python wheel `zoneinfo` falls back to, so the image needs
+  no system timezone database and no `TZ` plumbing.
 - **Operator docs pointed `pg_dump` at a service that doesn't exist.**
   `SELF_HOSTING.md` said `docker compose exec -T postgres`; the Compose service is
   `db`, so the documented backup command failed outright.

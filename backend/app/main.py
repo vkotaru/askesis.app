@@ -15,6 +15,7 @@ from app.routers import (
     daily_log,
     export,
     import_router,
+    integrations,
     measurements,
     nutrition,
     photos,
@@ -127,6 +128,9 @@ app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(report.router, prefix="/api/report", tags=["report"])
 app.include_router(training.router, prefix="/api/training", tags=["training"])
+app.include_router(
+    integrations.router, prefix="/api/integrations", tags=["integrations"]
+)
 
 
 @app.get("/health")

@@ -15,6 +15,11 @@ pillow-heif==0.15.0
 # briefing-bot uses, keeping one scheduling story across the workspace.
 APScheduler==3.10.4
 
+# IANA timezone database for zoneinfo (GARMIN_SYNC_TZ). The slim image carries
+# no system tzdata, and zoneinfo falls back to this pure-Python wheel — so no
+# Dockerfile change and no TZ env plumbing is needed.
+tzdata==2024.1
+
 # Garmin Connect import (app/garmin.py). Unofficial client — there is no
 # personal Garmin API. Pinned because this library tracks a moving target: the
 # March 2026 auth change deprecated `garth` and forced a rewrite onto curl_cffi.

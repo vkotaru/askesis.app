@@ -158,6 +158,9 @@ class DailyLog(Base):
     caffeine_mg: Mapped[int | None] = mapped_column(Integer)
     ate_outside: Mapped[bool | None] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Per-field provenance: "steps:garmin,weight:manual". See app/provenance.py
+    # for the grammar and for why an absent entry has to mean "unknown".
+    sources: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

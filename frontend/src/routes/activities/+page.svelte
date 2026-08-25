@@ -3,6 +3,7 @@
   import { format, addDays, subDays, parseISO } from 'date-fns';
   import { Plus, Trash2, Pencil, Activity, Dumbbell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sun, Sunrise, Sunset, Moon, Upload, History, Calendar } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
+  import SourceBadge from '$lib/components/SourceBadge.svelte';
   import { clsx } from 'clsx';
   import { type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
@@ -416,6 +417,9 @@
                         </span>
                       {/if}
                     {/if}
+                    <!-- Imported, as opposed to the badge below it, which only
+                         means someone pasted a link to this workout. -->
+                    <SourceBadge source={activity.source} />
                     {#if activity.url}
                       {@const platform = getPlatformFromUrl(activity.url)}
                       <a

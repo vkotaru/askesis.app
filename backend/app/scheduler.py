@@ -18,6 +18,10 @@ everything and logs.
 from __future__ import annotations
 
 import logging
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -29,6 +33,46 @@ from app.models import User
 logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
+
+
+# ── Run state ────────────────────────────────────────────────────────────────
+# So the Settings page can answer "is this thing alive?" without a shell.
+#
+# Held in memory and lost on restart, deliberately: this is a debugging aid, not
+# a record, and a table for it would be a schema commitment to a number nobody
+# will read twice. A restarted container reports "unknown", which is honest --
+# it is not the same claim as "never ran".
+
+
+@dataclass
+class GarminRun:
+    started_at: datetime
+    finished_at: datetime | None = None
+    ok: bool = False
+    summary: dict[str, int] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    # Set when the failure was specifically "this token no longer works", which
+    # is the one failure a person has to act on. Kept distinct from a 429:
+    # telling someone to re-login while Garmin is rate-limiting them is how a
+    # slow night becomes a locked account.
+    auth_failed: bool = False
+    trigger: str = "schedule"  # or "manual"
+
+
+# Guards the sync itself, not the scheduler. APScheduler's max_instances=1 stops
+# the cron job overlapping itself; this also stops a hand-pressed "Sync now"
+# landing on top of it. Two concurrent Garmin sessions is exactly the 429 trap
+# app/garmin.py's docstring warns about.
+_run_lock = threading.Lock()
+_last_run: GarminRun | None = None
+
+
+def last_run() -> GarminRun | None:
+    return _last_run
+
+
+def is_running() -> bool:
+    return _run_lock.locked()
 
 
 def _resolve_sync_user(db, configured: str) -> User | None:
@@ -62,15 +106,33 @@ def _resolve_sync_user(db, configured: str) -> User | None:
     return None
 
 
-def run_garmin_sync() -> None:
-    """One scheduled pull. Never raises — a bad night must not kill the app."""
+def resolve_sync_user(db) -> User | None:
+    """The account the token store belongs to, or None if it can't be settled."""
+    return _resolve_sync_user(db, get_settings().garmin_sync_user)
+
+
+def run_garmin_sync(trigger: str = "schedule") -> None:
+    """One pull. Never raises — a bad night must not kill the app.
+
+    Both the cron job and the manual button land here, so they cannot overlap
+    and they report through exactly the same state.
+    """
     from app import garmin
 
+    global _last_run
+
+    if not _run_lock.acquire(blocking=False):
+        logger.info("Garmin sync: already running, skipping this %s trigger", trigger)
+        return
+
+    run = GarminRun(started_at=datetime.now(timezone.utc), trigger=trigger)
+    _last_run = run
     settings = get_settings()
     db = SessionLocal()
     try:
         user = _resolve_sync_user(db, settings.garmin_sync_user)
         if user is None:
+            run.errors.append("No account to sync. Set GARMIN_SYNC_USER to a username.")
             return
 
         api = garmin.connect(settings.garmin_tokenstore)
@@ -78,13 +140,44 @@ def run_garmin_sync() -> None:
         logger.info("Garmin sync for %s — %s", user.username, report.summary())
         for err in report.errors:
             logger.warning("Garmin sync: %s", err)
+        run.summary = {
+            "activities_created": report.activities_created,
+            "activities_updated": report.activities_updated,
+            "daily_logs_created": report.daily_logs_created,
+            "daily_logs_filled": report.daily_logs_filled,
+            "days_seen": report.days_seen,
+        }
+        run.errors.extend(report.errors)
+        run.ok = True
     except Exception as exc:  # noqa: BLE001 - a scheduled job may never propagate
         # Includes GarminAuthUnavailable (no token, no fallback credentials) and
         # the 429 that connect() deliberately refuses to work around. Both are
         # "try again tomorrow", not "crash the server".
         logger.error("Garmin sync failed: %s: %s", type(exc).__name__, exc)
+        run.errors.append(f"{type(exc).__name__}: {exc}")
+        run.auth_failed = isinstance(exc, garmin.GarminAuthUnavailable)
     finally:
+        run.finished_at = datetime.now(timezone.utc)
         db.close()
+        _run_lock.release()
+
+
+def run_garmin_sync_now() -> bool:
+    """Start a pull on a background thread. False if one is already running.
+
+    A thread rather than FastAPI's BackgroundTasks: that runs after the response
+    with no handle, so it could not answer "is it still going?" — which is the
+    one question the status endpoint exists to answer.
+    """
+    if is_running():
+        return False
+    threading.Thread(
+        target=run_garmin_sync,
+        kwargs={"trigger": "manual"},
+        daemon=True,
+        name="garmin-sync-manual",
+    ).start()
+    return True
 
 
 def start_scheduler() -> None:
@@ -103,7 +196,11 @@ def start_scheduler() -> None:
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         run_garmin_sync,
-        CronTrigger(hour=settings.garmin_sync_hour, minute=17),
+        CronTrigger(
+            hour=settings.garmin_sync_hour,
+            minute=17,
+            timezone=ZoneInfo(settings.garmin_sync_tz),
+        ),
         id="garmin_sync",
         name="Garmin Connect pull",
         # One at a time, and a run missed while the container was down is
@@ -116,8 +213,9 @@ def start_scheduler() -> None:
     scheduler.start()
     _scheduler = scheduler
     logger.info(
-        "Scheduler: Garmin pull scheduled daily at %02d:17 (container time), %d-day window",
+        "Scheduler: Garmin pull scheduled daily at %02d:17 %s, %d-day window",
         settings.garmin_sync_hour,
+        settings.garmin_sync_tz,
         settings.garmin_sync_days,
     )
 

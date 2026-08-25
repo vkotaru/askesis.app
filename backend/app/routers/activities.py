@@ -61,6 +61,11 @@ class ActivityResponse(BaseModel):
     notes: str | None
     tags: str | None
     icon: str | None
+    # Importer provenance, read-only. `source` is None for anything typed in;
+    # note this is a different claim from `url` containing "garmin.com", which
+    # only means the user pasted a link.
+    source: str | None = None
+    external_id: str | None = None
     exercises: list[ExerciseResponse]
 
     class Config:
