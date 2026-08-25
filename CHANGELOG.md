@@ -15,6 +15,23 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **v1.1.0 could not be built.** `garminconnect` requires Python >= 3.12 from
+  0.3.3 onward, and the Dockerfile pinned `python:3.11-slim`, so
+  `pip install -r requirements.txt` failed on the server. The image is now
+  `python:3.12-slim`, matching `backend/venv` — the skew between the two is the
+  whole reason this got through, since every pre-release check runs against the
+  venv. Pinning `garminconnect` back to 0.3.2 was the alternative and was
+  rejected: it means an older client of a library that already tracks a moving
+  target. Nothing was ever deployed with the broken build; `deploy.sh` failed
+  closed and left v1.0.0 running.
+- **`scripts/release.sh` now builds the Docker image** and runs the import and
+  migration smoke tests inside it. Deploying *is* `docker compose build`, so
+  every earlier check — all of which ran against the venv — could pass while
+  the deployable artifact was broken. That is exactly what happened, and a tag
+  is the expensive place to discover it, releases being immutable.
+
 ## [1.1.0] - 2026-08-24
 
 Alembic head: `add_daily_log_sources`

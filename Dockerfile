@@ -15,7 +15,13 @@ COPY VERSION /app/VERSION
 RUN npm run build   # -> /app/frontend/build  (adapter-static, SPA fallback)
 
 # ---- Stage 2: Python runtime (API + built frontend) ----
-FROM python:3.11-slim AS app
+# 3.12, not 3.11: garminconnect requires >=3.12 from 0.3.3 onward, and pinning
+# back to 0.3.2 to stay on 3.11 would mean an older client of a library that
+# already tracks a moving target (see app/garmin.py). Keep this in step with
+# backend/venv — the checks in scripts/release.sh run against that venv, so a
+# version skew between the two means "verified locally" says nothing about
+# whether the image can even build.
+FROM python:3.12-slim AS app
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 WORKDIR /app/backend

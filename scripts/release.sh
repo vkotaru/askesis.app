@@ -134,6 +134,26 @@ step "Frontend: check + build"
 # a release can be cut from a machine that has Docker but no Node.
 (cd frontend && ./npm.sh run check && ./npm.sh run build)
 
+# The check that actually matters, because deploying IS `docker compose build`.
+# Everything above runs against backend/venv, whose Python is not necessarily
+# the image's: v1.1.0 was tagged green and then failed to build on the server,
+# because a dependency needed a newer Python than the Dockerfile pinned. Only
+# building the image can catch that, and a tag is the expensive place to find
+# out -- releases are immutable, so the fix costs another version.
+step "Docker: build the deployable image"
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  docker build -q -t "askesis-release-check:$TAG" . >/dev/null
+  docker run --rm -e DEV_MODE=true -e SECRET_KEY=release-check-not-a-real-secret \
+    -e DATABASE_URL="sqlite:////tmp/release-check.db" \
+    "askesis-release-check:$TAG" \
+    sh -c "python -c 'import app.main' && python -m alembic upgrade head" >/dev/null
+  docker image rm -f "askesis-release-check:$TAG" >/dev/null 2>&1 || true
+  echo "    image builds, imports and migrates"
+else
+  echo "    !! SKIPPED: no usable docker. The image is NOT verified -- the last" >&2
+  echo "    !! release that skipped this shipped a tag that would not build." >&2
+fi
+
 # ---------------------------------------------------------------------------
 # The Alembic head this release ships with. Recorded in the changelog so a
 # rollback is legible: deploy.sh runs `alembic upgrade head` unconditionally,
