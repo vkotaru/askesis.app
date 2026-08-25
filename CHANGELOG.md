@@ -37,6 +37,9 @@ does not roll the database back — that head is what you would need to
   dev server needs `network_mode: host` because the vite proxy targets
   `http://localhost:8000`, which inside a bridged container is the container
   itself — which makes that one service Linux-only.
+- **`scripts/release.sh` runs its frontend checks through `frontend/npm.sh`**, so
+  a release can be cut from a machine that has Docker but no Node. It called
+  `npm` directly, which simply is not there on such a box.
 - **A Garmin panel in Settings**, and the two endpoints behind it
   (`GET/POST /api/integrations/garmin/{status,sync}`). The import had no UI at
   all: no way to tell whether it was alive, when it last ran, what it filled, or

@@ -129,7 +129,10 @@ step "Backend: import smoke test"
 rm -f backend/release-check.db
 
 step "Frontend: check + build"
-(cd frontend && npm run check && npm run build)
+# Via npm.sh, not npm: it execs the real npm when one is installed and
+# otherwise runs the same commands in the docker-compose.dev.yml toolchain, so
+# a release can be cut from a machine that has Docker but no Node.
+(cd frontend && ./npm.sh run check && ./npm.sh run build)
 
 # ---------------------------------------------------------------------------
 # The Alembic head this release ships with. Recorded in the changelog so a
