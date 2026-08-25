@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-25
+
+Alembic head: `add_daily_log_sources`
+
 ### Fixed
 
 - **`garmin_sync.py --dry-run` wrote everything and said it hadn't.**
@@ -357,7 +361,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/vkotaru/askesis.app/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/vkotaru/askesis.app/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/vkotaru/askesis.app/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/vkotaru/askesis.app/compare/v0.2.0-simplified...v1.0.0
