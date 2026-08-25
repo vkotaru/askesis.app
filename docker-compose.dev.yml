@@ -1,0 +1,75 @@
+# Dev tooling: the frontend toolchain, containerised, for a machine with Docker
+# but no Node.
+#
+# **The mirror image of docker-compose.yml.** That file is the production stack
+# and only ever runs on the home server; this one only ever runs on a dev machine.
+# Nothing here is deployed, and nothing here talks to the production database.
+#
+#   docker compose -f docker-compose.dev.yml run --rm npm run check
+#   docker compose -f docker-compose.dev.yml run --rm npm run build
+#   docker compose -f docker-compose.dev.yml run --rm npm install
+#   docker compose -f docker-compose.dev.yml up vite          # dev server on :5173
+#
+# `frontend/npm.sh` wraps the first form, and `run-dev.sh` goes through that, so
+# in practice you rarely type any of this.
+#
+# **Separate from docker-compose.yml on purpose.** That file is the production
+# tailnet deploy, and it declares POSTGRES_PASSWORD and TS_AUTHKEY as required
+# (`${VAR:?}`). Compose interpolates the whole file before it runs anything, so
+# a dev service living there would refuse to start on any machine without the
+# production secrets — which is every machine you would actually develop on. A
+# `profiles:` key does not help; profiles gate startup, not interpolation.
+
+# Pinned so this cannot land in the production stack's namespace. Compose
+# otherwise derives the project from the directory, giving both files
+# "askesisapp" — and `down` in one would then report the other's containers as
+# orphans and offer to remove them.
+name: askesisapp-dev
+
+# Both services are the same container with different plumbing; this is the half
+# they share.
+x-node: &node
+  # Matches the frontend build stage in ../Dockerfile, so what passes here is
+  # what the image build will see.
+  image: node:20-slim
+  # Run as the calling user, or build/ and .svelte-kit/ come back root-owned and
+  # block the next run. Compose cannot read `id -u` itself: npm.sh exports these,
+  # and the default covers the usual single-user Linux box.
+  user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+  # The REPO ROOT, not frontend/ — vite.config.ts reads ../VERSION to inline the
+  # app version, and a narrower mount fails as a confusing svelte-check error
+  # about a missing /VERSION rather than as a mount problem.
+  volumes:
+    - .:/repo
+  working_dir: /repo/frontend
+  environment:
+    # That uid has no passwd entry inside the image, so npm has to be told where
+    # home and the cache live or it fails trying to write to /nonexistent.
+    HOME: /tmp
+    # Deliberately ephemeral rather than a named volume: Docker creates a fresh
+    # named volume root-owned, which this non-root user then cannot write to.
+    # Only `install` pays for it, and node_modules/ persists in the bind mount.
+    npm_config_cache: /tmp/.npm-cache
+
+services:
+  # One-shot commands: check, build, install. `run --rm npm <args>` appends to
+  # the entrypoint, so the invocation reads exactly like the npm you know.
+  npm:
+    <<: *node
+    entrypoint: ["npm"]
+    command: ["--version"]
+
+  # The dev server. Host networking, for two reasons: vite.config.ts proxies
+  # /api and /auth to http://localhost:8000, which inside a bridged container is
+  # the container itself rather than the uvicorn on the host; and it puts :5173
+  # on the host with no port publishing. Linux-only — Docker Desktop runs
+  # containers in a VM where this does not reach the host.
+  vite:
+    <<: *node
+    network_mode: host
+    # A real init as PID 1, so a SIGTERM is forwarded to vite and reaped.
+    # run-dev.sh backgrounds this and kills it on Ctrl-C; without init the
+    # signal stops at npm and vite outlives it, holding :5173 against the
+    # next run.
+    init: true
+    command: ["npm", "run", "dev"]

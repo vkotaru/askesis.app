@@ -17,6 +17,26 @@ does not roll the database back — that head is what you would need to
 
 ### Added
 
+- **`docker-compose.dev.yml`** — the frontend toolchain as compose services, so
+  a machine with Docker but no Node can run the dev server and the pre-commit
+  checks: `docker compose -f docker-compose.dev.yml run --rm npm run check`, and
+  `... up vite` for the dev server. `frontend/npm.sh` wraps it (execing the real
+  `npm` when one exists, so it is a no-op where Node is installed) and
+  `run-dev.sh` goes through that, keeping one definition of the toolchain rather
+  than two that drift.
+  A separate file rather than a service in `docker-compose.yml`, because that
+  one is the production deploy and declares `POSTGRES_PASSWORD`/`TS_AUTHKEY` as
+  required — Compose interpolates the whole file before running anything, so a
+  dev service there would refuse to start on any machine without the production
+  secrets, and `profiles:` gates startup rather than interpolation. It pins
+  `name: askesisapp-dev` so it cannot share the production stack's namespace,
+  and Compose does not auto-merge a `.dev.yml`, so `deploy.sh` is unaffected.
+  Three details worth keeping: the *repo root* is mounted rather than
+  `frontend/`, since `vite.config.ts` reads `../VERSION`; the container runs as
+  the calling uid, or `build/` and `.svelte-kit/` come back root-owned; and the
+  dev server needs `network_mode: host` because the vite proxy targets
+  `http://localhost:8000`, which inside a bridged container is the container
+  itself — which makes that one service Linux-only.
 - **A Garmin panel in Settings**, and the two endpoints behind it
   (`GET/POST /api/integrations/garmin/{status,sync}`). The import had no UI at
   all: no way to tell whether it was alive, when it last ran, what it filled, or

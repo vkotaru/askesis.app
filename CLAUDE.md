@@ -17,11 +17,47 @@ repo is expected to follow (offline-first, PWA, real auth).
 `DEV_MODE=true`. Vite proxies `/api` and `/auth` to `:8000`, so the frontend is same-origin
 in dev. API docs at `:8000/docs`.
 
+**Two compose files, and they never run on the same machine.** `docker-compose.yml` is
+the production stack and runs only on the home server, driven by `deploy.sh`; it requires real
+secrets and will not load anywhere else. `docker-compose.dev.yml` is the frontend
+toolchain and runs only on a dev machine. Nothing in the dev file is deployed or touches
+the production database.
+
+**The frontend toolchain is containerised** in `docker-compose.dev.yml`, so a machine
+with Docker but no Node can still develop:
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm npm run check
+docker compose -f docker-compose.dev.yml up vite          # dev server on :5173
+```
+
+`frontend/npm.sh` wraps that — it execs the real `npm` when one is on PATH and otherwise
+forwards to the `npm`/`vite` service, so there is one definition of the toolchain rather
+than two. `run-dev.sh` goes through it. Four things those files exist to get right, each
+of which is a comment where it matters:
+
+- **It is a separate compose file.** `docker-compose.yml` is the production tailnet deploy
+  and declares `POSTGRES_PASSWORD`/`TS_AUTHKEY` as required (`${VAR:?}`). Compose
+  interpolates the whole file before running anything, so a dev service living there
+  would refuse to start on any machine without the production secrets. `profiles:` does
+  not help — it gates startup, not interpolation. The dev file pins
+  `name: askesisapp-dev` so it cannot land in the production stack's namespace.
+- **The repo root is mounted**, not `frontend/` — `vite.config.ts` reads `../VERSION`, and
+  a narrower mount fails as a confusing svelte-check error about a missing `/VERSION`.
+- **It runs as the calling uid** (`DOCKER_UID`/`DOCKER_GID`, exported by `npm.sh`), or
+  `build/` and `.svelte-kit/` come back root-owned and block the next native build.
+- **`vite` uses `network_mode: host`**, because the dev proxy targets
+  `http://localhost:8000`, which inside a bridged container is the container itself. That
+  makes the dev server Linux-only. `npm.sh` also names that container and traps its own
+  exit to remove it: `docker compose run` does *not* stop its container when the client is
+  killed (unlike `docker run`), and `run-dev.sh` kills by PID on Ctrl-C — without the trap
+  vite survives and holds `:5173` against the next run.
+
 **Pre-commit checks**:
 
 ```bash
 cd backend  && ruff check . && ruff format --check .
-cd frontend && npm run check && npm run build     # svelte-check, then vite build
+cd frontend && ./npm.sh run check && ./npm.sh run build   # svelte-check, then vite build
 ```
 
 There is no test suite in this repo. `npm run check` + `npm run build` is the only frontend

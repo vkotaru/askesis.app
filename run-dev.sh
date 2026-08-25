@@ -39,11 +39,14 @@ echo -e "${GREEN}Running database migrations...${NC}"
 cd "$BACKEND_DIR"
 alembic upgrade head
 
+# frontend/npm.sh is npm when node is installed, and npm-in-a-container when it
+# is not — so this script works either way. See its header.
+NPM="$FRONTEND_DIR/npm.sh"
+
 # Check if we need to install frontend deps
 if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
     echo -e "${GREEN}Installing frontend dependencies...${NC}"
-    cd "$FRONTEND_DIR"
-    npm install
+    "$NPM" install
 fi
 
 # Function to cleanup on exit
@@ -69,7 +72,7 @@ sleep 2
 # Start frontend
 echo -e "${GREEN}Starting frontend on http://localhost:5173${NC}"
 cd "$FRONTEND_DIR"
-npm run dev &
+"$NPM" run dev &
 FRONTEND_PID=$!
 
 echo -e "\n${BLUE}========================================${NC}"

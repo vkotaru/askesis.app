@@ -2,6 +2,12 @@
 # hostname via a Tailscale sidecar (so it installs as its own PWA — a different
 # port on a shared host collides with other PWAs on Android).
 #
+# **This file runs on the home server, not on a dev machine.** It is the production
+# stack, `deploy.sh` is what drives it, and it deliberately requires real
+# secrets — so it will not even load anywhere else. Local development uses
+# ./run-dev.sh, and the containerised frontend toolchain is a separate file,
+# docker-compose.dev.yml.
+#
 #   cp .env.example .env   # fill in secrets + TS_AUTHKEY
 #   ./deploy.sh
 #   # → https://askesis.<your-tailnet>.ts.net   (HTTPS via Tailscale Serve)
