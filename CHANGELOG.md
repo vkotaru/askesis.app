@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-25
+
+Alembic head: `add_daily_log_sources`
+
 ### Fixed
 
 - **v1.1.0 could not be built.** `garminconnect` requires Python >= 3.12 from
@@ -339,7 +343,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/vkotaru/askesis.app/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/vkotaru/askesis.app/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/vkotaru/askesis.app/compare/v0.2.0-simplified...v1.0.0
 [0.2.0]: https://github.com/vkotaru/askesis.app/compare/v0.1.0-pre-simplify...v0.2.0-simplified
