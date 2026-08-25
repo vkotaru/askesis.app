@@ -15,6 +15,34 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A weekly targets tile on the dashboard.** Two progress bars for run and bike
+  distance, and a row of discipline chips that light up once you log an activity
+  of that kind — a plan for the week rather than a tally, so each chip is either
+  done or not. Targets live in `user_settings` (`weekly_run_km`,
+  `weekly_bike_km`, `weekly_disciplines`) and are set in Settings → Weekly
+  Training Plan; distances are stored in km and converted for display, so
+  switching between mi and km cannot move the goalposts. A target left blank
+  renders no bar at all, rather than a goal of zero you are permanently short of.
+- **`lib/utils/disciplines.ts`** — one answer to "what kind of training was
+  that?", shared rather than re-derived per call site. The dashboard previously
+  matched run and bike by name inline, and nothing could recognise the rest.
+  Evidence is weighted: name first (the only signal that survives hand entry,
+  and Garmin puts the discipline in it), then `icon`, then `activity_type` —
+  which has two values and so can only ever be a fallback. An unrecognised
+  cardio activity stays unclassified rather than being guessed as a run, since a
+  guess lights the wrong slot in the plan.
+
+### Fixed
+
+- **Garmin gave yoga and pilates no icon**, and files both under `strength`, so
+  a stretching session was indistinguishable from a lifting one. They now map to
+  a `stretch` icon.
+- **A trail run counted as a hike.** `trail_running` mapped to the `mountain`
+  icon, which is also what `hiking` maps to, so nothing downstream could tell
+  them apart. It maps to `footprints` now, like every other kind of running.
+
 ## [1.1.2] - 2026-08-25
 
 Alembic head: `add_daily_log_sources`

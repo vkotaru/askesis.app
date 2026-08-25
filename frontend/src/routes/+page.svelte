@@ -14,6 +14,7 @@
     NutritionChartCard,
     RaceCountdownCard,
     WeeklyTrainingCard,
+    WeeklyTargetsCard,
     StepsBarCard,
   } from '$lib/components/cards';
 
@@ -292,6 +293,14 @@
           <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
         </div>
       {/if}
+
+      <WeeklyTargetsCard
+        activities={weekActivities}
+        runKm={$settings.weekly_run_km ?? null}
+        bikeKm={$settings.weekly_bike_km ?? null}
+        disciplines={$settings.weekly_disciplines ?? null}
+        distanceUnit={$settings.distance_unit}
+      />
 
       <NutritionChartCard
         data={nutritionChartData}

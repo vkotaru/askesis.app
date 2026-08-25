@@ -276,6 +276,11 @@ export interface UserSettings {
   water_unit: WaterUnit;
   calorie_target?: number | null;
   protein_target?: number | null;
+  /** Weekly training plan. Distances are km — convert only for display. */
+  weekly_run_km?: number | null;
+  weekly_bike_km?: number | null;
+  /** Comma-separated discipline keys, e.g. "strength,stretch,swim". */
+  weekly_disciplines?: string | null;
 }
 
 export interface BodyMeasurement {

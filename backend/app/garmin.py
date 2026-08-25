@@ -58,7 +58,10 @@ _STRENGTH_TYPE_KEYS = {
 _ICON_BY_TYPE_KEY = {
     "running": "footprints",
     "treadmill_running": "footprints",
-    "trail_running": "mountain",
+    # A trail run is a run. It used to map to "mountain", which is also what
+    # hiking maps to -- so the icon could not tell the two apart, and the
+    # dashboard's weekly plan counted a trail run as a hike.
+    "trail_running": "footprints",
     "walking": "footprints",
     "hiking": "mountain",
     "cycling": "bike",
@@ -69,6 +72,11 @@ _ICON_BY_TYPE_KEY = {
     "strength_training": "dumbbell",
     "lap_swimming": "waves",
     "open_water_swimming": "waves",
+    # Yoga and pilates had no icon at all, and both land in STRENGTH below, so
+    # nothing downstream could distinguish a stretching session from a lifting
+    # one. They are separate things to plan for.
+    "yoga": "stretch",
+    "pilates": "stretch",
 }
 
 

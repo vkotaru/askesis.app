@@ -34,6 +34,10 @@ class UserSettingsSchema(BaseModel):
     # Nutrition targets
     calorie_target: int | None = None
     protein_target: int | None = None
+    # Weekly training plan. Distances are km; the client converts for display.
+    weekly_run_km: float | None = None
+    weekly_bike_km: float | None = None
+    weekly_disciplines: str | None = None
 
     class Config:
         from_attributes = True
@@ -51,6 +55,9 @@ class UserSettingsUpdate(BaseModel):
     water_unit: str | None = None
     calorie_target: int | None = None
     protein_target: int | None = None
+    weekly_run_km: float | None = None
+    weekly_bike_km: float | None = None
+    weekly_disciplines: str | None = None
 
 
 def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
@@ -131,6 +138,14 @@ def update_settings(
         settings.calorie_target = settings_data.calorie_target
     if settings_data.protein_target is not None:
         settings.protein_target = settings_data.protein_target
+    # Targets use exclude_unset rather than a None check, because clearing one
+    # has to be possible: None means "no target", which the tile renders as no
+    # bar at all. A `is not None` guard here would make a target permanent once
+    # set, which is the same trap the daily log's blank-a-field bug fell into.
+    supplied = settings_data.model_dump(exclude_unset=True)
+    for field in ("weekly_run_km", "weekly_bike_km", "weekly_disciplines"):
+        if field in supplied:
+            setattr(settings, field, supplied[field])
 
     db.commit()
     db.refresh(settings)

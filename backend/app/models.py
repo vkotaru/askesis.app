@@ -135,6 +135,14 @@ class UserSettings(Base):
     protein_target: Mapped[int | None] = mapped_column(
         Integer
     )  # Daily protein goal in grams
+    # Weekly training plan. Distances are canonical metric (km) like everything
+    # else -- app/units.py converts at the API boundary, never in storage.
+    weekly_run_km: Mapped[float | None] = mapped_column(Float)
+    weekly_bike_km: Mapped[float | None] = mapped_column(Float)
+    # The disciplines you intend to touch in a week, comma-separated
+    # ("strength,yoga,swim"). Same storage convention as feelings and sources.
+    # A plan, not a tally: each one is either done this week or it is not.
+    weekly_disciplines: Mapped[str | None] = mapped_column(String(255))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )

@@ -1,11 +1,32 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame, Target } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import GarminCard from '$lib/components/settings/GarminCard.svelte';
+  import { DISCIPLINES, parsePlan } from '$lib/utils/disciplines';
+  import { distanceToMetric, distanceFromMetric, getDistanceLabel } from '$lib/utils/units';
   import { settings } from '$lib/stores/settings';
   import { APP_VERSION } from '$lib/version';
   import { api, type UserSettings, type DataShare, type SharedWithMe, type ShareableUser, type DataCategory, type ColorScheme, type DistanceUnit, type MeasurementUnit, type WeightUnit, type WaterUnit } from '$lib/api/client';
+
+  // Weekly training plan. Targets are stored in km; the inputs show the user's
+  // own unit, so a switch from mi to km must not silently change the goal.
+  $: planKeys = parsePlan($settings.weekly_disciplines);
+
+  function toggleDiscipline(key: string) {
+    const next = planKeys.includes(key as never)
+      ? planKeys.filter((k) => k !== key)
+      : [...planKeys, key];
+    settings.updateSetting('weekly_disciplines', next.length ? next.join(',') : null);
+  }
+
+  function saveWeeklyDistance(field: 'weekly_run_km' | 'weekly_bike_km', raw: string) {
+    const value = parseFloat(raw);
+    settings.updateSetting(
+      field,
+      value > 0 ? distanceToMetric(value, $settings.distance_unit) : null
+    );
+  }
 
   // Report link state
   let reportToken = '';
@@ -488,6 +509,77 @@
           />
         </div>
         <p class="text-xs text-gray-400 sm:col-span-2">Shown as target lines on the nutrition chart</p>
+      </div>
+    </div>
+
+    <!-- Weekly Training Plan -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <Target size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">Weekly Training Plan</h2>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">
+        Shown on the dashboard as this week's progress. Leave a distance blank for no target.
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+        <div>
+          <label for="weekly-run" class="label">Run per week ({getDistanceLabel($settings.distance_unit)})</label>
+          <input
+            id="weekly-run"
+            type="number"
+            class="input"
+            min="0"
+            step="any"
+            placeholder="e.g. 20"
+            value={$settings.weekly_run_km
+              ? distanceFromMetric($settings.weekly_run_km, $settings.distance_unit).toFixed(1)
+              : ''}
+            on:blur={(e) => saveWeeklyDistance('weekly_run_km', e.currentTarget.value)}
+          />
+        </div>
+        <div>
+          <label for="weekly-bike" class="label">Bike per week ({getDistanceLabel($settings.distance_unit)})</label>
+          <input
+            id="weekly-bike"
+            type="number"
+            class="input"
+            min="0"
+            step="any"
+            placeholder="e.g. 50"
+            value={$settings.weekly_bike_km
+              ? distanceFromMetric($settings.weekly_bike_km, $settings.distance_unit).toFixed(1)
+              : ''}
+            on:blur={(e) => saveWeeklyDistance('weekly_bike_km', e.currentTarget.value)}
+          />
+        </div>
+      </div>
+
+      <div class="mt-5">
+        <span class="label">Disciplines to hit each week</span>
+        <p class="text-xs text-gray-400 mb-2">
+          Each becomes a slot on the tile, lit once you log an activity of that kind.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          {#each DISCIPLINES as d}
+            {@const selected = planKeys.includes(d.key)}
+            {@const Icon = d.icon}
+            <button
+              type="button"
+              on:click={() => toggleDiscipline(d.key)}
+              class={clsx(
+                'flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-all',
+                selected
+                  ? 'bg-primary-500 text-white shadow'
+                  : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+              )}
+              aria-pressed={selected}
+            >
+              <Icon size={15} />
+              <span class="font-medium">{d.label}</span>
+            </button>
+          {/each}
+        </div>
       </div>
     </div>
 
