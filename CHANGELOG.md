@@ -15,6 +15,23 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The app icon wasted a third of its space.** `icon-192` and `icon-512` had
+  fully transparent corners, so Android composited them onto white and then
+  inset the result into the adaptive-icon safe zone — a white ring around a
+  shrunken logo. All four icons are now full-bleed brand green, which is what
+  a launcher expects to mask itself.
+  The mark is unchanged: it was lifted from the existing artwork, not redrawn.
+  What went with it was packaging damage — a vignette, the edge of the old
+  circular icon showing through the flattened background, and a stray grey
+  sparkle watermark in the bottom-right corner.
+  `icon-maskable` now also respects the safe zone. Its artwork previously ran
+  edge to edge, which a circular mask would have clipped; the mark is sized so
+  that no non-background pixel falls outside the 80% safe circle.
+  **Android caches the WebAPK icon**, so seeing this needs the PWA uninstalled
+  and reinstalled after deploying — a refresh is not enough.
+
 ## [1.2.0] - 2026-08-25
 
 Alembic head: `add_weekly_training_targets`
