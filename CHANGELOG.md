@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-26
+
+Alembic head: `add_weekly_training_targets`
+
 ### Fixed
 
 - **The app icon wasted a third of its space.** `icon-192` and `icon-512` had
@@ -410,7 +414,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/vkotaru/askesis.app/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/vkotaru/askesis.app/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/vkotaru/askesis.app/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/vkotaru/askesis.app/compare/v1.1.0...v1.1.1
