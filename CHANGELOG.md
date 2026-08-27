@@ -44,6 +44,28 @@ does not roll the database back — that head is what you would need to
   for models with no `user_id` of their own. `db.query(` now appears nowhere
   else in the package, so the invariant holds by construction rather than by a
   reader noticing a filter two lines away.
+- **The MCP endpoint itself** (`backend/mcp_server/{server,config,main}.py`) —
+  the eight read tools served over Streamable HTTP, still tailnet-only and
+  behind a static dev token rather than OAuth. Verified against the wire
+  contract: `tools/list` returns all eight with `db`/`user_id` correctly absent
+  from the generated schemas, an unknown method is `404`/`-32601`, an
+  `Mcp-Name` that disagrees with the body is `400`/`-32020`, a bad `Origin` is
+  `403`, a bad `Host` is `421`, and a request without a token is `401` carrying
+  `resource_metadata`.
+  **The deprecated protocol legs are refused.** Revision 2026-07-28 removed the
+  GET stream and protocol-level sessions, but the SDK still serves older
+  revisions — a `GET /mcp` with no version header was observed being treated as
+  a legacy client and *minting a session*. Both `GET` and `DELETE` now answer
+  `405`, so no session is ever created and the only verb is POST.
+  Error containment is the SDK's own policy rather than a second one layered on
+  top: a deliberate `ToolError` carries its message to the model ("Range is 2430
+  days; the maximum is 180"), and anything else is logged in full server-side and
+  reported generically. That distinction matters because SQLAlchemy embeds the
+  failing SELECT *and* its bound parameters in the exception message, so a single
+  out-of-range id would otherwise hand the caller a table's entire column list.
+  Startup fails closed on `DEV_MODE=true` (a total auth bypass), on
+  `MCP_TOKEN_SECRET` equal to the app's `SECRET_KEY`, and on a non-HTTPS or
+  missing public origin.
 - **`backend/mcp_server/tools.py`** — eight read-only functions taking
   `(db, user_id, ...)` and returning plain dicts, deliberately with no MCP
   dependency so they can be exercised from a shell against a real database.
