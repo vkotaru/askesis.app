@@ -15,6 +15,26 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The launcher icon shrank the logo, and the circular mark was replaced with
+  a square.** Both were mine, from the icon rebuild in v1.2.1.
+  The mark in `icon-maskable.png` was sized to 60% of the canvas to clear the
+  conservative 80% safe circle, which left it visibly floating in green instead
+  of filling the icon the way the original did. It is now 76% — measured, not
+  guessed: at that size **no** non-background pixel falls outside what a
+  circular launcher mask actually crops, and only a few antialiased corners of
+  the "A" cross the conservative safe circle. It stays full-bleed so Android
+  masks it to whatever shape the launcher uses, with nothing composited onto
+  white.
+  Separately, `icon-192.png` and `icon-512.png` were **circular** — a green disc
+  with transparent corners — and the rebuild turned them into full-bleed
+  squares. That is a design change, not a rendering fix, and it was not asked
+  for. They are circular again. Those three surfaces (browser tab, install
+  prompt, task switcher) do not mask, so the circle is the shape there.
+  **Android caches the WebAPK icon**, so this still needs the PWA uninstalled
+  and reinstalled after deploying.
+
 ### Added
 
 - **Groundwork for an MCP connector** (`backend/mcp_server/`), so Askesis can
