@@ -1,0 +1,73 @@
+# Dependencies for the MCP connector service (backend/mcp_server/), which runs
+# as its OWN container from its own Dockerfile stage.
+#
+# **This file deliberately does not install FastAPI.**
+#
+# The MCP SDK requires pydantic>=2.12 and starlette>=1.x; the app pins
+# pydantic==2.5.3 and fastapi==0.109.0 (which itself pins starlette<0.36).
+# Installing the SDK into the app image would force a FastAPI + pydantic
+# upgrade across every router in a repo with no test suite — an unacceptable
+# blast radius for a service that shares nothing with them.
+#
+# It works because the modules the MCP service actually needs import no FastAPI:
+#   app/config.py     -> pydantic-settings
+#   app/database.py   -> sqlalchemy + app.config
+#   app/models.py     -> sqlalchemy + app.database
+#   app/units.py      -> stdlib
+#   app/provenance.py -> stdlib
+#   app/security.py   -> bcrypt
+# Two independent dependency trees over one shared model layer.
+#
+# The security dividend is the point, not a side effect: the one container that
+# faces the public internet contains no image decoders (Pillow), no Gemini SDK,
+# no unofficial Garmin client, no scheduler, and no FastAPI — so the app's
+# routers and /auth/* are not merely unrouted there, they do not exist.
+#
+# Verify the split still holds (this is what the CI check runs):
+#   pip install -r requirements-mcp.txt
+#   python -c "import app.models, app.units, app.security; import fastapi" # must FAIL on fastapi
+#
+# NOTE: that import needs SECRET_KEY set to *something*. `app/database.py` calls
+# `get_settings()` at module scope, and with DEV_MODE=false and the placeholder
+# key `get_settings()` calls sys.exit(1) -- silently, with no traceback. The MCP
+# container therefore needs its OWN throwaway SECRET_KEY: never the app's (which
+# signs session cookies), and never DEV_MODE=true (a total auth bypass). See the
+# plan's Defence-in-depth table.
+#
+# Pins verified together on Python 3.12.13 — matching the image, not the host's
+# system python. Keep sqlalchemy/psycopg2-binary/bcrypt identical to
+# requirements.txt: both trees map the same tables and verify the same hashes.
+
+# MCP protocol + ASGI.
+#
+# Transitively brings the ACTUAL internet-facing HTTP surface: starlette 1.6.0,
+# sse-starlette, anyio, httpx2, python-multipart, jsonschema, opentelemetry-api,
+# mcp-types -- and pyjwt, which is what the OAuth layer will sign access tokens
+# with at stage 3 (no separate JWT dependency needed; do NOT add authlib, which
+# drags in `cryptography` and a far larger surface).
+#
+# TODO before going public (stage 4): none of that closure is pinned here, so a
+# rebuild six months from now resolves different versions of the very packages
+# that parse untrusted input. For the one image designated internet-facing,
+# generate a fully-pinned, hashed lock:
+#     pip-compile --generate-hashes -o requirements-mcp.lock requirements-mcp.txt
+# and build from the lock. `python-multipart` in particular has a history of
+# ReDoS/DoS CVEs and the MCP endpoint never parses multipart.
+mcp==2.1.1
+uvicorn==0.52.4
+
+# Pinned explicitly even though `mcp` pulls it, because the pydantic version
+# split is this file's entire reason to exist -- leaving it to float is how the
+# split silently stops being true.
+pydantic==2.13.4
+
+# Shared with the app image — keep these versions in lockstep with
+# requirements.txt or the two trees can disagree about the schema.
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+bcrypt==4.1.3
+
+# app/config.py's Settings. Its legacy `class Config: env_file/extra` was
+# verified to still load under 2.15.0, so no SettingsConfigDict change is
+# needed on the app side.
+pydantic-settings==2.15.0

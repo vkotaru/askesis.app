@@ -15,6 +15,44 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Groundwork for an MCP connector** (`backend/mcp_server/`), so Askesis can
+  eventually answer questions from Claude Cowork. Not wired to anything yet:
+  no protocol layer, no auth, no container, nothing exposed. This is the read
+  layer and its dependency split.
+- **`backend/requirements-mcp.txt`** — the MCP service will run as its own
+  container from its own Dockerfile stage, because `mcp` 2.x needs
+  `pydantic>=2.12` while the app pins `pydantic==2.5.3`/`fastapi==0.109.0`.
+  Installing the SDK into the app image would force a FastAPI + pydantic
+  upgrade across every router in a repo with no test suite.
+  It works because the modules the MCP service needs (`models`, `database`,
+  `units`, `security`, `provenance`) import no FastAPI. The security dividend
+  is the point rather than a side effect: the one container that will face the
+  public internet contains no image decoders, no Gemini SDK, no unofficial
+  Garmin client and no FastAPI — so `/auth/*` and the SPA are not merely
+  unrouted there, they do not exist.
+- **`backend/app/disciplines.py`** — a port of the frontend's activity
+  classifier, so the backend can finally tell a swim from a hike. Verified
+  equivalent to `frontend/src/lib/utils/disciplines.ts` against the same cases,
+  including the SQLAlchemy enum shape the TypeScript original never sees. The
+  two files must be kept in sync; both say so.
+- **`backend/mcp_server/queries.py`** — one constructor for every read, because
+  a tool that forgets `user_id` or `deleted_at IS NULL` fails silently. `owned()`
+  takes the user as a required positional argument and applies the soft-delete
+  filter itself; `by_id` and `children_of` are the two sanctioned escape hatches
+  for models with no `user_id` of their own. `db.query(` now appears nowhere
+  else in the package, so the invariant holds by construction rather than by a
+  reader noticing a filter two lines away.
+- **`backend/mcp_server/tools.py`** — eight read-only functions taking
+  `(db, user_id, ...)` and returning plain dicts, deliberately with no MCP
+  dependency so they can be exercised from a shell against a real database.
+  **Every numeric field carries its unit in its key** (`weight_kg`,
+  `distance_km`, `waist_cm`): the app stores canonical metric and converts in
+  the client, and `GET /api/report/{token}` already ships the user's preference
+  string "lb" beside an unconverted kilogram number. A model reading that
+  believes the label.
+
 ## [1.2.1] - 2026-08-26
 
 Alembic head: `add_weekly_training_targets`
