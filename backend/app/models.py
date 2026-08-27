@@ -428,6 +428,97 @@ class ProgressPhoto(Base):
     __table_args__ = (Index("ix_progress_photos_user_date", "user_id", "date"),)
 
 
+class MCPClient(Base):
+    """An OAuth client registered against the MCP connector.
+
+    Written by dynamic registration (RFC 7591), which is unauthenticated by
+    necessity — Claude registers a fresh client on every new connection. Three
+    things keep that from being an open write endpoint: the redirect URIs are
+    checked against an allowlist before a row is created, registrations are
+    rate-limited by IP, and the table is capped with least-recently-used
+    eviction.
+
+    Public clients only: no secret is issued or stored. PKCE plus the redirect
+    allowlist is the correct OAuth 2.1 shape for a client that cannot keep one,
+    and it removes a credential that would otherwise need protecting.
+
+    These three mcp_* tables live here rather than in mcp_server/ so Alembic's
+    autogenerate compares against one metadata and does not try to drop them.
+    The app itself never reads them.
+    """
+
+    __tablename__ = "mcp_clients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_name: Mapped[str | None] = mapped_column(String(255))
+    redirect_uris: Mapped[str] = mapped_column(Text)  # JSON array
+    scope: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class MCPAuthCode(Base):
+    """A single-use authorization code, hashed at rest.
+
+    Stored as a SHA-256 hex digest, never in the clear: `report_tokens` keeps
+    its bearer value as plaintext and that is a flaw not worth copying. SHA-256
+    rather than bcrypt is right *here specifically* — these are 256-bit random
+    values with no entropy to brute-force, and a per-request bcrypt on the token
+    path would be a self-inflicted denial of service.
+
+    Redemption sets `consumed_at` inside the issuing transaction with the UPDATE
+    conditioned on it still being NULL, which is the same conditional-write
+    pattern `set_initial_password` uses to make the claim path single-shot.
+    """
+
+    __tablename__ = "mcp_auth_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    redirect_uri: Mapped[str] = mapped_column(String(500))
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    code_challenge_method: Mapped[str] = mapped_column(String(10))
+    scope: Mapped[str] = mapped_column(String(255))
+    # RFC 8707: recorded here so the token minted from this code is bound to the
+    # resource the user actually consented to.
+    resource: Mapped[str] = mapped_column(String(500))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MCPGrant(Base):
+    """A live authorization: one row per (user, client) consent.
+
+    Access tokens are stateless JWTs, but each carries this row's id as `gid`
+    and every request looks it up. That one indexed read is what buys **instant**
+    revocation — without it, revoking would mean waiting out the token's hour —
+    and it is where `last_used_at` for the audit trail comes from.
+
+    The refresh token is hashed and **rotating**: redeeming one issues a new
+    value and invalidates the old, so a stolen refresh token is usable at most
+    once and its use is detectable.
+    """
+
+    __tablename__ = "mcp_grants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    scope: Mapped[str] = mapped_column(String(255))
+    resource: Mapped[str] = mapped_column(String(500))
+    refresh_token_hash: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True
+    )
+    refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class ReportToken(Base):
     __tablename__ = "report_tokens"
 

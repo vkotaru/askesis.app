@@ -20,10 +20,11 @@ request is refused at the door: nothing is parsed and no tool body executes.
 
 from __future__ import annotations
 
-import logging
 import inspect
+import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 import anyio
@@ -35,11 +36,14 @@ from mcp.server.mcpserver.exceptions import ToolError as SDKToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Mount, Route
 
 from app.database import SessionLocal
+from mcp_server import oauth
 from mcp_server import tools as T
 from mcp_server.config import MCPConfig
 
@@ -240,15 +244,41 @@ def build_app(config: MCPConfig, verifier: TokenVerifier) -> Starlette:
         async with mcp.session_manager.run():
             yield
 
-    # OAuth routes are added ahead of this mount in stage 3 — Mount("/") matches
-    # everything, so anything routed must be listed before it.
-    return Starlette(
-        routes=[
-            Route("/mcp", _reject_legacy, methods=["GET", "DELETE"]),
-            Mount("/", app=inner),
-        ],
-        lifespan=lifespan,
-    )
+    # Mount("/") matches everything, so every real route must be listed before
+    # it. The protected-resource discovery document is served by the SDK from
+    # AuthSettings and lives inside the mount.
+    routes = [
+        Route("/mcp", _reject_legacy, methods=["GET", "DELETE"]),
+        Route("/healthz", oauth.healthz, methods=["GET"]),
+        Route(
+            "/.well-known/oauth-authorization-server",
+            oauth.authorization_server_metadata(config),
+            methods=["GET"],
+        ),
+        # An alias some clients probe before the RFC 8414 path.
+        Route(
+            "/.well-known/openid-configuration",
+            oauth.authorization_server_metadata(config),
+            methods=["GET"],
+        ),
+        Route("/register", oauth.register(config), methods=["POST"]),
+        Route("/authorize", oauth.authorize(config), methods=["GET", "POST"]),
+        Route("/token", oauth.token(config), methods=["POST"]),
+        Route("/revoke", oauth.revoke(config), methods=["POST"]),
+        Mount("/", app=inner),
+    ]
+
+    # The SDK's Host allowlist covers the mounted MCP app only; the OAuth routes
+    # sit outside that mount, so the outer app needs its own. The main app has
+    # neither today — fine while it is tailnet-only, not fine once this is
+    # public.
+    middleware = [
+        Middleware(
+            TrustedHostMiddleware,
+            allowed_hosts=[*config.allowed_hosts, "testserver"],
+        )
+    ]
+    return Starlette(routes=routes, middleware=middleware, lifespan=lifespan)
 
 
 async def _reject_legacy(request: Request) -> Response:
@@ -272,6 +302,99 @@ async def _reject_legacy(request: Request) -> Response:
         '"message":"This server implements MCP 2026-07-28 only: the GET stream '
         'and DELETE session termination were removed in that revision. Use POST."}}',
     )
+
+
+class AskesisTokenVerifier(TokenVerifier):
+    """Validates an access token against the signature, the audience, and the grant.
+
+    Three checks, and the last two are the point:
+
+    1. **JWT**: signature, issuer, audience and expiry (`decode_access_token`).
+       Audience is RFC 8707 — a token minted for a different resource is refused
+       even though we signed it.
+    2. **Grant row**: the `gid` claim is looked up and must be live. This is one
+       indexed read per request, and it is what makes revocation take effect
+       *now* rather than whenever the hour runs out.
+    3. **Password epoch**: the `pwd_at` claim is compared to the account's
+       current `password_changed_at`. Changing your Askesis password therefore
+       kills Claude's access exactly as it kills a browser session — no separate
+       "disconnect" step to remember.
+    """
+
+    def __init__(self, config: MCPConfig) -> None:
+        self._config = config
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        return await anyio.to_thread.run_sync(self._verify, token)
+
+    def _verify(self, token: str) -> AccessToken | None:
+        from app.models import MCPGrant, User
+        from mcp_server.tokens import (
+            PWD_EPOCH_CLAIM,
+            decode_access_token,
+            password_epoch,
+        )
+
+        claims = decode_access_token(
+            token,
+            secret=self._config.token_secret,
+            issuer=self._config.public_origin,
+            audience=self._config.resource_url,
+        )
+        if claims is None:
+            return None
+
+        db = SessionLocal()
+        try:
+            grant = (
+                db.query(MCPGrant)
+                .filter(MCPGrant.id == claims.get("gid"))
+                .one_or_none()
+            )
+            if grant is None or grant.revoked_at is not None:
+                logger.info(
+                    "token refused: grant %s missing or revoked", claims.get("gid")
+                )
+                return None
+            try:
+                subject = int(claims["sub"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            if grant.user_id != subject:
+                # The token says one account and the grant says another; treat
+                # it as forged rather than reconciling.
+                logger.warning(
+                    "token subject %s != grant user %s", subject, grant.user_id
+                )
+                return None
+
+            user = db.query(User).filter(User.id == subject).one_or_none()
+            if user is None:
+                return None
+            current = password_epoch(user.password_changed_at)
+            if current is not None:
+                stamped = claims.get(PWD_EPOCH_CLAIM)
+                if (
+                    not isinstance(stamped, int)
+                    or isinstance(stamped, bool)
+                    or stamped < current
+                ):
+                    logger.info("token refused: predates the last password change")
+                    return None
+
+            grant.last_used_at = datetime.utcnow()
+            db.commit()
+            return AccessToken(
+                token=token,
+                client_id=grant.client_id,
+                scopes=grant.scope.split(),
+                expires_at=claims.get("exp"),
+                resource=grant.resource,
+                subject=str(subject),
+                claims=claims,
+            )
+        finally:
+            db.close()
 
 
 class StaticTokenVerifier(TokenVerifier):

@@ -15,6 +15,47 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **OAuth 2.1 for the MCP connector** — discovery, dynamic registration, a
+  login/consent screen, token issuance and revocation
+  (`backend/mcp_server/{oauth,tokens,templates,ratelimit}.py`, plus three
+  tables). Still nothing exposed: no container, no Funnel, tailnet-only.
+  Hardened past what would merely work: **PKCE S256 is mandatory** and `plain`
+  is refused; **redirect URIs are allowlisted at registration**, which makes a
+  stolen authorization code unredirectable and keeps an unauthenticated
+  `/register` from being an open redirect factory; **public clients only**, so
+  there is no secret to leak; **codes and refresh tokens are hashed at rest**,
+  correcting the `report_tokens` precedent; **refresh tokens rotate**, so a
+  stolen one works at most once; and every access token carries its grant id, so
+  **revocation takes effect on the next request** rather than whenever the hour
+  expires.
+  Tokens also carry the app's existing `pwd_at` password-epoch claim, so
+  **changing your Askesis password kills Claude's access** exactly as it kills a
+  browser session — no separate disconnect step to remember.
+  The consent screen is the only place anyone sees what is actually being
+  shared, so it names things in plain words — free-text notes, mood tags, body
+  measurements — rather than hiding them behind a scope string.
+  Verified end to end: 33 assertions covering the whole flow plus the attacks it
+  must refuse — a non-Claude redirect URI, `code_challenge_method=plain`, a wrong
+  PKCE verifier, a replayed authorization code, a forged token, one signed with
+  the wrong key, one minted for a different audience, a rotated refresh token,
+  revocation, and a password change.
+- **Login throttling and `TrustedHostMiddleware` on the MCP service**, pulled
+  ahead of the exposure work rather than left until after it. The login limiter
+  keys on `(client_ip, identifier)`, deliberately unlike the app's
+  identifier-only throttle: that one is keyed as it is *because* every request
+  behind the sidecar shares an apparent IP, and the reasoning inverts on an
+  endpoint reachable from the open internet, where identifier-only keying would
+  let anyone who learns a username lock the account out.
+
+### Fixed
+
+- **The MCP OAuth tables are excluded from backup/restore.** They default to
+  excluded, but naming them in `_NEVER_TOUCH` makes `_check_spec` reject any
+  future attempt to add them: a restore able to write `mcp_grants` would let an
+  uploaded file mint standing API access to the account.
+
 ## [1.2.2] - 2026-08-27
 
 Alembic head: `add_weekly_training_targets`

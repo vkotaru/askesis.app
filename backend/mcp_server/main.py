@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 
 from mcp_server.config import load
-from mcp_server.server import StaticTokenVerifier, build_app
+from mcp_server.server import AskesisTokenVerifier, StaticTokenVerifier, build_app
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -19,9 +18,10 @@ logging.basicConfig(
 
 config = load()
 
-# Stage 2 only. A static token stands in for OAuth so the wire contract can be
-# exercised before the OAuth layer exists. Opt-in by an env var production never
-# sets, and loud in the log — this must not survive quietly into stage 3.
+# OAuth is the normal path. MCP_DEV_TOKEN remains as a local testing escape
+# hatch for exercising the tools without walking the whole flow — it bypasses
+# OAuth entirely, so it is opt-in by an env var production never sets and it
+# announces itself in the log every boot.
 _dev_token = os.environ.get("MCP_DEV_TOKEN", "").strip()
 if _dev_token:
     _dev_user = int(os.environ.get("MCP_DEV_USER_ID", "1"))
@@ -32,11 +32,6 @@ if _dev_token:
     )
     verifier = StaticTokenVerifier(_dev_token, _dev_user, config)
 else:
-    print(
-        "[MCP] No token verifier configured. Set MCP_DEV_TOKEN for local "
-        "stage-2 testing; the OAuth verifier arrives in stage 3.",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
+    verifier = AskesisTokenVerifier(config)
 
 app = build_app(config, verifier)

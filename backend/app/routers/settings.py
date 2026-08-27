@@ -244,6 +244,15 @@ _NEVER_TOUCH = frozenset(
         "report_tokens",  # shareable bearer credential
         "data_shares",  # would grant cross-user access from a file
         "alembic_version",  # schema bookkeeping
+        # The MCP connector's OAuth state. All three are credential-bearing:
+        # a restore that could write mcp_grants would let an uploaded file mint
+        # standing API access to this account, and mcp_clients controls where
+        # authorization codes may be redirected. Listing them here is not just
+        # documentation -- _check_spec raises if anything ever adds them to
+        # _BACKUP_SPEC.
+        "mcp_clients",
+        "mcp_auth_codes",
+        "mcp_grants",
     }
 )
 
