@@ -15,6 +15,23 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The web app manifest was never linked from the HTML**, so no browser has
+  ever read it. `vite-plugin-pwa` generated and served `/manifest.webmanifest`
+  correctly — it returns 200 — but SvelteKit renders `app.html` verbatim, the
+  plugin does not inject the link into it, and nothing else did.
+  On Android that is the whole story behind the icon. With no manifest, Chrome
+  never sees `purpose: "any maskable"`; it falls back to the
+  `<link rel="icon">` favicon and installs it the legacy way — white plate, icon
+  shrunk to two-thirds, centred. Three releases of icon changes (v1.2.1, v1.2.2,
+  v1.2.3) could not fix that, because the icons were never what was being read.
+  Found by diffing against `artha.app`, which carries
+  `<link rel="manifest" href="/manifest.json">` in its `index.html`; Askesis
+  carried nothing.
+  `theme_color`, `display: standalone`, `start_url` and `scope` have never taken
+  effect either, for the same reason — they should now.
+
 ## [1.2.3] - 2026-08-27
 
 Alembic head: `add_mcp_oauth_tables`
