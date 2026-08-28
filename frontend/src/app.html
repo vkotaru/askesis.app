@@ -19,6 +19,17 @@
       crossorigin
     />
     <link rel="icon" type="image/png" href="/icon-192.png" />
+    <!-- Without this, nothing reads the manifest. vite-plugin-pwa generates and
+         serves /manifest.webmanifest, but SvelteKit renders this file verbatim
+         and the plugin does not inject the link into it — so the manifest was
+         being served and never fetched.
+
+         The visible symptom was Android: with no manifest, Chrome cannot see
+         `purpose: "any maskable"`, falls back to the <link rel="icon"> favicon
+         above, and installs it the legacy way — white plate, icon shrunk to
+         two-thirds, centred. Three rounds of icon edits could not fix that,
+         because the icons were never the thing being read. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     %sveltekit.head%
     <title>Askesis</title>
   </head>
