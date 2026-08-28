@@ -29,22 +29,28 @@ export default defineConfig({
         display: 'standalone',
         scope: '/',
         start_url: '/',
+        // Two icons, both opaque and both 'any maskable' — the same shape
+        // yearly/artha use, and the reason matters. A separate `purpose: 'any'`
+        // entry with transparent corners is what produces the white padding on
+        // Android: the launcher composites the transparency onto a white plate
+        // and then insets the result. A full-bleed icon declared 'any maskable'
+        // lets Android apply its OWN mask, so the icon is round on a circular
+        // launcher without a single transparent pixel being involved.
+        //
+        // The round look therefore comes from the mask, never from the file.
+        // Do not reintroduce a transparent-corner icon here.
         icons: [
           {
             src: '/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any maskable',
           },
           {
             src: '/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
-          },
-          {
-            src: '/icon-maskable.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
+            purpose: 'any maskable',
           },
         ],
       },

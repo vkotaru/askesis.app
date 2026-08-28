@@ -15,6 +15,25 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The white padding around the Android icon, properly this time.** It was
+  never the artwork — it was the manifest. The app declared a separate
+  `purpose: 'any'` pair alongside a `purpose: 'maskable'` icon, and yesterday's
+  fix restored the `any` pair to transparent-corner circles. Android composites
+  transparency onto a white plate and then insets the result, so the padding
+  came back.
+  Now matched to how `artha.app` does it: **two icons, both fully opaque, both
+  declared `purpose: 'any maskable'`**, and no separate maskable file. Android
+  applies its own mask, so the icon is round on a circular launcher without a
+  single transparent pixel being involved. **The round look comes from the mask,
+  not from the file** — which is the thing I had wrong twice.
+  The mark stays at 76% (`artha` sits at 77%, so the two agree independently),
+  and `vite.config.ts` now carries a comment saying not to reintroduce a
+  transparent-corner icon.
+  Still needs the PWA uninstalled and reinstalled — Android caches the WebAPK
+  icon at install time.
+
 ### Added
 
 - **OAuth 2.1 for the MCP connector** — discovery, dynamic registration, a
