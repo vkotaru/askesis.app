@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-08-29
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **The app was listening on the tailnet in plain HTTP, not just behind the
@@ -604,7 +608,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.2.4...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.2.5...HEAD
+[1.2.5]: https://github.com/vkotaru/askesis.app/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/vkotaru/askesis.app/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/vkotaru/askesis.app/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/vkotaru/askesis.app/compare/v1.2.1...v1.2.2
