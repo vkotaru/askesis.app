@@ -321,7 +321,11 @@ because a meal needs a date and a label that the filename doesn't carry.
 - **Always use the `https://askesis.<tailnet>.ts.net` URL.** The sidecar serves
   HTTPS with a real cert, and the `DEV_MODE=false` session cookie is
   HTTPS-only, so plain HTTP silently fails to keep you logged in. There are no
-  plain-HTTP host ports anymore.
+  plain-HTTP host ports anymore, and since v1.2.5 no plain-HTTP *tailnet* port
+  either: the app binds loopback, so Serve on 443 is the only way in. It used to
+  bind all interfaces, and because it shares the sidecar's network namespace that
+  included the tailnet — `http://<tailnet-ip>:8000` answered in plain HTTP right
+  next to the HTTPS front door.
 - **`TS_ACCEPT_DNS=false`** is set on the sidecar on purpose — it stops Tailscale
   from overriding the container's DNS, so the app can still resolve the `db`
   service. Don't remove it.

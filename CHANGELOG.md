@@ -15,6 +15,27 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The app was listening on the tailnet in plain HTTP, not just behind the
+  HTTPS proxy.** It bound `0.0.0.0`, and because the container shares the
+  Tailscale sidecar's network namespace, "all interfaces" included the tailnet
+  one — so `http://<tailnet-ip>:8000` answered alongside the intended
+  `https://askesis…` on 443. Both required a login and neither was reachable
+  from the internet (`100.x` is Tailscale's internal range), so nothing was
+  exposed publicly; but it was a second door nobody meant to open, and it is how
+  the deployed manifest got fetched while debugging the PWA icon.
+  It now binds `127.0.0.1`. Serve reaches the app over loopback inside the same
+  namespace, so nothing changes for real traffic.
+- **`--forwarded-allow-ips` narrowed from `*` to loopback.** That setting decides
+  whose `X-Forwarded-*` headers uvicorn believes, and those headers determine the
+  scheme, host and client IP the app sees. The wildcard was justified in a
+  comment by the claim that only the loopback proxy could reach port 8000 — which
+  the bind above made untrue. Now the justification holds by construction.
+  This matters ahead of the MCP connector: its safety argument is that a
+  compromised MCP container cannot reach the app, and that assumed the app was
+  reachable only through its own proxy.
+
 ## [1.2.4] - 2026-08-27
 
 Alembic head: `add_mcp_oauth_tables`

@@ -64,8 +64,13 @@ services:
     # DATABASE_URL is fixed to the bundled db service and overrides any value in .env.
     environment:
       DATABASE_URL: postgresql://askesis:${POSTGRES_PASSWORD}@db:5432/askesis
-    # Share the Tailscale sidecar's network namespace: the app is reachable only on
-    # the tailnet (no host ports published), and Serve proxies to 127.0.0.1:8000.
+    # Share the Tailscale sidecar's network namespace: no host ports are
+    # published, and Serve proxies to 127.0.0.1:8000.
+    #
+    # Sharing the namespace means "all interfaces" includes the TAILNET one, so
+    # the app must bind loopback (see the CMD in ../Dockerfile). It used to bind
+    # 0.0.0.0, which left a second plain-HTTP door open at
+    # http://<tailnet-ip>:8000 next to the intended HTTPS one on 443.
     network_mode: service:tailscale
     depends_on:
       db:

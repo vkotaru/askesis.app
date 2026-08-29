@@ -45,10 +45,23 @@ ARG GIT_REF=unknown
 ENV GIT_SHA=$GIT_SHA \
     GIT_REF=$GIT_REF
 
+# Documentation only — nothing is published, and the bind below is loopback.
 EXPOSE 8000
 
 # Migrate, seed the shared food list (best-effort), then serve.
-# --proxy-headers + --forwarded-allow-ips=* so HTTPS-only cookies and the
-# OAuth redirect URL honor the X-Forwarded-Proto/Host set by Tailscale Serve
-# (or any TLS-terminating reverse proxy) in front of the container.
-CMD ["sh", "-c", "python -m alembic upgrade head && (python seed_foods.py || echo 'seed skipped') && exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+#
+# --host 127.0.0.1, NOT 0.0.0.0. This container shares the Tailscale sidecar's
+# network namespace (network_mode: service:tailscale in docker-compose.yml), so
+# 0.0.0.0 binds the *tailnet interface* too — which put a second, plain-HTTP
+# door on the app at http://<tailnet-ip>:8000, alongside the intended HTTPS one
+# that Serve proxies to loopback on 443. Both doors required a login, but only
+# one was meant to exist. Serve reaches us over loopback, so binding loopback
+# costs nothing and closes the other one.
+#
+# --forwarded-allow-ips is loopback for the same reason. It tells uvicorn whose
+# X-Forwarded-* headers to believe, and those headers decide what the app thinks
+# the scheme, host and client IP are. It used to be '*', justified by the claim
+# that only the loopback Serve proxy could reach this port — which the bind above
+# made untrue. Naming loopback explicitly makes the justification true by
+# construction rather than by assumption.
+CMD ["sh", "-c", "python -m alembic upgrade head && (python seed_foods.py || echo 'seed skipped') && exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1'"]
