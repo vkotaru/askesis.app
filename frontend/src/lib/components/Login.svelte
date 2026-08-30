@@ -253,7 +253,7 @@
               type="text"
               autocomplete="username"
               bind:value={usernameInput}
-              placeholder="e.g. user"
+              placeholder="username or email"
               class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
@@ -308,7 +308,7 @@
                 type="text"
                 autocomplete="name"
                 bind:value={signupName}
-                placeholder="e.g. Name"
+                placeholder="your name"
                 class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>

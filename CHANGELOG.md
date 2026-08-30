@@ -15,6 +15,17 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Personal names removed from a public repo.** `scripts/garmin_sync.py` used a
+  real account username in its usage examples, and the login screen's form
+  placeholders used two household first names — one of which was added by the
+  signup form in v1.3.0. Replaced with `<username>`, `username or email` and
+  `your name`.
+  A username is half a credential and `/auth/login` distinguishes "no password
+  set" from "wrong password", so publishing one is not free even on a
+  tailnet-only app.
+
 ## [1.3.0] - 2026-08-30
 
 Alembic head: `add_mcp_oauth_tables`

@@ -4,8 +4,8 @@
 Run from `backend/` — config resolves `.env` against the working directory.
 
     python scripts/garmin_sync.py --login          # once: interactive, answers MFA
-    python scripts/garmin_sync.py --user user --days 7
-    python scripts/garmin_sync.py --user user --days 7 --dry-run
+    python scripts/garmin_sync.py --user <username> --days 7
+    python scripts/garmin_sync.py --user <username> --days 7 --dry-run
 
 In the container `WORKDIR` is already `/app/backend`:
 
