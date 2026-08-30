@@ -1,5 +1,6 @@
 import calendar
 import json
+import secrets
 import logging
 import threading
 import time
@@ -7,13 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from jose import jwt
 from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.config import get_settings
-from app.models import User, DataShare
+from app.models import User, DataShare, derive_username
 from app.security import (
     MAX_PASSWORD_BYTES,
     MIN_PASSWORD_LENGTH,
@@ -318,6 +320,18 @@ class SetInitialPasswordRequest(BaseModel):
     password: str = _PASSWORD_FIELD
 
 
+class SignupRequest(BaseModel):
+    registration_code: str = Field(min_length=1, max_length=255)
+    username: str = Field(min_length=1, max_length=64)
+    # A plain str, not pydantic's EmailStr: nothing else in this app uses
+    # EmailStr (sharing takes a bare str), and it would pull in email-validator
+    # as a new dependency to police one field on a household app. The shape
+    # check below is all this needs to be.
+    email: str = Field(min_length=3, max_length=255)
+    name: str = Field(min_length=1, max_length=255)
+    password: str = _PASSWORD_FIELD
+
+
 # Deliberately identical for "no such user" and "wrong password" so the
 # response body doesn't reveal whether an account exists.
 _BAD_CREDENTIALS = "Incorrect username or password"
@@ -535,6 +549,105 @@ async def set_initial_password(
     # Log them straight in — same shape as /login, so the SPA reuses its
     # post-login bootstrap.
     return _login_response(user)
+
+
+@router.post("/signup")
+async def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+    """Create an account, gated on a shared registration code.
+
+    **The code is the entire access control here.** There is no email
+    verification and no invite record — anyone who can reach this endpoint and
+    knows the code gets an account. It is off unless ``REGISTRATION_CODE`` is
+    set, which keeps the historical behaviour (accounts only via
+    ``scripts/manage_users.py``) as the default.
+
+    A new account can read nothing but its own rows: every query is scoped by
+    ``user_id`` and sharing requires the *owner* to grant it. So the blast
+    radius of a leaked code is unwanted accounts, not access to existing data.
+    """
+    settings = get_settings()
+    configured = settings.registration_code.strip()
+    if not configured:
+        # 404 rather than 403: with signup off, this route may as well not
+        # exist, and saying "forbidden" would confirm the feature is there to
+        # be unlocked.
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    # Throttled on the code itself, so guessing it is rate-limited the same way
+    # password guessing is. Checked before anything else touches the database.
+    _enforce_throttle("signup")
+    if not secrets.compare_digest(payload.registration_code.strip(), configured):
+        _record_failure("signup")
+        raise HTTPException(status_code=403, detail="Invalid registration code")
+
+    username = derive_username(payload.username.strip().lower())
+    if username != payload.username.strip().lower():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Username may only contain a-z, 0-9, . _ - (suggested: {username!r})",
+        )
+    email = payload.email.strip().lower()
+    if (
+        email.count("@") != 1
+        or email.startswith("@")
+        or email.endswith("@")
+        or " " in email
+    ):
+        raise HTTPException(
+            status_code=400, detail="That does not look like an email address"
+        )
+
+    existing = (
+        db.query(User)
+        .filter(or_(User.username == username, User.email == email))
+        .first()
+    )
+    if existing is not None:
+        # This does reveal that an identifier is taken, which any signup form
+        # must. It sits behind the code, so it is not an open enumeration
+        # oracle.
+        clash = "username" if existing.username == username else "email address"
+        raise HTTPException(status_code=409, detail=f"That {clash} is already taken")
+
+    try:
+        password_hash = hash_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    user = User(
+        username=username,
+        email=email,
+        name=payload.name.strip(),
+        password_hash=password_hash,
+        # Stamped now so the account never has a NULL epoch. A NULL is treated
+        # permissively by _token_epoch_is_current (it has to be, for rows that
+        # predate the column), and a brand-new account has no reason to inherit
+        # that leniency.
+        password_changed_at=datetime.utcnow(),
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two signups racing on the same identifier: the unique constraint
+        # decides, rather than the SELECT above.
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="That account already exists"
+        ) from None
+    db.refresh(user)
+
+    logger.info("account created via signup: id=%s username=%s", user.id, user.username)
+    response = JSONResponse(
+        content={
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "username": user.username,
+        }
+    )
+    set_auth_cookie(response, create_access_token(_token_claims(user)))
+    return response
 
 
 @router.post("/change-password")

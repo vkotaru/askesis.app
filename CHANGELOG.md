@@ -15,6 +15,25 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Create an account from the login screen**, gated on a shared registration
+  code. `POST /auth/signup` plus a "Create account" form; the new account is
+  signed straight in.
+  **Off unless `REGISTRATION_CODE` is set**, which keeps the previous behaviour
+  — accounts only via `scripts/manage_users.py` — as the default. With signup
+  off the endpoint returns 404 rather than 403, so it does not advertise a
+  feature waiting to be unlocked.
+  The code is the entire access control on account creation, so treat it as a
+  password (`openssl rand -hex 16`), not a label. Guessing it is throttled the
+  same way password guessing is, and the check runs before anything touches the
+  database. A new account can read nothing but its own rows — every query is
+  scoped by `user_id` and sharing requires the *owner* to grant it — so a leaked
+  code costs you unwanted accounts, not access to existing data.
+  Note the login screen already had a "claim your account" flow for password-less
+  rows; what was missing was any way to create the row, since
+  `manage_users.py create` always prompts for a password.
+
 ## [1.2.5] - 2026-08-29
 
 Alembic head: `add_mcp_oauth_tables`

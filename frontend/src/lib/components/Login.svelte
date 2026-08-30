@@ -21,6 +21,52 @@
   let newPasswordInput = '';
   let confirmPasswordInput = '';
 
+  // Signup is off unless the server has REGISTRATION_CODE set, in which case
+  // /auth/signup exists at all. Rather than probing for it, the form is offered
+  // behind a link and a 404 on submit is reported as "signup is not enabled" —
+  // one fewer unauthenticated request on every visit to the login screen.
+  let showSignup = false;
+  let signupBusy = false;
+  let signupCode = '';
+  let signupName = '';
+  let signupUsername = '';
+  let signupEmail = '';
+  let signupPassword = '';
+
+  function toggleSignup() {
+    showSignup = !showSignup;
+    errorMsg = '';
+  }
+
+  async function handleSignup() {
+    errorMsg = '';
+    if (signupBusy) return;
+    if (signupPassword.length < MIN_PASSWORD_LENGTH) {
+      errorMsg = `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+      return;
+    }
+    signupBusy = true;
+    try {
+      await api.signup({
+        registration_code: signupCode.trim(),
+        username: signupUsername.trim().toLowerCase(),
+        email: signupEmail.trim().toLowerCase(),
+        name: signupName.trim(),
+        password: signupPassword,
+      });
+      // The server sets the session cookie on success, so this is a login too.
+      await bootstrapSession();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        errorMsg = 'Account creation is not enabled on this server.';
+      } else {
+        errorMsg = err instanceof Error ? err.message : 'Could not create the account';
+      }
+    } finally {
+      signupBusy = false;
+    }
+  }
+
   /**
    * The bootstrap the root layout runs on mount, so the user lands in the app
    * without a manual reload. Setting userStore is what swaps <Login> for the
@@ -234,6 +280,97 @@
             {passwordLoginBusy ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
+
+        {#if showSignup}
+          <form on:submit|preventDefault={handleSignup} class="space-y-3 mt-6 pt-5 border-t border-gray-100 dark:border-gray-700">
+            <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
+              Creating an account needs the registration code for this server.
+            </p>
+            <div>
+              <label for="signup-code" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+                Registration Code
+              </label>
+              <input
+                id="signup-code"
+                type="password"
+                autocomplete="off"
+                bind:value={signupCode}
+                placeholder="from whoever runs this server"
+                class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div>
+              <label for="signup-name" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+                Name
+              </label>
+              <input
+                id="signup-name"
+                type="text"
+                autocomplete="name"
+                bind:value={signupName}
+                placeholder="e.g. Name"
+                class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div>
+              <label for="signup-username" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+                Username
+              </label>
+              <input
+                id="signup-username"
+                type="text"
+                autocomplete="username"
+                bind:value={signupUsername}
+                placeholder="lowercase, a-z 0-9 . _ -"
+                class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div>
+              <label for="signup-email" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+                Email
+              </label>
+              <input
+                id="signup-email"
+                type="email"
+                autocomplete="email"
+                bind:value={signupEmail}
+                placeholder="you@example.com"
+                class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div>
+              <label for="signup-password" class="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 uppercase tracking-wider">
+                Password
+              </label>
+              <input
+                id="signup-password"
+                type="password"
+                autocomplete="new-password"
+                bind:value={signupPassword}
+                placeholder="••••••••"
+                class="w-full input border-gray-200 dark:border-gray-700 px-4 py-3 rounded-xl dark:bg-gray-900 focus:ring-primary-500 focus:border-primary-500"
+              />
+              <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+                At least {MIN_PASSWORD_LENGTH} characters.
+              </p>
+            </div>
+            <button
+              type="submit"
+              disabled={signupBusy}
+              class="w-full py-3 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 active:scale-[0.98] rounded-xl transition-all shadow-md shadow-primary-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {signupBusy ? 'Creating account…' : 'Create Account'}
+            </button>
+          </form>
+        {/if}
+
+        <button
+          type="button"
+          on:click={toggleSignup}
+          class="w-full py-2 mt-3 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+        >
+          {showSignup ? 'Back to sign in' : 'Create an account'}
+        </button>
       {/if}
     </div>
 

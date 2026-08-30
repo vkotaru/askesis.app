@@ -511,6 +511,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+  // Create an account. Requires the server's registration code, and 404s when
+  // REGISTRATION_CODE is unset — signup is off unless the operator turns it on,
+  // so the login screen only offers it after probing this.
+  signup: (body: {
+    registration_code: string;
+    username: string;
+    email: string;
+    name: string;
+    password: string;
+  }) => fetchJSON<LoginResponse>('/auth/signup', { method: 'POST', body: JSON.stringify(body) }),
   logout: () => fetchJSON<{ status: string }>('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword: string, newPassword: string) =>
     fetchJSON<{ status: string }>('/auth/change-password', {

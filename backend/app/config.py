@@ -52,6 +52,16 @@ class Settings(BaseSettings):
     garmin_email: str = ""
     garmin_password: str = ""
 
+    # Self-signup. Empty (the default) means the /auth/signup endpoint is OFF
+    # and accounts can only be made with scripts/manage_users.py, which is how
+    # this app worked for its whole life before this setting existed.
+    #
+    # Set it to a shared secret and the login screen grows a "Create account"
+    # form that requires the code. The code is the entire access control on
+    # account creation, so it is a password, not a label: generate one with
+    # `openssl rand -hex 16` rather than picking a word.
+    registration_code: str = ""
+
     # Nightly Garmin pull. Off unless explicitly enabled.
     garmin_sync_enabled: bool = False
     # Both the cron hour and the day boundary are read in this zone. The image
