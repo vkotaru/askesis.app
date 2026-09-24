@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 **The app no longer listens on a TCP port.** It serves on a Unix domain socket and
 the Tailscale sidecar dials that socket instead of `127.0.0.1:8000`. That is a
 change to the deployment's shape rather than to any feature, which is why this is a
@@ -692,7 +696,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/vkotaru/askesis.app/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/vkotaru/askesis.app/compare/v1.2.5...v1.3.0
 [1.2.5]: https://github.com/vkotaru/askesis.app/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/vkotaru/askesis.app/compare/v1.2.3...v1.2.4
