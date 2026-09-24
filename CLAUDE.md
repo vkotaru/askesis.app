@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## JOURNAL.md
+
+`JOURNAL.md` is the running engineering journal — what was done, what was **tried and abandoned**,
+and traps found the hard way. Entries are newest-first.
+
+- **Every session**: read the top 1–2 entries before starting work.
+- **Designing or reworking a feature**: read the whole journal first. The recorded dead ends are the
+  point — cheaper to read than to rediscover.
+- **After non-trivial work**: add an entry. A non-obvious fix, an approach dropped and why, a
+  constraint discovered, a decision whose rationale won't survive in the diff. Routine work does not
+  earn an entry — the file stays short enough to keep being read.
+
+Same format as `jobly.app/JOURNAL.md`. `CHANGELOG.md` records what shipped for a user; the journal
+records what it cost and what not to try again.
+
 Askesis is a personal fitness/health tracker (daily log, nutrition, activities,
 measurements, progress photos) for a handful of accounts. It is Tier 1 in the
 `ai_codespace` portfolio — see the workspace `CLAUDE.md` for the cross-app conventions this
