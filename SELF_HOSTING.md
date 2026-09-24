@@ -356,3 +356,113 @@ because a meal needs a date and a label that the filename doesn't carry.
   backup: a Postgres dump whose `file_path` rows point at files you no longer
   have restores to broken images. `scripts/adopt_photos.py --verify` reports
   exactly that mismatch in both directions.
+
+## MCP connector (Claude Cowork)
+
+Exposes your health data to Claude as a read-only remote connector. **This is the
+only part of Askesis that touches the public internet**, so it is off by default
+and the steps below are in dependency order — each one is a control that the
+later ones assume.
+
+Claude connects from Anthropic's cloud, **not from your device**, which is why a
+tailnet-only service cannot work and why this needs Funnel. The app itself stays
+tailnet-only and is never Funnel'd.
+
+### 1. The tailnet ACL — do this first
+
+Without it the internet-facing node can reach everything else on your tailnet,
+which defeats the Docker network split entirely. In the Tailscale admin console:
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:askesis-mcp": ["autogroup:admin"]
+  },
+  "nodeAttrs": [
+    { "target": ["tag:askesis-mcp"], "attr": ["funnel"] }
+  ],
+  "acls": [
+    // your devices reach the app; nothing reaches the MCP node over the tailnet
+    { "action": "accept", "src": ["autogroup:member"], "dst": ["tag:askesis:443"] },
+    { "action": "accept", "src": ["autogroup:member"], "dst": ["autogroup:self:*"] }
+  ]
+}
+```
+
+The MCP node is granted **`funnel` and no tailnet destinations at all**. A default
+`src:* dst:*:*` rule would silently undo this — if your policy still has one,
+remove it before enabling the connector.
+
+`autogroup:member` means "anyone logged into this tailnet", so new devices you add
+later are covered without editing the policy.
+
+### 2. The database role
+
+The MCP container must not reach Postgres with the app's read-write role. With it,
+a parsing bug in the internet-facing container is an account takeover:
+`UPDATE users SET password_hash = NULL` re-arms the unauthenticated claim endpoint.
+
+```bash
+docker compose exec -T db psql -U askesis -d askesis \
+  -v mcp_password="$(openssl rand -hex 24)" \
+  < backend/scripts/mcp_db_role.sql
+```
+
+It prints its own verification. `can_update_users` **must** be `f`. Keep the
+password for `MCP_DB_PASSWORD` below.
+
+### 3. A second Tailscale auth key
+
+Generate a new key in the admin console **tagged `tag:askesis-mcp`**. Separate from
+`TS_AUTHKEY` on purpose: revoking one must not kill both sidecars, and only a node
+carrying this tag can ever be Funnel'd.
+
+### 4. `.env`
+
+```bash
+TS_AUTHKEY_MCP=tskey-auth-...              # the tagged key from step 3
+MCP_PUBLIC_ORIGIN=https://askesis-mcp.<your-tailnet>.ts.net   # no trailing slash
+MCP_TOKEN_SECRET=$(openssl rand -hex 32)   # must differ from SECRET_KEY
+MCP_APP_SECRET_KEY=$(openssl rand -hex 32) # throwaway, also not SECRET_KEY
+MCP_DB_PASSWORD=...                        # from step 2
+COMPOSE_PROFILES=mcp                       # this is what turns the connector on
+```
+
+Leaving `COMPOSE_PROFILES` unset keeps both MCP containers out of the stack
+entirely; the app is unaffected either way.
+
+### 5. Deploy and verify
+
+```bash
+./deploy.sh
+```
+
+Then, and none of these are optional:
+
+```bash
+# Blast radius — the internet-facing container must be unable to reach the app
+docker compose exec mcp getent hosts tailscale      # must FAIL
+docker compose exec mcp python -c "import fastapi"  # must FAIL
+docker compose exec -T db psql -U askesis_mcp -d askesis \
+  -c "UPDATE users SET password_hash='x';"          # must be permission denied
+
+# Exposure — run these from a device with Tailscale OFF (phone on cellular)
+curl https://askesis-mcp.<tailnet>.ts.net/healthz   # must return 200
+curl https://askesis.<tailnet>.ts.net/api/version   # must FAIL TO CONNECT
+```
+
+That last pair is the one most likely to be skipped and most costly to get wrong.
+If the app answers from off-tailnet, stop and fix the ACL before going further.
+
+Also confirm the app's sidecar has no Funnel: `grep -c AllowFunnel
+tailscale/serve.json` must print `0`, and the admin console must show no Funnel
+badge on the `askesis` node.
+
+### 6. Add it in Claude
+
+Settings → Connectors → Add custom connector, URL `https://askesis-mcp.<tailnet>.ts.net/mcp`.
+Type it exactly — a trailing slash breaks the audience check and surfaces only as a
+generic connection error.
+
+You will be redirected to a login/consent page served by the MCP node. It lists
+what you are sharing, free-text notes on daily logs and activities included.

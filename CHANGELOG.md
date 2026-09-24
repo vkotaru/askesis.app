@@ -15,6 +15,27 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **MCP connector for Claude Cowork — the container, not yet exposed.** A second
+  service (`mcp`) with its own Tailscale sidecar, its own tailnet hostname and its
+  own Funnel; the app stays tailnet-only and is never Funnel'd. Off unless
+  `COMPOSE_PROFILES=mcp` is set, so existing deploys are unaffected.
+
+  It is built as defence in depth rather than one lock, on the rule that *a fully
+  compromised MCP container must not be able to touch the app*: its own image with
+  no FastAPI and only the six `app/` modules it imports (the routers and `/auth/*`
+  do not exist there); no `env_file`, so it never receives `SECRET_KEY`,
+  `TS_AUTHKEY`, `GEMINI_API_KEY` or `GARMIN_PASSWORD`; its own Postgres role that
+  can read the health tables, write only its three `mcp_*` tables, and **not write
+  to `users` at all**; and a Docker network split where `db` is the only thing
+  spanning the app side and the internet-facing side.
+
+  Enabling it needs a tailnet ACL, a second tagged auth key and the database role
+  — see `SELF_HOSTING.md` ("MCP connector"). `backend/scripts/mcp_db_role.sql`
+  creates and self-verifies the role.
+
+
 ## [2.0.0] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`

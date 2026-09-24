@@ -84,3 +84,69 @@ EXPOSE 8000
 # in X-Forwarded-Host). Nothing reads Host today — anything added later that
 # does, e.g. TrustedHostMiddleware, needs to know.
 CMD ["sh", "-c", "python -m alembic upgrade head && (python seed_foods.py || echo 'seed skipped') && if [ -n \"$APP_SOCKET\" ]; then if [ -S \"$APP_SOCKET\" ]; then rm -f \"$APP_SOCKET\"; fi; exec python -m uvicorn app.main:app --uds \"$APP_SOCKET\" --proxy-headers --forwarded-allow-ips='*'; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1'; fi"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The MCP connector service. Its OWN image, deliberately — this is the only
+# Askesis process that will face the public internet.
+#
+# It shares the model layer with the app and NOTHING else. Two things enforce
+# that, and both are load-bearing:
+#
+#   1. A separate requirement set with no FastAPI. `mcp` needs pydantic>=2.12
+#      and starlette>=1.x; the app pins pydantic 2.5.3 / fastapi 0.109.0. Rather
+#      than upgrade every router in a repo with no test suite, the two trees
+#      live side by side over one shared models.py. See requirements-mcp.txt.
+#
+#   2. Only the six app/ modules mcp_server actually imports are copied. The
+#      routers, app/main.py, the Alembic migrations, backend/scripts/ and the
+#      built SPA are absent from this image — so /auth/*, the meal-photo Gemini
+#      call and the password-claim endpoint are not "unrouted here", they do not
+#      exist. Re-derive the list after changing imports:
+#         python - <<'P'  # see JOURNAL.md
+#      A missing module fails loudly at import, which the build below exercises.
+#
+# This stage must NEVER run `alembic upgrade`. The app container owns the
+# schema; two containers racing migrations at boot is a real failure mode.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS mcp
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app/backend
+
+# Built from the LOCK, with hashes, not from the .txt. The packages that parse
+# untrusted bytes here (starlette, h11, python-multipart, jsonschema) arrive
+# transitively and would otherwise float between rebuilds.
+COPY backend/requirements-mcp.lock ./
+RUN pip install --upgrade pip && \
+    pip install --require-hashes -r requirements-mcp.lock
+
+# The shared model layer — exactly the modules mcp_server imports, no more.
+COPY backend/app/__init__.py   backend/app/config.py \
+     backend/app/database.py   backend/app/disciplines.py \
+     backend/app/models.py     backend/app/provenance.py \
+     backend/app/security.py   ./app/
+COPY backend/mcp_server/ ./mcp_server/
+
+# Fail the BUILD if the isolation ever stops holding, rather than discovering it
+# in production: the service must import, and FastAPI must not be importable.
+RUN SECRET_KEY=build-check MCP_TOKEN_SECRET=build-check-0123456789abcdef0123456789 \
+    MCP_PUBLIC_ORIGIN=https://build.invalid DEV_MODE=false \
+    python -c "import mcp_server.server, mcp_server.tools, mcp_server.oauth" && \
+    ! python -c "import fastapi" 2>/dev/null && \
+    ! python -c "import app.main"  2>/dev/null && \
+    echo "isolation holds: mcp imports, fastapi and app.main do not"
+
+# Same Unix-socket reasoning as the app stage above: this container shares its
+# own Tailscale sidecar's netns, so any TCP port it opened would be reachable
+# from the tailnet. MCP_SOCKET unset falls back to TCP for local debugging.
+#
+# Note the rate limiter reads X-Forwarded-For off the raw request rather than
+# through uvicorn's middleware, so its sanitisation comes from Tailscale Serve
+# Set()ing that header, not from --forwarded-allow-ips. Whether Funnel supplies
+# a real client address is UNVERIFIED — if it does not, the per-IP bucket
+# degrades to one global bucket, which is why the login limiter also keys on
+# the identifier.
+CMD ["sh", "-c", "if [ -n \"$MCP_SOCKET\" ]; then if [ -S \"$MCP_SOCKET\" ]; then rm -f \"$MCP_SOCKET\"; fi; exec python -m uvicorn mcp_server.main:app --uds \"$MCP_SOCKET\" --proxy-headers --forwarded-allow-ips='*'; else exec python -m uvicorn mcp_server.main:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips='127.0.0.1'; fi"]

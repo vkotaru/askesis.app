@@ -21,6 +21,61 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-24 — MCP connector, stage 4: the container and its blast radius
+
+**What changed**
+- `Dockerfile` gained an `AS mcp` stage: own locked requirement set, and only the
+  **six** `app/` modules `mcp_server` actually imports. The routers, `app/main.py`,
+  the migrations, `backend/scripts/` and the SPA are absent — `/auth/*` and the
+  Gemini call do not exist in that image, they are not merely unrouted. 305MB vs
+  the app's 515MB. The stage **fails the build** if `import fastapi` or
+  `import app.main` ever starts succeeding.
+- `requirements-mcp.lock` — `pip-compile --generate-hashes`, 34 packages, 661
+  hashes. The packages that parse untrusted bytes (starlette, h11,
+  python-multipart, jsonschema) arrive transitively and were unpinned.
+- `backend/scripts/mcp_db_role.sql` — least-privilege Postgres role (**H1**).
+- `docker-compose.yml` — `tailscale-mcp` + `mcp` services, and an explicit
+  network split: `default` (app side) / `mcpnet` (internet side), with `db` the
+  only member of both.
+- `tailscale/serve-mcp.json` with `AllowFunnel`. The app's `serve.json` has none
+  and must never have one.
+
+**What didn't work**
+- **`${MCP_TOKEN_SECRET:?}` in compose would have broken app deploys.** Compose
+  interpolates the *entire* file before running anything, so a required-var on an
+  unused service makes `docker compose up` fail for the **app** on any box that
+  has not configured the connector. `profiles:` does not save you — it gates
+  startup, not interpolation. This repo already documents that exact trap for
+  `docker-compose.dev.yml` and I walked into it anyway. Fix: `:-` defaults, so an
+  empty value reaches the container and `mcp_server/config.py` fails closed with a
+  readable reason, plus `profiles: ["mcp"]` to keep it out of the stack.
+- **`DO $$ ... :mcp_password ... $$` in the role SQL failed** with `syntax error at
+  or near ":"`. psql does not substitute `:vars` inside dollar-quoted bodies. Use
+  `SELECT format(...) \gexec`. Only found by running it against a real Postgres.
+- **`.gitignore` has a blanket `*.sql`** (there to stop a stray `pg_dump` — which
+  holds every row plus bcrypt hashes — being committable). `mcp_db_role.sql` was
+  therefore silently absent from `git status`, and would have been missing on the
+  server at the exact step `SELF_HOSTING.md` tells you to run. Fixed with a narrow
+  `!backend/scripts/*.sql`; dumps never live there.
+
+**Watch out**
+- **`food_items` must be granted SELECT** even though no `mcp_server` module
+  imports it by name — meals reach it via `selectinload(MealFoodItem.food_item)`.
+  Omitting it fails only at runtime, only on a meal query.
+- `users` gets **table-level** SELECT, not column-level: the ORM emits every
+  mapped column, so a column grant would break the service the next time
+  `models.py` gains a field. The property that matters — no write path to
+  `password_hash` — comes from granting no INSERT/UPDATE/DELETE, which is not
+  fragile. Verified by attacking it: all three are `permission denied`.
+- No `ALTER DEFAULT PRIVILEGES`. A table added by a future migration is unreadable
+  to the MCP role until someone grants it, deliberately.
+- The rate limiter reads `X-Forwarded-For` **off the raw request**, bypassing
+  uvicorn's middleware — so its sanitisation comes from Tailscale Serve `Set`ing
+  that header, *not* from `--forwarded-allow-ips` as its docstring implies. Still
+  **unverified whether Funnel supplies a real client address**; if it does not the
+  per-IP bucket becomes one global bucket, which is why the login limiter also
+  keys on the identifier.
+
 ## 2026-09-24 — Port 8000 closed for real: the app has no TCP listener (v2.0.0)
 
 **What changed**

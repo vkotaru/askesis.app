@@ -14,6 +14,10 @@ venv/
 # pg_dump output. Backups belong in ~/.askesis/backups/, but a stray dump in the
 # checkout must never be committable: it holds every row plus bcrypt hashes.
 *.sql
+# ...but the operator scripts under backend/scripts/ are source, not dumps.
+# Without this negation `mcp_db_role.sql` is silently absent from the commit and
+# the deploy fails on a step SELF_HOSTING.md tells you to run.
+!backend/scripts/*.sql
 
 # Environment
 .env

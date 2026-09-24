@@ -27,6 +27,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    # The ONLY thing spanning both networks. The MCP service reaches Postgres
+    # and nothing else; see the mcpnet comment at the bottom of this file.
+    networks: [default, mcpnet]
 
   # Tailscale sidecar: joins the tailnet as "askesis" -> askesis.<tailnet>.ts.net,
   # terminates HTTPS via Tailscale Serve, and proxies to the app over a Unix
@@ -54,6 +57,7 @@ services:
       # but not a filesystem, so the socket needs a mount on both sides.
       - ./data/run:/run/askesis
     restart: unless-stopped
+    networks: [default]
 
   app:
     # GIT_SHA/GIT_REF are exported by deploy.sh and baked into the image so the
@@ -109,7 +113,93 @@ services:
       # read it. Losing it costs a re-login, and Garmin rate-limits those.
       - garmin-tokens:/app/backend/.garminconnect
 
+  # ── The MCP connector (Claude Cowork) ──────────────────────────────────────
+  # Its own sidecar, its own tailnet hostname, its own Funnel. The app's sidecar
+  # is NOT Funnel'd and must never be.
+  #
+  # Both services are behind `profiles: ["mcp"]` and every variable below uses
+  # `:-` rather than `:?`. That combination is deliberate: compose interpolates
+  # the ENTIRE file before running anything, so a `${VAR:?}` here would make
+  # `docker compose up` fail for the *app* on any box that has not configured
+  # the connector. `profiles:` alone does not help — it gates startup, not
+  # interpolation. An unset value therefore reaches the container, where
+  # mcp_server/config.py fails closed with a readable reason.
+  #
+  # Enable with COMPOSE_PROFILES=mcp in .env.
+  tailscale-mcp:
+    image: tailscale/tailscale:v1.102.4
+    hostname: askesis-mcp
+    environment:
+      # A SEPARATE auth key from the app's, created with the tag that carries
+      # `funnel` in the tailnet ACL. Separate so revoking one does not kill both,
+      # and so only this node can ever be exposed publicly.
+      TS_AUTHKEY: ${TS_AUTHKEY_MCP:-}
+      TS_HOSTNAME: askesis-mcp
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /config/serve-mcp.json
+    # Only runs when asked for. Set COMPOSE_PROFILES=mcp in .env to enable, so
+    # `deploy.sh` needs no new flag.
+    profiles: ["mcp"]
+    volumes:
+      - tailscale-mcp-state:/var/lib/tailscale
+      - ./tailscale/serve-mcp.json:/config/serve-mcp.json:ro
+      - ./data/run-mcp:/run/askesis-mcp
+    restart: unless-stopped
+    networks: [mcpnet]
+
+  mcp:
+    build:
+      context: .
+      target: mcp
+    restart: unless-stopped
+    # NO `env_file: .env` — deliberately, and this is the single most important
+    # line in this service. That file holds SECRET_KEY (which signs the app's
+    # session cookies), TS_AUTHKEY, GEMINI_API_KEY and GARMIN_PASSWORD. The one
+    # container facing the public internet receives none of them: every value
+    # below is named explicitly, and MCP_TOKEN_SECRET is asserted != SECRET_KEY
+    # at startup. A fully compromised MCP container cannot mint an app cookie.
+    environment:
+      # Its OWN database role: SELECT on the health tables, write only on the
+      # three mcp_* tables, and NO write on `users` at all. Create it with
+      # backend/scripts/mcp_db_role.sql — without it an RCE here could rewrite
+      # password_hash and walk into the real app.
+      DATABASE_URL: postgresql://askesis_mcp:${MCP_DB_PASSWORD:-}@db:5432/askesis
+      # Signs MCP access tokens. Must differ from the app's SECRET_KEY.
+      MCP_TOKEN_SECRET: ${MCP_TOKEN_SECRET:-}
+      # A throwaway, NOT the app's. app/database.py calls get_settings() at
+      # module scope and sys.exit(1)s silently on the placeholder, so this
+      # process needs *a* value; it signs nothing here.
+      SECRET_KEY: ${MCP_APP_SECRET_KEY:-}
+      # Must match the connector URL character for character, no trailing slash.
+      MCP_PUBLIC_ORIGIN: ${MCP_PUBLIC_ORIGIN:-}
+      # Total auth bypass; the config guard refuses to start if this is true.
+      DEV_MODE: "false"
+      MCP_SOCKET: /run/askesis-mcp/mcp.sock
+    profiles: ["mcp"]
+    volumes:
+      - ./data/run-mcp:/run/askesis-mcp
+    # Shares the MCP sidecar's netns, so it has no route to the app's sidecar.
+    # Verify: `docker compose exec mcp getent hosts tailscale` must FAIL.
+    network_mode: service:tailscale-mcp
+    depends_on:
+      db:
+        condition: service_healthy
+      tailscale-mcp:
+        condition: service_started
+
+# `default` carries db + the app and its sidecar. `mcpnet` carries db + the MCP
+# service and its sidecar. `db` is the only member of both, so the internet-
+# facing container has no network path to the app — which today would answer
+# unauthenticated at the network layer. Verify after any change to this file:
+#     docker compose exec mcp getent hosts tailscale   # must fail
+networks:
+  default:
+  mcpnet:
+
 volumes:
   pgdata:
   tailscale-state:
   garmin-tokens:
+  tailscale-mcp-state:

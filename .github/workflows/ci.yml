@@ -113,6 +113,40 @@ jobs:
           python -m alembic upgrade head
           python -m alembic downgrade base
 
+      # ── MCP connector isolation ────────────────────────────────────────
+      # Three invariants that are otherwise held only by reading the code, on
+      # the service that will face the public internet. Each is a grep because
+      # there is no test suite to express it in.
+      - name: MCP isolation invariants
+        run: |
+          set -e
+
+          # 1. Every user-data read goes through queries.py's owned() chokepoint,
+          #    which is the ONLY thing enforcing user scoping and deleted_at IS
+          #    NULL. A stray db.query() in tools.py would silently serve another
+          #    account's rows, or soft-deleted ones. (oauth.py/server.py legitimately
+          #    query the mcp_* bookkeeping tables; those carry no health data.)
+          if grep -n 'db\.query(' mcp_server/tools.py; then
+            echo "::error::tools.py must go through queries.py (owned/by_id/children_of), not db.query()"
+            exit 1
+          fi
+
+          # 2. The image ships no FastAPI and no routers. An *import* of app.main
+          #    or app.routers would break the build; catch it here first. Matches
+          #    import statements only, so the comments explaining this rule pass.
+          if grep -rnE '^[[:space:]]*(from|import)[[:space:]]+app\.(main|routers)' mcp_server/; then
+            echo "::error::mcp_server must not import app.main or app.routers"
+            exit 1
+          fi
+
+          # 3. The dependency split is the design: mcp's tree has no FastAPI.
+          if grep -qiE '^fastapi==' requirements-mcp.lock; then
+            echo "::error::fastapi appears in requirements-mcp.lock; the split is broken"
+            exit 1
+          fi
+
+          echo "MCP isolation invariants hold"
+
       - name: Check formatting with Ruff
         run: ruff format --check .
 
