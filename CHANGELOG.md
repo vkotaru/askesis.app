@@ -15,7 +15,57 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+**The app no longer listens on a TCP port.** It serves on a Unix domain socket and
+the Tailscale sidecar dials that socket instead of `127.0.0.1:8000`. That is a
+change to the deployment's shape rather than to any feature, which is why this is a
+major version: the container, the sidecar and `tailscale/serve.json` now have to
+agree, and a sidecar or compose file from before this release will not work with an
+image from after it (or vice versa). `deploy.sh` moves all three together, so a
+normal tag deploy is still one command.
+
+**Upgrading:** add `PUBLIC_URL=https://askesis.<your-tailnet>.ts.net` to `.env`
+before deploying, or `deploy.sh` will skip the half of its new smoke test that
+checks the app is actually serving. Nothing else is required — the new `./data/run`
+mount is created automatically and holds only a transient socket, so it needs no
+backup. Rolling back is `./deploy.sh <previous-tag>`; do not hand-revert only one
+of `APP_SOCKET` or `serve.json`, as either alone returns 502 on every request.
+
 ### Fixed
+
+- **Port 8000 is closed — properly this time.** `http://<tailnet-ip>:8000` answered
+  in plain HTTP to anything on the tailnet. v1.2.5 tried to fix this by binding
+  `127.0.0.1` instead of `0.0.0.0` and **did not work**: in userspace mode
+  tailscaled's netstack rewrites every inbound tailnet connection to `127.0.0.1`
+  with the port unchanged and no allowlist, so loopback is exactly where it
+  delivers and no bind address can close a port. The app now serves on a **Unix
+  domain socket** (`/run/askesis/app.sock`, on a `./data/run` mount shared with the
+  sidecar) and has no TCP listener at all, so netstack's dial fails and the peer
+  gets a RST. `tailscale/serve.json` dials `unix:` that path.
+
+  Two consequences worth knowing. `--forwarded-allow-ips` had to become `'*'` on
+  the socket path: over a UDS uvicorn reports the client as `None`, so a numeric
+  allowlist silently drops every `X-Forwarded-*` header with no error — `'*'` is
+  tighter here than the old loopback value, because only a process with filesystem
+  access to the socket can connect at all, and Serve *sets* those headers rather
+  than appending. And Serve rewrites `Host` to `localhost` for socket targets; the
+  real value stays in `X-Forwarded-Host`. Nothing reads `Host` today.
+
+### Added
+
+- **`deploy.sh` now smoke-tests the deploy.** It polls `$PUBLIC_URL/api/version`
+  (new, optional, in `.env`) until the commit just deployed is served, then asserts
+  `http://<tailnet-ip>:8000` is refused, and prints the exact recovery on failure —
+  including `git checkout -- docker-compose.yml tailscale/serve.json`, without which
+  the dirty-tree guard refuses the documented rollback. Nothing else in the repo
+  makes an HTTP request: `release.sh` overrides the `CMD`, so the uvicorn line is
+  executed by no gate and a broken serve target would otherwise ship undetected.
+
+### Changed
+
+- **The Tailscale sidecar image is pinned** (`v1.102.4`) instead of tracking
+  `:latest`. `docker compose up` does not re-pull a floating tag, so the deployed
+  version was whatever happened to be on the box — for the one dependency the
+  socket design rests on.
 
 - **Personal names removed from a public repo.** `scripts/garmin_sync.py` used a
   real account username in its usage examples, and the login screen's form

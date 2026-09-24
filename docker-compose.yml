@@ -29,12 +29,16 @@ services:
       retries: 12
 
   # Tailscale sidecar: joins the tailnet as "askesis" -> askesis.<tailnet>.ts.net,
-  # terminates HTTPS via Tailscale Serve, and proxies to the app on 127.0.0.1:8000
-  # (the app shares this container's network namespace). Userspace mode = no extra
+  # terminates HTTPS via Tailscale Serve, and proxies to the app over a Unix
+  # socket on the shared ./data/run mount. Userspace mode = no extra
   # host caps/devices needed. TS_ACCEPT_DNS=false keeps Docker's DNS so the app can
   # still resolve the `db` service.
   tailscale:
-    image: tailscale/tailscale:latest
+    # Pinned, not :latest. Serve's `unix:` proxy target is the whole reason the
+    # app has no TCP port; `docker compose up` does not re-pull a floating tag,
+    # so :latest would mean "whatever was on this box first" for the one
+    # dependency this design rests on. Verified against v1.102.x.
+    image: tailscale/tailscale:v1.102.4
     hostname: askesis
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
@@ -46,6 +50,9 @@ services:
     volumes:
       - tailscale-state:/var/lib/tailscale
       - ./tailscale/serve.json:/config/serve.json:ro
+      # The app's listening socket. Both containers share a NETWORK namespace
+      # but not a filesystem, so the socket needs a mount on both sides.
+      - ./data/run:/run/askesis
     restart: unless-stopped
 
   app:
@@ -64,13 +71,22 @@ services:
     # DATABASE_URL is fixed to the bundled db service and overrides any value in .env.
     environment:
       DATABASE_URL: postgresql://askesis:${POSTGRES_PASSWORD}@db:5432/askesis
+      # Listen on a Unix socket instead of a TCP port. Unsetting this reverts
+      # the image to a loopback TCP bind — but see the CAUTION below: reverting
+      # here alone takes the app down, because serve.json dials the socket.
+      APP_SOCKET: /run/askesis/app.sock
     # Share the Tailscale sidecar's network namespace: no host ports are
-    # published, and Serve proxies to 127.0.0.1:8000.
+    # published, and Serve reaches the app over the Unix socket below.
     #
-    # Sharing the namespace means "all interfaces" includes the TAILNET one, so
-    # the app must bind loopback (see the CMD in ../Dockerfile). It used to bind
-    # 0.0.0.0, which left a second plain-HTTP door open at
-    # http://<tailnet-ip>:8000 next to the intended HTTPS one on 443.
+    # Sharing the namespace is exactly why there is no TCP port. In userspace
+    # mode tailscaled forwards EVERY inbound tailnet connection to 127.0.0.1 on
+    # the same port, with no allowlist — so binding loopback does not close a
+    # port (v1.2.5 tried that; :8000 still answered). Only having nothing
+    # listening on TCP does.
+    #
+    # CAUTION: APP_SOCKET above and the Proxy target in tailscale/serve.json are
+    # one setting in two files. Changing either alone yields a 502 on every
+    # request. To roll back, revert BOTH, then `docker compose down && up -d`.
     network_mode: service:tailscale
     depends_on:
       db:
@@ -84,6 +100,10 @@ services:
     # old `uploads` named volume.
     volumes:
       - ./data/uploads:/app/backend/uploads
+      # Where uvicorn creates its listening socket, shared with the sidecar.
+      # A bind mount, not a named volume: the operator can inspect it from the
+      # host, and `docker volume prune` cannot orphan it.
+      - ./data/run:/run/askesis
       # Garmin session token. A named volume, not a bind mount: the client
       # writes it 0600 inside a 0700 dir and nothing on the host should need to
       # read it. Losing it costs a re-login, and Garmin rate-limits those.

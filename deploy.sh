@@ -151,6 +151,82 @@ echo "==> Restarting"
 $DC down
 $DC up -d
 
+# ---------------------------------------------------------------------------
+# Smoke test.
+#
+# Nothing else in this repo makes an HTTP request: CI, scripts/release.sh and
+# the image build all stop at `import app.main` + `alembic upgrade head`, and
+# release.sh overrides the CMD entirely — so the uvicorn invocation is never
+# executed by any gate. A wrong socket path, a sidecar too old for `unix:`
+# targets, or an APP_SOCKET that never reached the container would all produce
+# a 502 on every request with nothing anywhere saying so, and be discovered by
+# a human opening the app. Two assertions close that gap.
+# ---------------------------------------------------------------------------
+echo "==> Smoke test"
+
+smoke_fail() {
+  echo >&2
+  echo "ERROR: $1" >&2
+  echo >&2
+  echo "  Logs:       $DC logs --tail=50 app" >&2
+  echo "              $DC logs --tail=50 tailscale" >&2
+  echo "  Serve tgt:  $DC exec tailscale tailscale serve status" >&2
+  if [ "$CURRENT_REF" != "detached" ]; then
+    echo "  Roll back:  ./deploy.sh $CURRENT_REF" >&2
+  else
+    echo "  Roll back:  ./deploy.sh <last-good-tag>" >&2
+  fi
+  echo >&2
+  echo "  NOTE: APP_SOCKET (docker-compose.yml) and the Proxy target in" >&2
+  echo "  tailscale/serve.json are one setting in two files — reverting either" >&2
+  echo "  alone still 502s. And if you hand-edit them, deploy.sh will refuse to" >&2
+  echo "  run while the tree is dirty, so undo them before rolling back:" >&2
+  echo "      git checkout -- docker-compose.yml tailscale/serve.json" >&2
+  exit 1
+}
+
+# 1. The HTTPS front door serves the commit we just deployed.
+#
+# PUBLIC_URL is the tailnet origin (same hostname already written into
+# CORS_ORIGINS). Optional: a fresh box may not have it yet and a deploy should
+# still finish, so an unset value downgrades to a warning rather than failing.
+PUBLIC_URL="$(grep -E '^[[:space:]]*PUBLIC_URL=' .env 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d "\"' " || true)"
+
+if [ -n "${PUBLIC_URL:-}" ]; then
+  got=""
+  ok=""
+  for _ in $(seq 1 30); do
+    got="$(curl -fsS --max-time 5 "$PUBLIC_URL/api/version" 2>/dev/null | grep -o '"commit":"[^"]*"' | cut -d'"' -f4 || true)"
+    if [ "$got" = "$SHA" ]; then ok=1; break; fi
+    sleep 2
+  done
+  [ -n "$ok" ] || smoke_fail "$PUBLIC_URL did not serve $SHORT_SHA within 60s (saw: ${got:-no response})"
+  echo "    ok: $PUBLIC_URL serves $SHORT_SHA"
+else
+  echo "    SKIPPED serving check — PUBLIC_URL not set in .env." >&2
+  echo "    Add PUBLIC_URL=https://askesis.<your-tailnet>.ts.net to enable it." >&2
+fi
+
+# 2. There is no TCP listener. tailscaled (userspace) forwards ANY inbound
+# tailnet port to 127.0.0.1 unchanged, so if :8000 answers, the socket branch
+# did not take effect and the loopback TCP fallback is serving instead.
+# Deliberately fails rather than skips when the IP cannot be read. A check that
+# silently passes when it could not run is worse than no check — it reports
+# "closed" whether or not the port is open, which is the exact failure this
+# whole change exists to prevent.
+TS_IP=""
+for _ in $(seq 1 5); do
+  TS_IP="$($DC exec -T tailscale tailscale ip -4 2>/dev/null | tr -d '\r' | head -n1 || true)"
+  [ -n "$TS_IP" ] && break
+  sleep 2
+done
+[ -n "$TS_IP" ] || smoke_fail "could not read the tailnet IP from the sidecar, so the port check could not run"
+
+if curl -s --max-time 3 -o /dev/null "http://$TS_IP:8000/api/version" 2>/dev/null; then
+  smoke_fail "http://$TS_IP:8000 is STILL REACHABLE — the app is listening on TCP, not the socket"
+fi
+echo "    ok: http://$TS_IP:8000 refused"
+
 echo "==> Status"
 $DC ps
 echo

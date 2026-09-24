@@ -45,23 +45,42 @@ ARG GIT_REF=unknown
 ENV GIT_SHA=$GIT_SHA \
     GIT_REF=$GIT_REF
 
-# Documentation only — nothing is published, and the bind below is loopback.
+# Documentation only — nothing is published, and in the deployed configuration
+# there is no TCP listener at all (see the CMD below).
 EXPOSE 8000
 
 # Migrate, seed the shared food list (best-effort), then serve.
 #
-# --host 127.0.0.1, NOT 0.0.0.0. This container shares the Tailscale sidecar's
-# network namespace (network_mode: service:tailscale in docker-compose.yml), so
-# 0.0.0.0 binds the *tailnet interface* too — which put a second, plain-HTTP
-# door on the app at http://<tailnet-ip>:8000, alongside the intended HTTPS one
-# that Serve proxies to loopback on 443. Both doors required a login, but only
-# one was meant to exist. Serve reaches us over loopback, so binding loopback
-# costs nothing and closes the other one.
+#   APP_SOCKET set   -> listen on a Unix socket; no TCP port exists anywhere.
+#   APP_SOCKET unset -> the old loopback TCP bind, kept so the image still runs
+#                       standalone (plain `docker run`) for debugging.
 #
-# --forwarded-allow-ips is loopback for the same reason. It tells uvicorn whose
-# X-Forwarded-* headers to believe, and those headers decide what the app thinks
-# the scheme, host and client IP are. It used to be '*', justified by the claim
-# that only the loopback Serve proxy could reach this port — which the bind above
-# made untrue. Naming loopback explicitly makes the justification true by
-# construction rather than by assumption.
-CMD ["sh", "-c", "python -m alembic upgrade head && (python seed_foods.py || echo 'seed skipped') && exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1'"]
+# WHY A SOCKET. This container shares the Tailscale sidecar's network namespace
+# (network_mode: service:tailscale), and in userspace mode tailscaled's netstack
+# rewrites every inbound tailnet connection to 127.0.0.1 with the PORT UNCHANGED
+# and no allowlist. The bind address therefore cannot close a port — loopback is
+# exactly where it forwards. v1.2.5 changed 0.0.0.0 -> 127.0.0.1 for that reason
+# and http://<tailnet-ip>:8000 still answered. The only way to close it is to
+# have nothing listening on TCP, so netstack's dial fails and the peer gets RST.
+#
+# [ -S ] GUARDS THE rm. uvicorn unlinks the socket itself on a clean shutdown, so
+# this only matters when a SIGKILL or power loss leaves a stale file that
+# create_unix_server() would refuse to bind over. Unguarded, `rm -f $APP_SOCKET`
+# is an unbounded delete running on every boot, in a container that also mounts
+# ./data/uploads — so test that it IS a socket before unlinking.
+#
+# --forwarded-allow-ips MUST be '*' on the socket path. Over a UDS getpeername()
+# returns a str, so uvicorn's get_remote_addr() returns None and
+# ProxyHeadersMiddleware evaluates `None in {"127.0.0.1"}` -> False, silently
+# dropping every X-Forwarded-* header with no error and no log line (uvicorn
+# 0.27.0 has no "unix" sentinel for this flag). '*' is safe HERE because the only
+# thing that can open the socket is a process with filesystem access to the
+# mount, and Tailscale Serve Sets — not appends — the forwarded headers.
+#   PRECONDITION: Serve sets X-Forwarded-Proto only when the inbound leg is TLS,
+#   and never Dels it. That holds while serve.json declares only TCP.443.HTTPS;
+#   adding a plain-HTTP handler would let a client's own value through.
+#
+# Serve also rewrites Host to "localhost" for unix targets (the real value stays
+# in X-Forwarded-Host). Nothing reads Host today — anything added later that
+# does, e.g. TrustedHostMiddleware, needs to know.
+CMD ["sh", "-c", "python -m alembic upgrade head && (python seed_foods.py || echo 'seed skipped') && if [ -n \"$APP_SOCKET\" ]; then if [ -S \"$APP_SOCKET\" ]; then rm -f \"$APP_SOCKET\"; fi; exec python -m uvicorn app.main:app --uds \"$APP_SOCKET\" --proxy-headers --forwarded-allow-ips='*'; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1'; fi"]

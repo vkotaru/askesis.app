@@ -321,11 +321,21 @@ because a meal needs a date and a label that the filename doesn't carry.
 - **Always use the `https://askesis.<tailnet>.ts.net` URL.** The sidecar serves
   HTTPS with a real cert, and the `DEV_MODE=false` session cookie is
   HTTPS-only, so plain HTTP silently fails to keep you logged in. There are no
-  plain-HTTP host ports anymore, and since v1.2.5 no plain-HTTP *tailnet* port
-  either: the app binds loopback, so Serve on 443 is the only way in. It used to
-  bind all interfaces, and because it shares the sidecar's network namespace that
-  included the tailnet — `http://<tailnet-ip>:8000` answered in plain HTTP right
-  next to the HTTPS front door.
+  plain-HTTP host ports anymore, and no plain-HTTP *tailnet* port either: the
+  app has **no TCP listener at all**. It serves on a Unix socket
+  (`/run/askesis/app.sock`, on the `./data/run` mount shared with the sidecar)
+  and Serve on 443 is the only way in.
+
+  v1.2.5 tried to close this by binding loopback instead of all interfaces, and
+  `http://<tailnet-ip>:8000` kept answering. The reason is worth knowing before
+  anyone tries that again: in userspace mode tailscaled forwards **every**
+  inbound tailnet connection to `127.0.0.1` on the same port, with no
+  allowlist — so loopback is precisely where it delivers, and no bind address
+  can close a port. Only having nothing listening on TCP does.
+
+  A consequence: `APP_SOCKET` in `docker-compose.yml` and the `Proxy` target in
+  `tailscale/serve.json` are **one setting written in two files**. Change either
+  alone and every request 502s. `deploy.sh` smoke-tests both after each deploy.
 - **`TS_ACCEPT_DNS=false`** is set on the sidecar on purpose — it stops Tailscale
   from overriding the container's DNS, so the app can still resolve the `db`
   service. Don't remove it.

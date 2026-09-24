@@ -108,6 +108,11 @@ records the Alembic head it shipped with, because that's what a rollback needs.
 `./deploy.sh v0.2.0` pins/rolls back; `./deploy.sh main` deploys unreleased work
 explicitly. It exports `GIT_SHA`/`GIT_REF` as build args so the container can report
 itself via `GET /api/version`, which is what the sidebar label reads at runtime.
+After `up -d` it smoke-tests the deploy: it polls `$PUBLIC_URL/api/version` (from
+`.env`) until the new commit is served, then asserts `http://<tailnet-ip>:8000` is
+refused. That check exists because nothing else in the repo makes an HTTP request —
+CI, `release.sh` and the image build all stop at `import app.main`, and `release.sh`
+overrides the `CMD`, so the uvicorn invocation is never executed by any gate.
 Read `SELF_HOSTING.md` first — it covers the Tailscale sidecar, the photo-uploads bind
 mount, and why the app gets its own tailnet hostname. **Rolling the container back does
 not roll the database back** (`alembic upgrade head` runs on every start) — see
@@ -293,6 +298,16 @@ changed something. Components re-read on it:
 
 ## Gotchas
 
+- **The app has no TCP listener in production.** It serves on a Unix socket
+  (`APP_SOCKET`, `/run/askesis/app.sock` on the `./data/run` mount shared with the
+  Tailscale sidecar), and `tailscale/serve.json` dials `unix:` that path. Those two
+  are **one setting in two files** — change either alone and every request 502s.
+  This is not cosmetic: in userspace mode tailscaled forwards every inbound tailnet
+  port to `127.0.0.1` unchanged, so no bind address can close a port (v1.2.5 tried
+  and `:8000` kept answering). Only the absence of a listener closes it. The socket
+  path also silently changes two things — uvicorn reports `client` as `None`, which
+  is why `--forwarded-allow-ips` must be `'*'` there, and Serve rewrites `Host` to
+  `localhost` (the real value stays in `X-Forwarded-Host`).
 - **Photos live on the server's disk**, under `UPLOADS_DIR` (`./data/uploads` bind-mounted
   into the container). The DB stores a path relative to that dir, so the mount is as much
   part of the data as the database is — back both up. The service worker caches
