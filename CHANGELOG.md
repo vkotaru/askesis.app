@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Changed
 
 - **The Daily Log page is now built around the two things still entered by hand.**
@@ -51,7 +55,6 @@ does not roll the database back — that head is what you would need to
   from Garmin is preferred, then a MET derived from average speed, then the commute
   default. A 30-minute commute comes out at roughly 6,400 equivalent steps; a flat
   "150 steps per minute" rule would have said 4,500.
-
 
 ## [2.1.2] - 2026-09-24
 
@@ -847,7 +850,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.1.2...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/vkotaru/askesis.app/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/vkotaru/askesis.app/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/vkotaru/askesis.app/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/vkotaru/askesis.app/compare/v2.0.0...v2.1.0
