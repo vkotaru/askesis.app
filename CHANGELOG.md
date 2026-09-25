@@ -15,6 +15,20 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **A day missing from the Garmin steps response was missed forever.** Steps for
+  the whole sync window arrive in one ranged request. If that response omitted a
+  day, the day was skipped — and because every later sync issued the same ranged
+  request, it was skipped again every time. The overlapping window exists so a
+  missed run gets repaired by the next one, and this was the one gap it could not
+  close: re-syncing filled today and left yesterday permanently blank.
+
+  A day absent from the ranged response now gets its own single-day request. Days
+  repaired that way are listed in the sync summary rather than fixed silently, so
+  a pattern of them is visible instead of folklore.
+
+
 ## [2.2.1] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`

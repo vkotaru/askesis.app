@@ -21,6 +21,36 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-24 — The backfill window could not actually backfill
+
+**What changed**
+- `sync_user` fetches the whole window's steps in one ranged call. When that
+  response omits a day, that day now gets its own single-day request instead of
+  being skipped, and `SyncReport.steps_backfilled` names every day repaired that
+  way.
+
+**Why it mattered**
+- The overlapping window exists so a failed or missed run is repaired by the
+  next one. But the repair only ever re-issued the *same ranged call* — so a day
+  that call omits is missed again on every subsequent sync, forever. Syncing
+  "again" fixed today and left yesterday permanently blank, which is the opposite
+  of what a catch-up window is for. Reported as: "I synced and only got today's
+  steps, I'm only seeing yesterday's bike."
+- The repair is **recorded, not silent**. A window that keeps needing per-day
+  patching is saying something about the upstream endpoint, and hiding that would
+  turn a diagnosable pattern into folklore.
+
+**Watch out**
+- `steps_by_day.get(iso)` cannot distinguish "absent" from "present and zero" —
+  the fallback keys off `iso not in steps_by_day` for that reason. A zero is a
+  real answer meaning the day was measured and empty.
+- Verified with a fake client whose ranged call deliberately omits yesterday:
+  one single-day request follows, the value lands, and the summary names the day.
+- That test also showed the importer's `today` running a day ahead of the
+  machine's local date, because `garmin_sync_tz` defaults to **UTC**. Harmless
+  for the window (it is wide enough), but it means an unset timezone silently
+  shifts which day counts as "in progress" for anyone west of Greenwich.
+
 ## 2026-09-24 — Today's steps were being withheld on purpose, and it read as a bug
 
 **What changed**

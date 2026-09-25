@@ -89,6 +89,10 @@ class SyncReport:
     daily_logs_created: int = 0
     daily_logs_filled: int = 0
     days_seen: int = 0
+    # Days the ranged steps call omitted and a single-day request recovered.
+    # Recorded rather than silently repaired: a window that keeps needing to be
+    # patched is telling you something about the upstream endpoint.
+    steps_backfilled: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -98,6 +102,11 @@ class SyncReport:
             f"daily logs: +{self.daily_logs_created} new, "
             f"{self.daily_logs_filled} filled | "
             f"{self.days_seen} days | {len(self.errors)} errors"
+            + (
+                f" | steps backfilled per-day: {', '.join(self.steps_backfilled)}"
+                if self.steps_backfilled
+                else ""
+            )
         )
 
 
@@ -180,11 +189,12 @@ def water_ml_from(payload: dict[str, Any] | None) -> int | None:
 
 
 def steps_from(value: Any) -> int | None:
-    """A day's step total. Same falsy guard as its two neighbours, and for a
-    sharper reason: `_fill_daily_log` only ever writes into a NULL column, so a
-    zero written once can never be corrected — not by Garmin, and not by a
-    later sync. A day Garmin has no count for reads as 0 here, so letting that
-    through would freeze the blank at zero permanently."""
+    """A day's step total, or None when Garmin has no count for that day.
+
+    Garmin reports an unmeasured day as 0, which is indistinguishable from a day
+    spent entirely still. Writing that 0 would state something the watch never
+    observed, so a falsy value is treated as absent — the same guard as sleep and
+    hydration use."""
     return round(value) if value else None
 
 
@@ -425,12 +435,35 @@ def sync_user(
         except Exception as exc:  # noqa: BLE001
             report.errors.append(f"hydration {iso}: {type(exc).__name__}")
 
+        # The ranged steps call above is one request for the whole window, which
+        # is the right trade against a rate-limited endpoint — but when it comes
+        # back missing a day, that day silently never gets steps, and the next
+        # sync fetches the same range and misses it again. The overlapping window
+        # exists precisely so a failed run is repaired later; a gap the window
+        # cannot close defeats the point of having one. So ask for that day on
+        # its own before giving up on it.
+        steps = steps_by_day.get(iso)
+        if iso not in steps_by_day:
+            try:
+                steps = next(
+                    (
+                        steps_from(row.get("totalSteps"))
+                        for row in api.get_daily_steps(iso, iso)
+                        if row.get("calendarDate") == iso
+                    ),
+                    None,
+                )
+                if steps is not None:
+                    report.steps_backfilled.append(iso)
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append(f"steps {iso}: {type(exc).__name__}: {exc}")
+
         _fill_daily_log(
             db,
             user,
             day,
             {
-                "steps": steps_by_day.get(iso),
+                "steps": steps,
                 "sleep_hours": sleep_hours_from(sleep),
                 "water_ml": water_ml_from(hydration),
             },
