@@ -33,7 +33,7 @@
   const k = (n: number) => `${(n / 1000).toFixed(1)}k`;
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <div class="flex items-center gap-2 mb-1">
     <Footprints size={20} class="text-cardio-500" />
     <h2 class="text-lg font-semibold">Steps</h2>

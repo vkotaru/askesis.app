@@ -265,8 +265,8 @@
   <!-- Main content -->
   <!-- pl-14 clears the mobile icon rail below; the rail is fixed, so it takes
        no flow space of its own. -->
-  <main class="flex-1 overflow-auto pt-14 pl-14 md:pt-0 md:pl-0">
-    <div class={clsx('mx-auto transition-all duration-300 p-4 md:p-8 content-area', widthClass)}>
+  <main class="flex-1 overflow-auto pt-14 pl-12 md:pt-0 md:pl-0">
+    <div class={clsx('mx-auto transition-all duration-300 px-3 py-4 md:p-8 content-area', widthClass)}>
       <slot />
     </div>
   </main>
@@ -281,7 +281,7 @@
        both sizes. Icons only at 56px; the hamburger above still opens the full
        labelled menu, which is also the accessible path to the same links. -->
   <nav
-    class="md:hidden fixed left-0 top-14 bottom-0 z-40 w-14 flex flex-col items-center gap-1 overflow-y-auto scrollbar-hide bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 py-2 pb-safe"
+    class="md:hidden fixed left-0 top-14 bottom-0 z-40 w-12 flex flex-col items-center gap-1 overflow-y-auto scrollbar-hide bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 py-2 pb-safe"
     aria-label="Primary"
   >
     {#each navItems as { href, icon: Icon, label, color }}
@@ -292,7 +292,7 @@
         aria-label={label}
         aria-current={isActive ? 'page' : undefined}
         class={clsx(
-          'relative flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0 transition-colors',
+          'relative flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 transition-colors',
           isActive
             ? 'bg-gray-100 dark:bg-gray-700'
             : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'

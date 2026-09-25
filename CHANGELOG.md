@@ -15,6 +15,23 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The weekly calorie average divided by seven no matter how many days were
+  logged.** Two days totalling 4,419 calories reported as 631/day. It now averages
+  over the days that actually have a figure — matching the protein, carbs and fat
+  averages beside it, which already did — and the heading says how many days it
+  covers when that is fewer than a full week.
+
+### Changed
+
+- **Reclaimed width the mobile rail had taken.** The rail is 48px instead of 56px,
+  the page gutter 12px instead of 16px on phones, and dashboard cards use tighter
+  padding below `md`. Content inside a card on a 390px screen goes from 254px back
+  to 286px. The snapshot tiles also stop breaking between a value and its unit, so
+  "2761 ml" no longer wraps onto two lines.
+
+
 ## [2.2.2] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`

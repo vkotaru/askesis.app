@@ -187,7 +187,13 @@
     const vals = weekNutrition.map(n => n.fat_g || 0).filter(v => v > 0);
     return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : undefined;
   })();
-  $: weekCaloriesAvg = Math.round(weekTotalCalories / 7);
+  // Averaged over days that HAVE a figure, not over the calendar week. Dividing
+  // by 7 made an unfinished week look like starvation — two logged days totalling
+  // 4,419 reported as 631/day. The protein/carbs/fat averages beside this one
+  // already filtered to days with data; calories was the one that didn't.
+  $: caloriesDaysLogged = Object.values(dailyCaloriesMap).filter((v) => v > 0).length;
+  $: weekCaloriesAvg =
+    caloriesDaysLogged > 0 ? Math.round(weekTotalCalories / caloriesDaysLogged) : 0;
 
   // Day summary for modal
   $: daySummary = selectedDay ? {
@@ -300,7 +306,9 @@
 
     <div class="mb-8">
       <TodayNutritionCard
-        title="Week Avg / Totals — {weekCaloriesAvg} cal/day"
+        title="Week Avg / Totals — {weekCaloriesAvg} cal/day{caloriesDaysLogged > 0 && caloriesDaysLogged < 7
+          ? ` over ${caloriesDaysLogged} day${caloriesDaysLogged === 1 ? '' : 's'}`
+          : ''}"
         calories={weekTotalCalories}
         protein_g={weekProteinAvg}
         carbs_g={weekCarbsAvg}

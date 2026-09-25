@@ -20,7 +20,7 @@
     <div class="flex items-start justify-between">
       <div>
         <p class="text-sm text-gray-500 mb-1">Weight</p>
-        <p class="text-2xl font-bold">
+        <p class="text-xl md:text-2xl font-bold whitespace-nowrap">
           {latestWeightLog?.weight ? weightFromMetric(latestWeightLog.weight, $settings.weight_unit).toFixed(2) : '—'}
           {#if latestWeightLog?.weight}
             <span class="text-sm font-normal text-gray-400 ml-1">{getWeightLabel($settings.weight_unit)}</span>
@@ -40,7 +40,7 @@
     <div class="flex items-start justify-between">
       <div>
         <p class="text-sm text-gray-500 mb-1">Sleep</p>
-        <p class="text-2xl font-bold">
+        <p class="text-xl md:text-2xl font-bold whitespace-nowrap">
           {latestSleepLog?.sleep_hours ?? '—'}
           {#if latestSleepLog?.sleep_hours}
             <span class="text-sm font-normal text-gray-400 ml-1">hrs</span>
@@ -60,7 +60,7 @@
     <div class="flex items-start justify-between">
       <div>
         <p class="text-sm text-gray-500 mb-1">Steps</p>
-        <p class="text-2xl font-bold">{latestStepsLog?.steps ?? '—'}</p>
+        <p class="text-xl md:text-2xl font-bold whitespace-nowrap">{latestStepsLog?.steps ?? '—'}</p>
         {#if latestStepsLog && latestStepsLog.date !== today}
           <p class="text-xs text-gray-400 mt-1">{format(new Date(latestStepsLog.date), 'MMM d')}</p>
         {/if}
@@ -75,7 +75,7 @@
     <div class="flex items-start justify-between">
       <div>
         <p class="text-sm text-gray-500 mb-1">Water</p>
-        <p class="text-2xl font-bold">
+        <p class="text-xl md:text-2xl font-bold whitespace-nowrap">
           {formatWater(latestWaterLog?.water_ml, $settings.water_unit)}
         </p>
         {#if latestWaterLog && latestWaterLog.date !== today}

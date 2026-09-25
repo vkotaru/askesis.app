@@ -34,7 +34,7 @@
   $: mLabel = getMeasurementLabel(measurementUnit);
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <h2 class="text-sm font-semibold text-gray-500 mb-4">Body Measurements</h2>
   <div class="grid grid-cols-3 gap-2 mb-3 text-[10px] text-gray-400 uppercase tracking-wide">
     <span></span>

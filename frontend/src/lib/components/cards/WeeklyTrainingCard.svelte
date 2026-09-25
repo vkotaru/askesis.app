@@ -15,7 +15,7 @@
   $: maxStrength = Math.max(...weeklyData.map(w => w.strengthCount), 1);
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <div class="flex items-center gap-2 mb-4">
     <Dumbbell size={20} class="text-strength-500" />
     <h2 class="text-lg font-semibold">Weekly Training</h2>

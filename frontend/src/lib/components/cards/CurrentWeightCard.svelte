@@ -9,7 +9,7 @@
   export let weightUnit: WeightUnit = 'kg';
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <p class="text-sm text-gray-500 mb-1">Current Weight</p>
   <div class="flex items-baseline gap-2">
     <p class="text-4xl font-bold">

@@ -27,7 +27,7 @@
   $: intakeHeight = 200; // px
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <div class="flex items-center gap-2 mb-1">
     <Flame size={20} class="text-nutrition-500" />
     <h2 class="text-lg font-semibold">Calories & Protein</h2>

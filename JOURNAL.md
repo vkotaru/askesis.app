@@ -21,6 +21,30 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-24 — Weekly calorie average divided by 7 regardless
+
+**What changed**
+- `weekCaloriesAvg` averages over days that have a figure, not over the calendar
+  week, and the heading says how many days it covers when that is fewer than 7.
+- The mobile rail is 48px rather than 56px, the page gutter is 12px rather than
+  16px on phones, and dashboard cards are `p-4 md:p-6`. Net: content inside a
+  card on a 390px screen goes 254px -> 286px, recovering 32 of the 56px the rail
+  had taken.
+- The four snapshot tiles no longer break between a value and its unit.
+
+**Watch out**
+- `Math.round(weekTotalCalories / 7)` made an unfinished week read as
+  starvation: two logged days totalling 4,419 reported as **631 cal/day**. The
+  protein, carbs and fat averages beside it already filtered to days with data —
+  calories was the single one that didn't, which is why it looked plausible
+  rather than obviously broken.
+- The heading now carries "over N days". An average whose denominator is not the
+  obvious one has to say so, or it is just a smaller number with no explanation.
+- **Padding compounds.** The rail cost 56px, but the visible squeeze was worse
+  than that: page gutter *and* card padding both sat inside it, so 24px of card
+  padding on each side was being spent on a column that had already lost 56px.
+  When a layout gains an edge element, check the paddings nested inside it.
+
 ## 2026-09-24 — The backfill window could not actually backfill
 
 **What changed**

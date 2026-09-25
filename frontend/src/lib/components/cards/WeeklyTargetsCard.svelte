@@ -50,7 +50,7 @@
   $: doneCount = plan.filter((k) => done.has(k)).length;
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <div class="flex items-center gap-2 mb-4">
     <Target size={20} class="text-primary-500" />
     <h2 class="text-lg font-semibold">Weekly Targets</h2>

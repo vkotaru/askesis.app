@@ -36,7 +36,7 @@
   $: totalMins = activities.reduce((sum, a) => sum + (a.duration_mins || 0), 0);
 </script>
 
-<div class="card p-6">
+<div class="card p-4 md:p-6">
   <h2 class="text-sm font-semibold text-gray-500 mb-4">
     This Week
     <span class="font-normal text-gray-400 ml-1">
