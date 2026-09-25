@@ -28,6 +28,7 @@
     type CatalogEntry,
     type LastSession,
     type SetType,
+    type Routine,
   } from '$lib/api/client';
 
   export let exercises: Exercise[] = [];
@@ -42,6 +43,16 @@
 
   /** Last-session sets per catalogue id. Fetched once per exercise, then reused. */
   let lastByCatalogId: Record<number, LastSession> = {};
+
+  /** Saved workouts, offered only while the session is still empty. */
+  let routines: Routine[] = [];
+  void (async () => {
+    try {
+      routines = await api.getRoutines();
+    } catch {
+      // Offline or none saved — the shortcut simply does not appear.
+    }
+  })();
   /** Which exercise cards have their note field open. */
   let noteOpen: Record<number, boolean> = {};
 
@@ -162,6 +173,30 @@
     exercises[exerciseIndex] = { ...exercises[exerciseIndex], sets_detail: sets };
     exercises = exercises;
     emit();
+  }
+
+  /**
+   * Start this session from a saved routine.
+   *
+   * Copies the movements and **not** the targets. A routine's `target_reps` is
+   * what you meant to do; writing it into the set would record it as what you
+   * did, and then "did I hit my targets" compares a number against itself. The
+   * placeholders from last session still apply, which is the honest prefill.
+   */
+  function applyRoutine(routine: Routine) {
+    exercises = routine.exercises.map((r, i) => ({
+      name: r.name,
+      catalog_id: r.catalog_id ?? null,
+      position: i,
+      sets_detail: Array.from({ length: r.target_sets ?? 1 }, (_, n) => ({
+        set_number: n + 1,
+        weight_kg: null,
+        reps: null,
+        set_type: 'working' as SetType,
+      })),
+    }));
+    emit();
+    for (const r of routine.exercises) if (r.catalog_id) void loadLast(r.catalog_id);
   }
 
   function emit() {
@@ -342,6 +377,25 @@
       {/if}
     </div>
   {/each}
+
+  {#if exercises.length === 0 && routines.length > 0}
+    <!-- Only while empty: once you have started logging, replacing the list
+         wholesale is far more likely to be a mistake than an intention. -->
+    <div class="space-y-1">
+      <p class="text-[11px] text-gray-400">Start from a routine</p>
+      <div class="flex flex-wrap gap-2">
+        {#each routines as routine}
+          <button
+            type="button"
+            on:click={() => applyRoutine(routine)}
+            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 hover:border-primary-400 hover:text-primary-600"
+          >
+            {routine.name}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   <button
     type="button"

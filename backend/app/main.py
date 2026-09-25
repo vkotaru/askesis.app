@@ -25,6 +25,7 @@ from app.routers import (
     sync,
     training,
     exercise_catalog,
+    routines,
 )
 
 # Configure logging
@@ -134,6 +135,7 @@ app.include_router(
     prefix="/api/exercise-catalog",
     tags=["exercise-catalog"],
 )
+app.include_router(routines.router, prefix="/api/routines", tags=["routines"])
 app.include_router(
     integrations.router, prefix="/api/integrations", tags=["integrations"]
 )

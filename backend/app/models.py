@@ -502,6 +502,38 @@ class MealTemplate(Base):
     description: Mapped[str | None] = mapped_column(Text)
 
 
+class RoutineExercise(Base):
+    """One planned movement inside a routine.
+
+    The parent is `workout_templates`, which existed as dead code — model,
+    migration and a backup-spec entry, never a router or a writer. Reusing it
+    avoids a second header table that would mean the same thing.
+
+    `target_*` are intentions, not results. They are never copied into a logged
+    set automatically: "what I planned" and "what I did" have to stay separable,
+    or "did I hit my targets" stops being answerable.
+    """
+
+    __tablename__ = "routine_exercises"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    routine_id: Mapped[int] = mapped_column(
+        ForeignKey("workout_templates.id", ondelete="CASCADE"), index=True
+    )
+    catalog_id: Mapped[int | None] = mapped_column(
+        ForeignKey("exercise_catalog.id"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))  # denormalised, see Exercise
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    target_sets: Mapped[int | None] = mapped_column(Integer)
+    target_reps: Mapped[int | None] = mapped_column(Integer)
+    target_weight_kg: Mapped[float | None] = mapped_column(Float)
+    notes: Mapped[str | None] = mapped_column(String(255))
+
+    routine: Mapped["WorkoutTemplate"] = relationship(back_populates="exercises")
+    catalog: Mapped["ExerciseCatalog | None"] = relationship("ExerciseCatalog")
+
+
 class WorkoutTemplate(Base):
     __tablename__ = "workout_templates"
 
@@ -513,7 +545,13 @@ class WorkoutTemplate(Base):
     default_tags: Mapped[str | None] = mapped_column(String(255))
     exercises_json: Mapped[str | None] = mapped_column(
         Text
-    )  # JSON for strength templates
+    )  # Legacy, never written. Superseded by the `exercises` relationship below.
+
+    exercises: Mapped[list["RoutineExercise"]] = relationship(
+        back_populates="routine",
+        cascade="all, delete-orphan",
+        order_by="RoutineExercise.position",
+    )
 
 
 class ProgressPhoto(Base):

@@ -21,6 +21,31 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-25 — Strength logging, stage 4: routines
+
+**What changed**
+- `routine_exercises` hanging off `workout_templates`, a `/api/routines` router,
+  a `/routines` page, and a "start from a routine" shortcut in the logger.
+
+**Watch out**
+- **Starting a session copies the movements, never the targets.** A routine's
+  `target_reps` is what you meant to do. Writing it into the logged set records
+  it as what you did, and then "did I hit my target" compares a number with
+  itself. Target sets decide how many blank rows appear; nothing else crosses.
+- The shortcut only shows while the session is **empty**. Once you have started
+  logging, replacing the list wholesale is far likelier to be a misfire than an
+  intention.
+- Routines are **per account** while the catalogue is shared — the movements are
+  communal, the programming is not. Two people training differently out of one
+  library is the normal case.
+- `workout_templates` was dead code from the initial schema (model, migration
+  and a backup-spec row, never a router or a writer), so it became the header
+  rather than adding a second table meaning the same thing. Its `exercises_json`
+  is left untouched; nothing ever wrote it.
+- Backup-spec ordering is load-bearing: `routine_exercises` names both
+  `workout_templates` and `exercise_catalog` as parents, so it has to sit after
+  **both**. Checked with a parents-before-children sweep over `_BACKUP_SPEC`.
+
 ## 2026-09-25 — Strength logging, stage 3: offline
 
 **What changed**

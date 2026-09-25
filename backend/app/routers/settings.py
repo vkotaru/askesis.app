@@ -224,6 +224,11 @@ _BACKUP_SPEC: tuple[_TableSpec, ...] = (
     # row is the household's shared movement library, part of the target install
     # rather than something one person's backup should carry or recreate.
     _TableSpec("exercise_catalog", user_column="user_id"),
+    _TableSpec(
+        "routine_exercises",
+        required_parents=(("routine_id", "workout_templates"),),
+        optional_parents=(("catalog_id", "exercise_catalog"),),
+    ),
     _TableSpec("meals", user_column="user_id"),
     _TableSpec("meal_food_items", required_parents=(("meal_id", "meals"),)),
     _TableSpec("activities", user_column="user_id"),

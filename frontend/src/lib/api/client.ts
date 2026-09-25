@@ -189,6 +189,35 @@ export interface CatalogInput {
   notes?: string | null;
 }
 
+/**
+ * A saved workout. Unlike the catalogue, a routine belongs to one account —
+ * the movements are shared, how you program them is not.
+ */
+export interface RoutineExercise {
+  id?: number;
+  name: string;
+  catalog_id?: number | null;
+  position?: number;
+  /** Intentions, never copied into a logged set automatically. */
+  target_sets?: number | null;
+  target_reps?: number | null;
+  target_weight_kg?: number | null;
+  notes?: string | null;
+}
+
+export interface Routine {
+  id: number;
+  name: string;
+  default_duration_mins?: number | null;
+  exercises: RoutineExercise[];
+}
+
+export interface RoutineInput {
+  name: string;
+  default_duration_mins?: number | null;
+  exercises: RoutineExercise[];
+}
+
 /** What you did last time, for prefilling. Always your own history. */
 export interface LastSession {
   date: string | null;
@@ -735,6 +764,15 @@ export const api = {
     fetchJSON(`/api/exercise-catalog/${id}`, { method: 'DELETE' }),
   getLastSession: (id: number) =>
     fetchJSON<LastSession>(`/api/exercise-catalog/${id}/last`),
+
+  // ── Routines (per account) ───────────────────────────────────────────────
+  getRoutines: () => fetchJSON<Routine[]>('/api/routines/'),
+  createRoutine: (data: RoutineInput) =>
+    fetchJSON<Routine>('/api/routines/', { method: 'POST', body: JSON.stringify(data) }),
+  updateRoutine: (id: number, data: RoutineInput) =>
+    fetchJSON<Routine>(`/api/routines/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteRoutine: (id: number) =>
+    fetchJSON(`/api/routines/${id}`, { method: 'DELETE' }),
   getCalendar: (year: number, month: number, userId?: number) => {
     const params = userId ? `?user_id=${userId}` : '';
     return fetchJSON<Record<string, CalendarEvent[]>>(
