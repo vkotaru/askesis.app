@@ -21,6 +21,34 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-24 — Today's steps were being withheld on purpose, and it read as a bug
+
+**What changed**
+- Removed the `partial_day` suppression in `app/garmin.py`. Steps and water for a
+  day still in progress are now written like everything else.
+
+**What didn't work — the reasoning that put it there**
+- The guard existed because a cumulative total is "meaningless until the day is
+  over", so a mid-day count should not become the day's value. Both halves were
+  wrong. It is **self-correcting**: a field this importer owns is refreshed on
+  every later run (`owned_by` falls through to `setattr`), and the sync window
+  re-reads the last few days, so a partial number is replaced as the day fills in
+  and finalised once it ends. And withholding is **not neutral** — with bike
+  equivalents now stacked on the same bar, today showed a blue cycling block and
+  no green walking at all, which reads as a broken import rather than a
+  deliberate silence.
+- The general lesson: refusing to show a number is a UI decision, not a safe
+  default. "Meaningless until complete" was reasoning about data purity in a
+  place where the user was reasoning about whether the app was working.
+
+**Watch out**
+- The protections that actually matter are separate and still hold: `is_manual`
+  means a value you typed is never overwritten, and a field you deliberately
+  cleared stays cleared. Verified all four cases — partial write, later
+  correction, manual value, cleared field.
+- A day synced once and never again keeps its partial count. Strictly better
+  than no count, but worth knowing if the schedule stops.
+
 ## 2026-09-24 — Daily Log rebuilt around the two fields still typed by hand
 
 **What changed**

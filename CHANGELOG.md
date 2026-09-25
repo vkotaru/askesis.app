@@ -15,6 +15,21 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Today's step count is no longer withheld.** The Garmin importer deliberately
+  skipped cumulative totals — steps and water — for a day still in progress, on
+  the grounds that a partial figure is meaningless until the day ends. In practice
+  that meant the dashboard showed no walking for today while today's *rides* did
+  appear, which looks like a failed import rather than an intentional gap.
+
+  The suppression bought nothing: a field the importer owns is refreshed on every
+  later run and the sync window re-reads the last few days, so a partial count is
+  corrected as the day fills in and settles once it is over. The protections that
+  matter are unaffected — a value you entered by hand is still never overwritten,
+  and a field you deliberately cleared stays cleared.
+
+
 ## [2.2.0] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`

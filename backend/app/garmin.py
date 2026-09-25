@@ -227,20 +227,12 @@ def _upsert_activity(
         report.activities_updated += 1
 
 
-# Fields that are cumulative over a calendar day, and so are meaningless until
-# that day is over. Sleep is not one of them: under Askesis's wake-up-day
-# convention the night ending this morning is already complete, so it is safe
-# to write for the current day.
-_DAY_TOTALS = ("steps", "water_ml")
-
-
 def _fill_daily_log(
     db: Session,
     user: User,
     day: date_type,
     fields: dict[str, Any],
     report: SyncReport,
-    partial_day: bool = False,
 ) -> None:
     """Write Garmin's wellness numbers into that day's log.
 
@@ -259,11 +251,17 @@ def _fill_daily_log(
     provenance column. Unknown keeps the original behaviour exactly: filled if
     blank, otherwise untouched.
 
-    `partial_day` marks a day still in progress; see `_DAY_TOTALS`.
+    **Today's cumulative totals are written, not withheld.** An earlier version
+    suppressed steps and water for a day still in progress, on the theory that a
+    partial count is meaningless until the day is over. That was wrong twice
+    over: it is self-correcting, because a field this importer owns is refreshed
+    on every later run and the sync window re-reads the last few days, so a
+    partial number is replaced as the day fills in and finalised once it ends.
+    And withholding it is not neutral -- it left the dashboard showing no walking
+    at all for today while today's *rides* appeared, which reads as a broken
+    import rather than as a deliberate silence. A partial count beats no count.
     """
     supplied = {k: v for k, v in fields.items() if v is not None}
-    if partial_day:
-        supplied = {k: v for k, v in supplied.items() if k not in _DAY_TOTALS}
     if not supplied:
         return
 
@@ -437,7 +435,6 @@ def sync_user(
                 "water_ml": water_ml_from(hydration),
             },
             report,
-            partial_day=(day == today),
         )
 
     if dry_run:
