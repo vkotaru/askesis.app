@@ -273,12 +273,60 @@ def build_app(config: MCPConfig, verifier: TokenVerifier) -> Starlette:
     # neither today — fine while it is tailnet-only, not fine once this is
     # public.
     middleware = [
+        # Order matters: the forwarded-host check is the one with teeth, so it
+        # runs first and rejects before anything else parses the request.
+        Middleware(ForwardedHostMiddleware, expected_host=config.expected_host),
         Middleware(
             TrustedHostMiddleware,
             allowed_hosts=[*config.allowed_hosts, "testserver"],
-        )
+        ),
     ]
     return Starlette(routes=routes, middleware=middleware, lifespan=lifespan)
+
+
+class ForwardedHostMiddleware:
+    """Reject requests whose *client-facing* hostname is not ours.
+
+    This is where DNS-rebinding protection actually lives, and it is not where
+    you would look for it. `TrustedHostMiddleware` and the SDK's
+    `TransportSecuritySettings` both inspect the Host header — but Tailscale
+    Serve overwrites Host with the proxy target's host whenever the backend is a
+    unix socket, so both of them only ever see `localhost`. Their allowlists are
+    inert in this deployment.
+
+    Serve does preserve the caller's hostname in `X-Forwarded-Host`, and it
+    `Set()`s that header rather than appending, so a client cannot forge one.
+    That header is the only place the real hostname survives, hence this check.
+
+    A request with no `X-Forwarded-Host` is allowed through: that is the TCP
+    fallback and the test client, neither of which is reachable from the
+    internet. Every request that has been through Serve carries one.
+    """
+
+    def __init__(self, app, expected_host: str) -> None:
+        self.app = app
+        host = expected_host.lower()
+        self.expected = {host, f"{host}:443"}
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            forwarded = ""
+            for key, value in scope.get("headers", []):
+                if key == b"x-forwarded-host":
+                    forwarded = value.decode("latin-1").strip().lower()
+                    break
+            if forwarded and forwarded not in self.expected:
+                logger.warning(
+                    "rejected X-Forwarded-Host %r (expected one of %r)",
+                    forwarded,
+                    sorted(self.expected),
+                )
+                response = Response(
+                    "Invalid host\n", status_code=421, media_type="text/plain"
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 async def _reject_legacy(request: Request) -> Response:

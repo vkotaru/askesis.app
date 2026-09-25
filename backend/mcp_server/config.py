@@ -88,7 +88,19 @@ class MCPConfig:
         # not JSON-RPC, so the client shows a generic transport error and the
         # real hostname appears only in our log.
         host = self.public_origin.removeprefix("https://")
-        self.allowed_hosts = [host, f"{host}:443"]
+        self.expected_host = host
+        # `localhost` is in here because Tailscale Serve REPLACES the Host header
+        # with the proxy target's host when the backend is a unix socket
+        # (ipnlocal/serve.go: `r.Out.Host = rp.url.Host`). Every request therefore
+        # arrives as `localhost` regardless of what the caller asked for, and
+        # without this the service answers every request with a bare
+        # "Invalid host header" — which is exactly how this was found.
+        #
+        # That makes the Host allowlist inert, so the real hostname check moves to
+        # X-Forwarded-Host, which Serve Set()s to the true incoming value and a
+        # client cannot forge. See ForwardedHostMiddleware in server.py — do not
+        # delete it thinking the list below still protects anything.
+        self.allowed_hosts = [host, f"{host}:443", "localhost", "localhost:443"]
         self.allowed_origins = ["https://claude.ai", "https://claude.com"]
 
         self.scope = "askesis:read"

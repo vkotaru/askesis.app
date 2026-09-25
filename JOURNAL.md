@@ -66,6 +66,17 @@ dead ends we still remembered, not every step.
   `!backend/scripts/*.sql`; dumps never live there.
 
 **Watch out**
+- **`Invalid host header` on every request was the unix-socket Host rewrite**, and
+  it is the trap recorded in the v2.0.0 entry below — written hours earlier, then
+  walked straight into. Serve replaces `Host` with the proxy target's host for
+  socket backends, so `TrustedHostMiddleware` and the SDK's
+  `TransportSecuritySettings` only ever see `localhost` and **both allowlists are
+  inert here**. Widening them to include `localhost` is necessary but deletes the
+  protection, so the real check moved to `ForwardedHostMiddleware`, reading
+  `X-Forwarded-Host` — which Serve `Set`s to the true incoming value and a client
+  cannot forge. Verified: correct host 200, `evil.example` 421, absent 200.
+  A control that only passes because it can no longer see anything is worse than
+  no control, because it reads as protection in a review.
 - **`food_items` must be granted SELECT** even though no `mcp_server` module
   imports it by name — meals reach it via `selectinload(MealFoodItem.food_item)`.
   Omitting it fails only at runtime, only on a meal query.

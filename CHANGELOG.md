@@ -15,6 +15,22 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MCP connector answered every request with `Invalid host header`.** Tailscale
+  Serve replaces the `Host` header with the proxy target's host when the backend is
+  a unix socket, so the hostname allowlists in `TrustedHostMiddleware` and the SDK's
+  `TransportSecuritySettings` only ever saw `localhost` and rejected everything.
+
+  `localhost` is now accepted — but that alone would have removed the DNS-rebinding
+  protection rather than fixed it, since those allowlists can no longer see a real
+  hostname at all. The check moved to a new `ForwardedHostMiddleware`, which
+  validates `X-Forwarded-Host`: Serve sets that to the true incoming hostname and
+  overwrites rather than appends, so a client cannot forge one. Requests with no
+  forwarded header (the TCP fallback, the test client) still pass — neither is
+  reachable from the internet.
+
+
 ## [2.1.0] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`
