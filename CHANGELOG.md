@@ -17,6 +17,17 @@ does not roll the database back — that head is what you would need to
 
 ### Added
 
+- **Log a strength session properly.** Picking an exercise from the shared library
+  gives a real set table — weight, reps, warm-up/working/failure, and RPE — with
+  per-exercise notes for the session and a link to the movement's video. Adding a
+  set repeats the one above it, and an exercise missing from the library can be
+  added without leaving the form.
+
+  Each field shows what you did for that movement **last time** as its
+  placeholder, and tapping an empty field accepts that number. Prefilling outright
+  would record sets you never performed; leaving it blank would mean retyping a
+  workout to repeat it. Volume and set counts exclude warm-ups.
+
 - **Strength training groundwork (no UI yet).** A shared exercise catalogue and
   real per-set logging, replacing a shape that could only record `sets=4`,
   `reps="10,10,8,8"` and one weight for a whole movement — so 3×5@100 then

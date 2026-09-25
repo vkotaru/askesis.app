@@ -5,7 +5,8 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import SourceBadge from '$lib/components/SourceBadge.svelte';
   import { clsx } from 'clsx';
-  import { type Activity as ActivityType, type ActivityInput, type TimeOfDay } from '$lib/api/client';
+  import { type Activity as ActivityType, type ActivityInput, type TimeOfDay, type Exercise } from '$lib/api/client';
+  import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
   import { offlineApi, dataVersion } from '$lib/stores/data';
 
   import { settings } from '$lib/stores/settings';
@@ -58,6 +59,10 @@
   let formUrl = '';
   let formNotes = '';
   let formIcon: string | null = null;
+  // The session's contents. Held here rather than read off `editingActivity` at
+  // save time, which is what the old pass-through did — that made the exercise
+  // list unreachable to the user and read-only in practice.
+  let formExercises: Exercise[] = [];
 
   async function loadActivities(silent = false) {
     if (!silent) loading = true;
@@ -134,6 +139,7 @@
     formUrl = '';
     formNotes = '';
     formIcon = null;
+    formExercises = [];
     selectedTags = [];
     selectedTimeOfDay = null;
   }
@@ -148,6 +154,12 @@
     formUrl = activity.url || '';
     formNotes = activity.notes || '';
     formIcon = activity.icon || null;
+    // Deep copy: the editor mutates sets in place, and binding straight to the
+    // cached row would edit the list behind the form even if you cancel.
+    formExercises = (activity.exercises ?? []).map((e) => ({
+      ...e,
+      sets_detail: (e.sets_detail ?? []).map((set) => ({ ...set })),
+    }));
     selectedTags = activity.tags ? activity.tags.split(',') : [];
     selectedTimeOfDay = activity.time_of_day || null;
     showForm = true;
@@ -173,7 +185,7 @@
       notes: formData.get('notes') as string,
       tags: selectedTags.join(','),
       icon: formIcon || undefined,
-      exercises: editingActivity?.exercises || [],
+      exercises: formExercises,
     };
 
     try {
@@ -351,6 +363,18 @@
         <label for="notes" class="label">Notes</label>
         <textarea id="notes" name="notes" rows={2} placeholder="How did it feel?" class="input resize-none" bind:value={formNotes}></textarea>
       </div>
+
+        {#if formActivityType === 'strength'}
+          <!-- Only for strength. A run has no sets, and an empty set table on
+               every cardio entry would be noise on the form used most often. -->
+          <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div class="flex items-center gap-2 mb-3">
+              <Dumbbell size={16} class="text-strength-500" />
+              <span class="label mb-0">Exercises</span>
+            </div>
+            <ExerciseLogger bind:exercises={formExercises} />
+          </div>
+        {/if}
 
       <div class="mt-6 flex justify-end gap-3">
         <button type="button" on:click={() => { showForm = false; resetForm(); }} class="btn-secondary">

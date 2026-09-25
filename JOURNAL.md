@@ -21,6 +21,34 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-25 — Strength logging, stage 2: the session logger
+
+**What changed**
+- `ExerciseLogger.svelte` — exercise cards with a real set table (kg / reps /
+  type / RPE), a picker over the shared catalogue with "add it to the list"
+  inline, per-exercise session notes, and the video link as an icon.
+- Wired into the activity form, shown only when the type is `strength`.
+
+**Watch out**
+- **Last session is a placeholder, not a prefill — and tapping accepts it.** A
+  prefilled set is a set the app claims you performed; if you close the form
+  early, history now contains a lift that never happened. But retyping six
+  identical numbers to repeat a workout is what makes people abandon logging. So
+  the previous values render as placeholders and `on:focus` fills an *empty*
+  field from them. Verified in a driven browser: focusing the inputs produced
+  `["80","5","85","5"]` from the prior session, and RPE stayed blank because
+  there was no previous RPE.
+- **The form deep-copies `activity.exercises` on edit.** The editor mutates sets
+  in place, so binding straight to the cached row would edit the activity list
+  behind the form — including when the user cancels.
+- Adding a set copies the one above it. Within a working block the weight
+  usually holds, so "same again" should be the default and the change the
+  exception.
+- Volume excludes warm-ups. A warm-up set is not the work, and counting it makes
+  the number useless for comparing sessions.
+- The picker states that the library is shared, because adding to it affects the
+  other account and nothing else on that screen would say so.
+
 ## 2026-09-25 — Strength logging, stage 1: schema, migration, catalogue API
 
 **What changed**

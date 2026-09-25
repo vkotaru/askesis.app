@@ -138,13 +138,62 @@ export interface FoodAnalysis {
   };
 }
 
+export type SetType = 'warmup' | 'working' | 'failure';
+
+export interface ExerciseSet {
+  id?: number;
+  set_number: number;
+  /** Null for bodyweight work. */
+  weight_kg?: number | null;
+  /** Null for a timed hold. */
+  reps?: number | null;
+  set_type: SetType;
+  /** 1-10. Only `working` sets count toward volume. */
+  rpe?: number | null;
+  notes?: string | null;
+}
+
 export interface Exercise {
   id?: number;
   name: string;
+  /** Links to the shared catalogue. Absent on rows predating it. */
+  catalog_id?: number | null;
+  position?: number;
+  /** This session's note ("felt heavy"), not the movement's form cues. */
+  notes?: string;
+  sets_detail?: ExerciseSet[];
+
+  /** Superseded by `sets_detail`. Read-only for old rows; do not write these. */
   sets?: number;
   reps?: string;
   weight_kg?: number;
-  notes?: string;
+}
+
+/** A movement in the shared library. Everyone on this install sees these. */
+export interface CatalogEntry {
+  id: number;
+  name: string;
+  muscle_group?: string | null;
+  video_url?: string | null;
+  notes?: string | null;
+  is_shared: boolean;
+  is_archived: boolean;
+  /** NULL means it belongs to the household rather than one account. */
+  user_id: number | null;
+}
+
+export interface CatalogInput {
+  name: string;
+  muscle_group?: string | null;
+  video_url?: string | null;
+  notes?: string | null;
+}
+
+/** What you did last time, for prefilling. Always your own history. */
+export interface LastSession {
+  date: string | null;
+  activity_id: number | null;
+  sets: ExerciseSet[];
 }
 
 export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -660,6 +709,32 @@ export const api = {
     }),
   deleteActivity: (id: number) =>
     fetchJSON(`/api/activities/${id}`, { method: 'DELETE' }),
+
+  // ── The shared exercise library ────────────────────────────────────────
+  // These rows belong to the install, not to an account: whatever one person
+  // adds, the other sees. History stays private — getLastSession always answers
+  // for the signed-in account only.
+  getCatalog: (q?: string, includeArchived = false) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (includeArchived) params.set('include_archived', 'true');
+    return fetchJSON<CatalogEntry[]>(`/api/exercise-catalog/?${params}`);
+  },
+  createCatalogEntry: (data: CatalogInput) =>
+    fetchJSON<CatalogEntry>('/api/exercise-catalog/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCatalogEntry: (id: number, data: CatalogInput) =>
+    fetchJSON<CatalogEntry>(`/api/exercise-catalog/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  /** Archives rather than deletes — other people's sessions reference it. */
+  archiveCatalogEntry: (id: number) =>
+    fetchJSON(`/api/exercise-catalog/${id}`, { method: 'DELETE' }),
+  getLastSession: (id: number) =>
+    fetchJSON<LastSession>(`/api/exercise-catalog/${id}/last`),
   getCalendar: (year: number, month: number, userId?: number) => {
     const params = userId ? `?user_id=${userId}` : '';
     return fetchJSON<Record<string, CalendarEvent[]>>(
