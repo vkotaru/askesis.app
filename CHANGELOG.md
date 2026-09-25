@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **Docker builds now name their stage explicitly.** Adding the `mcp` stage made
@@ -56,7 +60,6 @@ does not roll the database back — that head is what you would need to
   Enabling it needs a tailnet ACL, a second tagged auth key and the database role
   — see `SELF_HOSTING.md` ("MCP connector"). `backend/scripts/mcp_db_role.sql`
   creates and self-verifies the role.
-
 
 ## [2.0.0] - 2026-09-24
 
@@ -739,7 +742,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/vkotaru/askesis.app/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/vkotaru/askesis.app/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/vkotaru/askesis.app/compare/v1.2.5...v1.3.0
 [1.2.5]: https://github.com/vkotaru/askesis.app/compare/v1.2.4...v1.2.5
