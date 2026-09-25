@@ -15,6 +15,24 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MCP service started successfully with no database password and failed only
+  on use.** `docker-compose.yml` must interpolate `MCP_DB_PASSWORD` with a default
+  rather than a requirement — compose resolves the entire file before running
+  anything, so a required value on an unused service would break `docker compose up`
+  for the *app*. The consequence was that an unset password produced a valid DSN
+  with an empty one: the container came up, `/healthz` reported `ok` because it
+  issues no queries, and every real request returned 500 (`fe_sendauth: no password
+  supplied`). `mcp_server/config.py` now refuses to start without one, matching how
+  every other setting there behaves.
+
+  It also refuses a `DATABASE_URL` naming the app's `askesis` role — the intuitive
+  response to a database auth error is to reuse the app's connection string, which
+  would silently discard the least-privilege role that is the only thing preventing
+  a compromised connector from rewriting `users.password_hash`.
+
+
 ## [2.1.1] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`

@@ -66,6 +66,15 @@ dead ends we still remembered, not every step.
   `!backend/scripts/*.sql`; dumps never live there.
 
 **Watch out**
+- **An unset `MCP_DB_PASSWORD` produced a service that looked up and was not.**
+  Because compose has to use `${MCP_DB_PASSWORD:-}` (a required `:?` would break
+  *app* deploys — see above), an unset value yields a valid DSN with an empty
+  password. The container starts, `/healthz` returns 200 because it runs no
+  queries, and every database-backed request 500s with `fe_sendauth: no password
+  supplied`. Now a startup guard, like every other check in `config.py`.
+  Second guard alongside it: **refuse the app's `askesis` role**, because the
+  intuitive fix for a DB auth error is to paste in the app's `DATABASE_URL`, which
+  silently undoes H1 — the whole reason the separate role exists.
 - **`Invalid host header` on every request was the unix-socket Host rewrite**, and
   it is the trap recorded in the v2.0.0 entry below — written hours earlier, then
   walked straight into. Serve replaces `Host` with the proxy target's host for

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from urllib.parse import urlsplit
 
 from app.config import get_settings
 
@@ -60,6 +61,35 @@ class MCPConfig:
             raise MCPConfigError(
                 "MCP_TOKEN_SECRET is too short; use `openssl rand -hex 32`."
             )
+
+        # ── Guard 3: the database credential must actually be present ──────
+        # docker-compose.yml builds DATABASE_URL with ${MCP_DB_PASSWORD:-}, a
+        # DEFAULTED interpolation rather than a required one -- it has to be, or
+        # an unset value would make `docker compose up` fail for the *app* too,
+        # since compose interpolates the whole file before running anything.
+        #
+        # The cost of that is this: an unset password yields a syntactically fine
+        # DSN with an empty password, the container starts happily, and then every
+        # request that touches the database 500s with `fe_sendauth: no password
+        # supplied` -- while /healthz keeps returning 200 because it does no
+        # queries. That is a service that looks up and is not. Fail at startup
+        # instead, which is the whole convention of this file.
+        url = app_settings.database_url
+        if url.startswith(("postgresql://", "postgres://")):
+            parsed = urlsplit(url)
+            if not (parsed.password or "").strip():
+                raise MCPConfigError(
+                    "DATABASE_URL has no password. Set MCP_DB_PASSWORD in .env to "
+                    "the password given to backend/scripts/mcp_db_role.sql; "
+                    "without it every database-backed request fails at runtime "
+                    "while /healthz still reports ok."
+                )
+            if parsed.username == "askesis":
+                raise MCPConfigError(
+                    "DATABASE_URL uses the app's 'askesis' role. This service must "
+                    "connect as 'askesis_mcp', which cannot write to users -- see "
+                    "backend/scripts/mcp_db_role.sql. Refusing to start."
+                )
 
         # ── Public identity ────────────────────────────────────────────────
         # The canonical URI a client is told to use. RFC 8707 audience checks
