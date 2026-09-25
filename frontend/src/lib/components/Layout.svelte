@@ -263,29 +263,52 @@
   </aside>
 
   <!-- Main content -->
-  <main class="flex-1 overflow-auto pt-14 pb-20 md:pt-0 md:pb-0">
+  <!-- pl-14 clears the mobile icon rail below; the rail is fixed, so it takes
+       no flow space of its own. -->
+  <main class="flex-1 overflow-auto pt-14 pl-14 md:pt-0 md:pl-0">
     <div class={clsx('mx-auto transition-all duration-300 p-4 md:p-8 content-area', widthClass)}>
       <slot />
     </div>
   </main>
 
-  <!-- Mobile Bottom Navigation (horizontally scrollable) -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 pb-safe">
-    <div class="flex overflow-x-auto scrollbar-hide py-2 px-1">
-      {#each navItems as { href, icon: Icon, label, color }}
-        {@const isActive = currentPath === href}
-        <a
-          {href}
-          class={clsx(
-            'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all min-w-[64px] flex-shrink-0',
-            isActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500'
-          )}
-        >
-          <Icon size={22} class={isActive ? color : ''} />
-          <span class="text-xs font-medium whitespace-nowrap">{label.split(' ')[0]}</span>
-        </a>
-      {/each}
-    </div>
+  <!-- Mobile icon rail.
+       Replaces a horizontally scrollable bottom bar. That bar put eleven
+       destinations in a strip about five fit on, so reaching the rest meant
+       scrolling a nav that gave no sign it scrolled, and it ate the bottom of
+       every page on the screen where vertical space is scarcest.
+       A rail keeps navigation one tap away (a drawer alone would make it two)
+       and mirrors the desktop sidebar, so the app is laid out the same way at
+       both sizes. Icons only at 56px; the hamburger above still opens the full
+       labelled menu, which is also the accessible path to the same links. -->
+  <nav
+    class="md:hidden fixed left-0 top-14 bottom-0 z-40 w-14 flex flex-col items-center gap-1 overflow-y-auto scrollbar-hide bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 py-2 pb-safe"
+    aria-label="Primary"
+  >
+    {#each navItems as { href, icon: Icon, label, color }}
+      {@const isActive = currentPath === href}
+      <a
+        {href}
+        title={label}
+        aria-label={label}
+        aria-current={isActive ? 'page' : undefined}
+        class={clsx(
+          'relative flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0 transition-colors',
+          isActive
+            ? 'bg-gray-100 dark:bg-gray-700'
+            : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+        )}
+      >
+        <!-- The colour alone would not carry the active state for a
+             colour-blind user, so it is doubled with a bar on the edge. -->
+        {#if isActive}
+          <span
+            class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-primary-500"
+            aria-hidden="true"
+          ></span>
+        {/if}
+        <Icon size={20} class={isActive ? color : ''} />
+      </a>
+    {/each}
   </nav>
 
   <!-- Unsent-changes prompt. Signing out wipes this device's copy of the

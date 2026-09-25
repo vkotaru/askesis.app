@@ -5,7 +5,9 @@
   import { api, type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition, type TrainingPlan } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
-  import { distanceFromMetric } from '$lib/utils/units';
+  import { distanceFromMetric, weightToMetric } from '$lib/utils/units';
+  import { classify } from '$lib/utils/disciplines';
+  import { ridesToSteps } from '$lib/utils/stepEquivalent';
   import {
     MetricSnapshotCard,
     TodayNutritionCard,
@@ -147,9 +149,28 @@
     burnedCalories: dailyBurnedMap[date] || 0,
   }));
 
+  // Most recent logged weight, in KILOGRAMS. `log.weight` arrives in the user's
+  // preferred unit (the API converts at the boundary), and the energy formula
+  // needs metric. Only affects rides where Garmin measured the calories — where
+  // they are derived, weight cancels out of the arithmetic entirely.
+  $: latestWeightKg = (() => {
+    const withWeight = logs.filter(l => l.weight).sort((a, b) => b.date.localeCompare(a.date));
+    return withWeight.length > 0
+      ? weightToMetric(withWeight[0].weight!, $settings.weight_unit)
+      : null;
+  })();
+
+  // Cycling converted to the number of walking steps costing the same energy.
+  // `distance_km` really is km on the client, so it needs no conversion.
+  $: bikeStepsByDate = weekDates.reduce<Record<string, number>>((acc, date) => {
+    const rides = weekActivities.filter(a => a.date === date && classify(a) === 'bike');
+    acc[date] = ridesToSteps(rides, latestWeightKg);
+    return acc;
+  }, {});
+
   $: stepsData = weekDates.map(date => {
     const log = weekLogs.find(l => l.date === date);
-    return { date, steps: log?.steps ?? null };
+    return { date, steps: log?.steps ?? null, bikeSteps: bikeStepsByDate[date] ?? 0 };
   });
 
   // Week totals

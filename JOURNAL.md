@@ -21,6 +21,42 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-24 — Mobile left rail, and bike as equivalent steps
+
+**What changed**
+- The mobile bottom bar is gone, replaced by a 56px icon rail down the left
+  (`Layout.svelte`). The bar held eleven destinations in a strip about five fit
+  in, so the rest needed scrolling a nav that gave no sign it scrolled, and it
+  ate the bottom of every screen. The rail mirrors the desktop sidebar, keeps
+  navigation one tap (a drawer alone would make it two), and the hamburger still
+  opens the labelled menu as the accessible path to the same links.
+- `lib/utils/stepEquivalent.ts` converts cycling to walking-equivalent steps, and
+  `StepsBarCard` stacks it on the walked figure in a second colour.
+
+**Watch out**
+- **The conversion is energy-based, not a per-minute constant**, and that was the
+  explicit ask. 2011 Compendium of Physical Activities: cycling to/from work at a
+  self-selected pace is **6.8 METs** (code 01011), walking is **3.5** (17190), so
+  `kcal = min x (MET x 3.5 x kg / 200)` and `steps = kcal / kcal_per_walking_step`.
+  A flat "150 steps/min" rule undercounts a commute by about a third, because a
+  minute of cycling costs roughly twice a minute of walking.
+- **Body weight cancels out** whenever the calories are *derived* — it appears in
+  both the ride's kcal and the per-step kcal. Verified: 55/70/90/110 kg all give
+  6,411 steps for the same 30-minute commute. It only changes the answer when
+  Garmin supplied a measured calorie figure, which is the case we want it in.
+- **`log.weight` is in the user's preferred unit, not kg.** The API converts at
+  the boundary, so the energy formula needs `weightToMetric()` first. `distance_km`
+  on activities *is* canonical km — the two are inconsistent, which is the trap.
+- The bar must scale on the **combined** total; scaling on walked steps alone lets
+  a long ride overflow the plot area.
+- On riding days the bike portion legitimately dominates: a 50-minute vigorous
+  ride is ~12,500 equivalent steps. Left as-is deliberately, pending a week of
+  real data rather than seeded rides.
+- Verified by rendering a real build with seeded data in headless Chrome over
+  CDP. `--virtual-time-budget` is useless for this app: it fast-forwards the clock,
+  IndexedDB callbacks never fire, and every screenshot is the loading spinner.
+  Drive CDP and sleep in real time instead.
+
 ## 2026-09-24 — MCP connector, stage 4: the container and its blast radius
 
 **What changed**

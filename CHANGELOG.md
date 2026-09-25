@@ -15,6 +15,28 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Changed
+
+- **The mobile bottom navigation is now a left icon rail.** The bar carried eleven
+  destinations in a strip that fits about five, so reaching the rest meant
+  scrolling a nav that gave no indication it scrolled — and it consumed the bottom
+  of every screen, on the axis where phones have least room. The rail mirrors the
+  desktop sidebar, so the app is laid out the same way at both sizes, and keeps
+  navigation to a single tap. The existing slide-out menu still provides the full
+  labelled list.
+
+### Added
+
+- **Cycling now shows as equivalent steps**, stacked on the walked figure in the
+  Steps card in a second colour. The conversion is energy-based rather than a flat
+  per-minute rate: cycling to work is 6.8 METs against walking's 3.5 (2011
+  Compendium of Physical Activities), so a ride is converted to kilocalories and
+  then to the number of walking steps costing the same. A measured calorie figure
+  from Garmin is preferred, then a MET derived from average speed, then the commute
+  default. A 30-minute commute comes out at roughly 6,400 equivalent steps; a flat
+  "150 steps per minute" rule would have said 4,500.
+
+
 ## [2.1.2] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`
