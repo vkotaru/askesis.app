@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **The weekly calorie average divided by seven no matter how many days were
@@ -30,7 +34,6 @@ does not roll the database back — that head is what you would need to
   padding below `md`. Content inside a card on a 390px screen goes from 254px back
   to 286px. The snapshot tiles also stop breaking between a value and its unit, so
   "2761 ml" no longer wraps onto two lines.
-
 
 ## [2.2.2] - 2026-09-24
 
@@ -902,7 +905,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.2...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.3...HEAD
+[2.2.3]: https://github.com/vkotaru/askesis.app/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/vkotaru/askesis.app/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/vkotaru/askesis.app/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/vkotaru/askesis.app/compare/v2.1.2...v2.2.0
