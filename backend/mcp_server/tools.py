@@ -40,6 +40,8 @@ from app.disciplines import DISCIPLINE_BY_KEY, DISCIPLINE_KEYS, classify, parse_
 from app.models import (
     Activity,
     BodyMeasurement,
+    Exercise,
+    ExerciseCatalog,
     DailyLog,
     DailyNutrition,
     Meal,
@@ -60,6 +62,7 @@ from mcp_server.queries import (
     in_range,
     iso,
     owned,
+    shared,
 )
 
 #: Widest window a single call may ask for. A model asked for "this year" will
@@ -557,13 +560,108 @@ def get_activity(db: Session, user_id: int, activity_id: int) -> dict[str, Any]:
         "exercises": [
             {
                 "name": ex.name,
-                "sets": ex.sets,
-                "reps": ex.reps,
-                "weight_kg": ex.weight_kg,
                 "notes": ex.notes,
+                "sets": [
+                    {
+                        "set_number": st.set_number,
+                        "weight_kg": st.weight_kg,
+                        "reps": st.reps,
+                        # warmup | working | failure. Only `working` and
+                        # `failure` are the work; a warm-up is not.
+                        "set_type": st.set_type,
+                        "rpe": st.rpe,
+                    }
+                    for st in sorted(ex.sets_detail, key=lambda x: x.set_number)
+                ],
+                # Present only on rows predating per-set logging, where the whole
+                # exercise had one weight and reps was free text.
+                "legacy_reps": ex.reps if not ex.sets_detail else None,
+                "legacy_weight_kg": ex.weight_kg if not ex.sets_detail else None,
             }
-            for ex in act.exercises
+            for ex in sorted(act.exercises, key=lambda e: e.position)
         ],
+    }
+
+
+def get_exercise_history(
+    db: Session,
+    user_id: int,
+    exercise: str,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """How one movement has progressed, most recent session first.
+
+    Matched by name against the shared catalogue, because that is what someone
+    asks with ("how is my squat going") — but every *session* read goes through
+    `owned()`, so the catalogue being communal never leaks the other account's
+    training.
+
+    Per session it reports the heaviest working set, total volume, and an
+    estimated one-rep max. The estimate is Epley (w x (1 + reps/30)), which is
+    reasonable up to about ten reps and increasingly optimistic beyond that --
+    it is a trend line, not a number to load a bar with.
+    """
+    name = (exercise or "").strip()
+    if not name:
+        raise ToolError("exercise name is required")
+
+    entry = (
+        shared(db, ExerciseCatalog)
+        .filter(ExerciseCatalog.name.ilike(f"%{name}%"))
+        .order_by(ExerciseCatalog.name)
+        .first()
+    )
+    if entry is None:
+        return {
+            "exercise": name,
+            "found": False,
+            "sessions": [],
+            "note": "No exercise in the library matches that name.",
+        }
+
+    rows = (
+        owned(db, Activity, user_id)
+        .join(Exercise, Exercise.activity_id == Activity.id)
+        .filter(Exercise.catalog_id == entry.id)
+        .options(selectinload(Activity.exercises).selectinload(Exercise.sets_detail))
+        .order_by(Activity.date.desc())
+        .limit(clamp_limit(limit, 100))
+        .all()
+    )
+
+    sessions = []
+    for act in rows:
+        for ex in act.exercises:
+            if ex.catalog_id != entry.id:
+                continue
+            work = [
+                st
+                for st in ex.sets_detail
+                if st.set_type != "warmup" and st.weight_kg and st.reps
+            ]
+            if not work:
+                continue
+            top = max(work, key=lambda st: st.weight_kg or 0)
+            sessions.append(
+                {
+                    "date": iso(act.date),
+                    "sets": len(work),
+                    "top_set": {"weight_kg": top.weight_kg, "reps": top.reps},
+                    "volume_kg": round(
+                        sum((st.weight_kg or 0) * (st.reps or 0) for st in work), 1
+                    ),
+                    "estimated_1rm_kg": round(
+                        (top.weight_kg or 0) * (1 + (top.reps or 0) / 30), 1
+                    ),
+                    "notes": ex.notes,
+                }
+            )
+
+    return {
+        "exercise": entry.name,
+        "found": True,
+        "video_url": entry.video_url,
+        "sessions": sessions,
     }
 
 
@@ -766,6 +864,7 @@ TOOLS = {
     "get_weekly_review": get_weekly_review,
     "list_activities": list_activities,
     "get_activity": get_activity,
+    "get_exercise_history": get_exercise_history,
     "get_measurements": get_measurements,
     "get_meals": get_meals,
     "get_training_plan": get_training_plan,

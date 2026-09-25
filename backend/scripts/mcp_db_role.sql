@@ -64,7 +64,13 @@ GRANT SELECT ON
     activities,
     body_measurements,
     training_plans,
-    planned_workouts
+    planned_workouts,
+    -- Strength logging. `exercise_catalog` is the shared movement library and
+    -- `exercise_sets` holds the per-set rows reached through `exercises`; both
+    -- are needed by get_activity and get_exercise_history. Relationship targets
+    -- count, not just tables named directly in a tool.
+    exercise_catalog,
+    exercise_sets
 TO askesis_mcp;
 
 -- NOTE: table-level SELECT on `users`, not column-level, and that is deliberate.
@@ -116,10 +122,18 @@ SELECT has_table_privilege('askesis_mcp', 'users', 'UPDATE') AS can_update_users
 
 \echo ''
 \echo '== can it read what it must? (expect all t) =='
-SELECT has_table_privilege('askesis_mcp', 'users',         'SELECT') AS users,
-       has_table_privilege('askesis_mcp', 'daily_logs',    'SELECT') AS daily_logs,
-       has_table_privilege('askesis_mcp', 'food_items',    'SELECT') AS food_items,
-       has_table_privilege('askesis_mcp', 'activities',    'SELECT') AS activities;
+SELECT has_table_privilege('askesis_mcp', 'users',            'SELECT') AS users,
+       has_table_privilege('askesis_mcp', 'daily_logs',       'SELECT') AS daily_logs,
+       has_table_privilege('askesis_mcp', 'food_items',       'SELECT') AS food_items,
+       has_table_privilege('askesis_mcp', 'activities',       'SELECT') AS activities,
+       has_table_privilege('askesis_mcp', 'exercise_catalog', 'SELECT') AS exercise_catalog,
+       has_table_privilege('askesis_mcp', 'exercise_sets',    'SELECT') AS exercise_sets;
+
+\echo ''
+\echo '== and it still cannot WRITE the training data (expect all f) =='
+SELECT has_table_privilege('askesis_mcp', 'exercise_sets',    'UPDATE') AS write_sets,
+       has_table_privilege('askesis_mcp', 'exercise_catalog', 'UPDATE') AS write_catalog,
+       has_table_privilege('askesis_mcp', 'activities',       'UPDATE') AS write_activities;
 
 \echo ''
 \echo '== tables it must NOT see at all (expect all f) =='

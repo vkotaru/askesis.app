@@ -21,6 +21,33 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-25 — Strength logging, stage 5: what Claude can see
+
+**What changed**
+- `queries.py` gains `shared()`; `get_activity` emits real sets; new
+  `get_exercise_history(exercise, limit)` with top set, volume and an estimated
+  1RM per session. Nine tools now. `mcp_db_role.sql` grants the new tables.
+
+**Watch out**
+- **`owned()` cannot serve a shared table** — it requires a `user_id` and raises
+  without one, which is exactly the property stopping cross-account leaks. The
+  catalogue needed `shared()` as a sibling in `queries.py`, *not* a `db.query()`
+  in `tools.py`, which CI greps for. `shared()` refuses a model without a `name`
+  column as a crude guard against pointing it at personal data.
+- **A shared catalogue plus private history is the whole trick here**, and the
+  tool has to hold both at once: the *movement* is matched across the shared
+  library, every *session* read goes through `owned()`. Verified with two
+  accounts training the same lift — the other account's 200kg set does not
+  appear in mine.
+- Warm-ups are excluded from volume and from the top set. Counting them makes
+  the number useless for comparing sessions.
+- The 1RM is Epley (`w x (1 + reps/30)`), reasonable to about ten reps and
+  optimistic past that. It is labelled in the tool description as a trend line,
+  not a number to load a bar with — an LLM will otherwise quote it as fact.
+- The DB role needs **relationship targets**, not just tables named in a tool:
+  `exercise_sets` is reached through `exercises`, and omitting it fails only at
+  runtime, only on a query that touches sets.
+
 ## 2026-09-25 — Strength logging, stage 4: routines
 
 **What changed**

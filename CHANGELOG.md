@@ -17,6 +17,30 @@ does not roll the database back — that head is what you would need to
 
 ### Added
 
+- **Routines.** Save a workout you repeat, with target sets, reps and weight per
+  movement, then start a session from it. Starting copies the movements and
+  leaves the numbers blank — a target is what you intended, and recording it as
+  what you did would make "did I hit my target" compare a number with itself.
+  Routines are per-account; the exercise library they draw on is shared.
+
+- **Claude can see your strength training.** `get_activity` now returns real per-set
+  data, and a new `get_exercise_history` reports how one movement has progressed —
+  heaviest working set, volume and an estimated one-rep max per session. Warm-ups
+  are excluded. The movement is matched against the shared library while every
+  session read stays scoped to your own account.
+
+### Fixed
+
+- **Strength sessions work offline.** Sets travel nested inside the activity, and
+  the exercise library syncs to the device so the picker works without signal.
+  Two long-standing sync bugs fixed on the way: shared library rows were filtered
+  out of the changes feed entirely (they have no owner to match), and clearing
+  every exercise from an activity offline silently did nothing while the same
+  edit online cleared them.
+
+
+### Added
+
 - **Log a strength session properly.** Picking an exercise from the shared library
   gives a real set table — weight, reps, warm-up/working/failure, and RPE — with
   per-exercise notes for the session and a link to the movement's video. Adding a

@@ -177,6 +177,13 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_activity": (
         f"One workout in full, including its individual exercise sets. {_UNITS}"
     ),
+    "get_exercise_history": (
+        "How a single strength movement has progressed over time, most recent "
+        "session first: the heaviest working set, total volume, and an estimated "
+        "one-rep max per session. Match by name, e.g. 'squat' or 'bench'. "
+        "Warm-up sets are excluded. The 1RM is an Epley estimate and is a trend "
+        f"line, not a number to load a bar with. {_UNITS}"
+    ),
     "get_measurements": (
         "Body measurements with the change since the previous entry. Pass "
         f"latest_only=true for just the most recent. {_UNITS}"

@@ -63,6 +63,27 @@ def owned(db: Session, model: type[T], user_id: int) -> Query[T]:
     return q
 
 
+def shared(db: Session, model: type[T]) -> Query[T]:
+    """Rows of a household-wide catalogue: everything, scoped to nobody.
+
+    `owned()` raises without a user_id, and rightly so — it is the single thing
+    stopping a cross-account leak. But two tables here are libraries rather than
+    personal data (`food_items`, `exercise_catalog`), carrying a NULL user_id to
+    mean "belongs to the install". They need a query that does not scope, and
+    they must not get it by reaching for `db.query()` inside tools.py — CI greps
+    for exactly that.
+
+    Use this ONLY for tables with no personal content. A movement name and a
+    video link are not private; a set you lifted is.
+    """
+    if not hasattr(model, "name"):
+        raise TypeError(f"{model.__name__} does not look like a catalogue table")
+    q = db.query(model)
+    if hasattr(model, "deleted_at"):
+        q = q.filter(model.deleted_at.is_(None))
+    return q
+
+
 def by_id(db: Session, model: type[T], row_id: int) -> T | None:
     """Fetch one row by primary key. For ``User``, whose PK *is* the identity.
 
