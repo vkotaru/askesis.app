@@ -117,7 +117,8 @@ dead ends we still remembered, not every step.
   (`setServeProxyHandlersLocked` logs and `continue`s), so a typo'd path is a silent permanent 502.
 - First deploy failed the smoke test as a **false alarm**: `PUBLIC_URL` had a trailing slash →
   `//api/version` → the SPA catch-all answers **200 + HTML**, so the commit grep found nothing.
-  Pending fix: strip trailing slashes; distinguish "wrong body" from "no response".
+  Fixed in v2.1.0: slashes stripped, and "wrong commit" now reads differently from "no response".
+  The general trap: a 200 from an SPA fallback is not evidence the API answered.
 
 ## 2026-08-30 — Git history rewritten to strip personal names
 

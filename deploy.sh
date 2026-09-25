@@ -54,7 +54,10 @@ CURRENT_SHA="$(git rev-parse HEAD)"
 CURRENT_REF="$(git describe --tags --exact-match 2>/dev/null || git symbolic-ref --short -q HEAD || echo 'detached')"
 
 echo "==> Fetching refs and tags"
-git fetch --all --tags --prune
+# --force because a rewritten tag (history purge, re-cut release) otherwise
+# aborts the deploy with "would clobber existing tag". Tags here are read-only
+# inputs resolved from origin, so taking origin's version is always correct.
+git fetch --all --tags --prune --force
 
 # ---------------------------------------------------------------------------
 # Resolve what to deploy.
@@ -171,10 +174,17 @@ smoke_fail() {
   echo "  Logs:       $DC logs --tail=50 app" >&2
   echo "              $DC logs --tail=50 tailscale" >&2
   echo "  Serve tgt:  $DC exec tailscale tailscale serve status" >&2
-  if [ "$CURRENT_REF" != "detached" ]; then
+  # CURRENT_REF is where the checkout was BEFORE this run -- which, if the box
+  # was already sitting on the tag being deployed, is the failing version itself.
+  # Suggesting that is worse than useless mid-outage, so fall back to the highest
+  # release tag that is not the one we just tried.
+  _prev="$(release_tags | grep -vxF "$REF" | tail -n 1 || true)"
+  if [ -n "${_prev:-}" ] && [ "$_prev" != "$REF" ]; then
+    echo "  Roll back:  ./deploy.sh $_prev" >&2
+  elif [ "$CURRENT_REF" != "detached" ] && [ "$CURRENT_REF" != "$REF" ]; then
     echo "  Roll back:  ./deploy.sh $CURRENT_REF" >&2
   else
-    echo "  Roll back:  ./deploy.sh <last-good-tag>" >&2
+    echo "  Roll back:  ./deploy.sh <last-good-tag>   (see: git tag -l 'v*')" >&2
   fi
   echo >&2
   echo "  NOTE: APP_SOCKET (docker-compose.yml) and the Proxy target in" >&2
@@ -191,6 +201,11 @@ smoke_fail() {
 # CORS_ORIGINS). Optional: a fresh box may not have it yet and a deploy should
 # still finish, so an unset value downgrades to a warning rather than failing.
 PUBLIC_URL="$(grep -E '^[[:space:]]*PUBLIC_URL=' .env 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d "\"' " || true)"
+# Strip trailing slashes. With one, "$PUBLIC_URL/api/version" becomes a double
+# slash, and the SPA catch-all serves index.html with HTTP 200 -- so the check
+# below fails with "no response" while the app is in fact perfectly healthy.
+# That false alarm happened on the first v2.0.0 deploy.
+while [ "${PUBLIC_URL%/}" != "$PUBLIC_URL" ]; do PUBLIC_URL="${PUBLIC_URL%/}"; done
 
 if [ -n "${PUBLIC_URL:-}" ]; then
   got=""
@@ -200,7 +215,13 @@ if [ -n "${PUBLIC_URL:-}" ]; then
     if [ "$got" = "$SHA" ]; then ok=1; break; fi
     sleep 2
   done
-  [ -n "$ok" ] || smoke_fail "$PUBLIC_URL did not serve $SHORT_SHA within 60s (saw: ${got:-no response})"
+  if [ -z "$ok" ]; then
+    if [ -n "$got" ]; then
+      smoke_fail "$PUBLIC_URL answered, but served commit ${got} instead of $SHA -- old container still up, or the URL resolves elsewhere"
+    else
+      smoke_fail "$PUBLIC_URL never returned a usable /api/version within 60s -- check the app and tailscale logs below"
+    fi
+  fi
   echo "    ok: $PUBLIC_URL serves $SHORT_SHA"
 else
   echo "    SKIPPED serving check — PUBLIC_URL not set in .env." >&2

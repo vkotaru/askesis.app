@@ -15,6 +15,22 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **`deploy.sh`'s smoke test cried wolf on the first v2.0.0 deploy.** A trailing
+  slash in `PUBLIC_URL` made the probe request `//api/version`, which the SPA
+  catch-all answers with `200` and `index.html` rather than a 404 — so the commit
+  check found nothing and reported the app as down while it was serving perfectly.
+  Trailing slashes are now stripped, and "answered with the wrong commit" is
+  reported differently from "never answered". A safety net that fires falsely is
+  one you learn to ignore.
+- **The failure message could suggest rolling back to the version that just
+  failed**, when the checkout was already sitting on the tag being deployed. It
+  now names the highest release tag that isn't the one being deployed.
+- **`deploy.sh` now fetches tags with `--force`.** A rewritten tag — from the
+  history purge, or a re-cut release — otherwise aborts the whole deploy with
+  `would clobber existing tag` before anything else runs.
+
 ### Added
 
 - **MCP connector for Claude Cowork — the container, not yet exposed.** A second
