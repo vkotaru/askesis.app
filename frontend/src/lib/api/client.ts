@@ -248,7 +248,16 @@ export interface Activity {
   exercises: Exercise[];
 }
 
-export type ActivityInput = Omit<Activity, 'id' | 'source' | 'external_id'>;
+/**
+ * `exercises` is optional on the way in, and the omission is meaningful: both
+ * the REST and the sync write paths take an absent key as "this edit is not
+ * about the exercises" and leave the stored ones untouched, while `[]` means
+ * "I removed them all". A cardio edit, or an edit to a row whose sets are not
+ * cached, must omit rather than send an empty list.
+ */
+export type ActivityInput = Omit<Activity, 'id' | 'source' | 'external_id' | 'exercises'> & {
+  exercises?: Exercise[];
+};
 
 export interface GarminRun {
   started_at: string;
@@ -726,6 +735,12 @@ export const api = {
     if (limit) params.set('limit', limit.toString());
     return fetchJSON<Activity[]>(`/api/activities/?${params}`);
   },
+  /** One activity, straight from the server.
+   *
+   * Deliberately not offline-aware: the caller reaches for this precisely when
+   * the cached copy is suspect.
+   */
+  getActivity: (id: number) => fetchJSON<Activity>(`/api/activities/${id}`),
   createActivity: (data: ActivityInput) =>
     fetchJSON<Activity>('/api/activities/', {
       method: 'POST',

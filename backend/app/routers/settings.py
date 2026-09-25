@@ -199,12 +199,22 @@ class _TableSpec(NamedTuple):
 
     ``optional_parents`` — same, but a reference I do not own is nulled out
     instead of dropping the row.
+
+    ``shared_rows`` — the table has a NULLABLE ``user_column`` where NULL means
+    "the household's, not anyone's", and those rows travel with the backup. Only
+    ``exercise_catalog`` sets it, and the contrast with ``food_items`` is the
+    point: seed foods ship with a fresh install, so re-importing them would
+    duplicate the install's own data, while every catalogue entry was typed by
+    one of us and exists nowhere else. On restore such a row keeps its NULL
+    owner rather than being stamped with the caller's id — stamping it would
+    quietly convert the shared library into one person's private copy.
     """
 
     table: str
     user_column: str | None = None
     required_parents: tuple[tuple[str, str], ...] = ()
     optional_parents: tuple[tuple[str, str], ...] = ()
+    shared_rows: bool = False
 
 
 # Order matters: parents before children, both for export readability and so a
@@ -223,7 +233,7 @@ _BACKUP_SPEC: tuple[_TableSpec, ...] = (
     # Same nullable-user_id shape as food_items, and for the same reason: a NULL
     # row is the household's shared movement library, part of the target install
     # rather than something one person's backup should carry or recreate.
-    _TableSpec("exercise_catalog", user_column="user_id"),
+    _TableSpec("exercise_catalog", user_column="user_id", shared_rows=True),
     _TableSpec(
         "routine_exercises",
         required_parents=(("routine_id", "workout_templates"),),
@@ -353,16 +363,46 @@ def _python_value(column: sa.Column, value: Any, table_name: str) -> Any:
 
 
 def _owned_ids(db: Session, user_id: int, table_name: str) -> set[int]:
-    """Primary keys of `table_name` currently owned by `user_id`."""
+    """Primary keys of `table_name` reachable by `user_id`.
+
+    Three cases, and the second two exist because the strength tables needed
+    them — the original guard here assumed every parent was directly owned.
+
+    1. **Directly owned** (`user_column`): the plain case.
+    2. **A shared library** (`user_column` on a NULLABLE column, e.g.
+       `exercise_catalog`, `food_items`): the install's rows belong to nobody, so
+       "reachable" means mine *plus* the unowned ones. Without this, restoring
+       onto the same install nulls every `catalog_id`, silently detaching your
+       whole exercise history from the library.
+    3. **A child of a child** (`exercise_sets` -> `exercises` -> `activities`):
+       resolved by recursing through the child's own required parent. This used
+       to raise RuntimeError, which is neither HTTPException nor SQLAlchemyError
+       and so escaped the handler — a bare 500 *after* several tables had already
+       been committed.
+    """
     spec = _SPEC_BY_TABLE[table_name]
-    if spec.user_column is None:
-        # No nested child-of-a-child today; guard so adding one is noticed.
-        raise RuntimeError(f"{table_name} cannot be used as an ownership parent")
     table = Base.metadata.tables[table_name]
-    rows = db.execute(
-        sa.select(table.c.id).where(table.c[spec.user_column] == user_id)
-    ).scalars()
-    return set(rows)
+
+    if spec.user_column is not None:
+        column = table.c[spec.user_column]
+        condition = column == user_id
+        if column.nullable:
+            # A shared-library row has no owner and is reachable by everyone.
+            condition = sa.or_(condition, column.is_(None))
+        return set(db.execute(sa.select(table.c.id).where(condition)).scalars())
+
+    if spec.required_parents:
+        child_column, parent_table = spec.required_parents[0]
+        parent_ids = _owned_ids(db, user_id, parent_table)
+        if not parent_ids:
+            return set()
+        return set(
+            db.execute(
+                sa.select(table.c.id).where(table.c[child_column].in_(parent_ids))
+            ).scalars()
+        )
+
+    raise RuntimeError(f"{table_name} cannot be used as an ownership parent")
 
 
 def _collect_backup(db: Session, user: User) -> dict[str, Any]:
@@ -377,7 +417,12 @@ def _collect_backup(db: Session, user: User) -> dict[str, Any]:
 
         skip = False
         if spec.user_column is not None:
-            stmt = stmt.where(table.c[spec.user_column] == user.id)
+            owner = table.c[spec.user_column]
+            stmt = stmt.where(
+                sa.or_(owner == user.id, owner.is_(None))
+                if spec.shared_rows
+                else owner == user.id
+            )
         for fk_column, parent in spec.required_parents:
             parent_ids = exported_ids.get(parent, set())
             if not parent_ids:
@@ -567,9 +612,12 @@ async def restore_database(
             for row in table_data["rows"]:
                 # Values were decoded and type-checked by _validate_backup.
                 values = {name: row.get(name) for name in columns}
-                # Ownership is asserted, never read from the file.
+                # Ownership is asserted, never read from the file — except
+                # that "belongs to the household" is itself an owner the file is
+                # allowed to state, for the one table that has them.
                 if spec.user_column is not None:
-                    values[spec.user_column] = current_user.id
+                    shared = spec.shared_rows and row.get(spec.user_column) is None
+                    values[spec.user_column] = None if shared else current_user.id
 
                 drop_row = False
                 for fk_column, parent in spec.required_parents:

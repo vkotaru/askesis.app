@@ -14,7 +14,8 @@ is the whole point of the module:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import or_
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
@@ -34,6 +35,16 @@ class CatalogCreate(BaseModel):
     muscle_group: str | None = Field(None, max_length=50)
     video_url: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=2000)
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        # min_length counts characters, so "   " passes it and then lands as an
+        # unselectable blank row in a library both accounts see.
+        v = v.strip()
+        if not v:
+            raise ValueError("name cannot be blank")
+        return v
 
     @field_validator("video_url")
     @classmethod
@@ -69,6 +80,45 @@ def _visible(db: Session, user: User):
     )
 
 
+def visible_catalog_ids(db: Session, user_id: int, ids) -> set[int]:
+    """Which of `ids` this account is allowed to point an exercise at.
+
+    Both activity write paths take `catalog_id` from the client and neither
+    checked it. Two ways that bites: an id that does not exist raises a foreign
+    key violation and 500s the save, and an id belonging to the *other* account's
+    private entries would link your session to a row you cannot see -- so the
+    name on your own exercise would be one you have no way to read or edit.
+    Callers null out anything this does not return.
+    """
+    wanted = {int(i) for i in ids if i is not None}
+    if not wanted:
+        return set()
+    rows = db.query(ExerciseCatalog.id).filter(
+        ExerciseCatalog.id.in_(wanted),
+        ExerciseCatalog.deleted_at.is_(None),
+        or_(ExerciseCatalog.user_id.is_(None), ExerciseCatalog.user_id == user_id),
+    )
+    return {row.id for row in rows}
+
+
+def _by_name(db: Session, user: User, name: str):
+    """The visible entry with this name, matched the way the index dedupes.
+
+    ``func.lower(name) ==`` rather than ``ilike``: ilike treats % and _ in the
+    argument as wildcards, so an exercise called "100%% effort" would match rows
+    it is not. Ordering puts a shared row ahead of a personal one, and this
+    takes the first rather than ``one_or_none`` -- pre-index duplicates can
+    exist in an install that upgraded, and a 500 is a worse answer than a
+    slightly arbitrary one.
+    """
+    return (
+        _visible(db, user)
+        .filter(func.lower(ExerciseCatalog.name) == name.lower())
+        .order_by(ExerciseCatalog.user_id.is_(None).desc(), ExerciseCatalog.id)
+        .first()
+    )
+
+
 @router.get("/", response_model=list[CatalogResponse])
 def list_catalog(
     q: str | None = None,
@@ -81,7 +131,9 @@ def list_catalog(
     if not include_archived:
         query = query.filter(ExerciseCatalog.is_archived.is_(False))
     if q:
-        query = query.filter(ExerciseCatalog.name.ilike(f"%{q}%"))
+        # Escape the wildcards, or searching for "_" returns the whole library.
+        pattern = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.filter(ExerciseCatalog.name.ilike(f"%{pattern}%", escape="\\"))
     return query.order_by(ExerciseCatalog.name).limit(limit).all()
 
 
@@ -98,12 +150,8 @@ def create_catalog_entry(
     two of you creating "Squat" twice. Attributing it to the creator would defeat
     both, because a per-user unique constraint cannot see across accounts.
     """
-    name = data.name.strip()
-    existing = (
-        _visible(db, current_user)
-        .filter(ExerciseCatalog.name.ilike(name))
-        .one_or_none()
-    )
+    name = data.name
+    existing = _by_name(db, current_user, name)
     if existing is not None:
         # Re-adding something archived is the common case — a movement comes back
         # into a program. Revive it rather than refusing, which would leave the
@@ -121,7 +169,15 @@ def create_catalog_entry(
         **{**data.model_dump(), "name": name},
     )
     db.add(entry)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The other account added the same movement between the check above and
+        # this insert. The unique index is the real arbiter; report the same 409
+        # the check would have, rather than a 500 on a race the user can see the
+        # outcome of by reloading.
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"'{name}' is already in the list")
     db.refresh(entry)
     return entry
 
@@ -137,10 +193,20 @@ def update_catalog_entry(
     entry = _visible(db, current_user).filter(ExerciseCatalog.id == entry_id).first()
     if entry is None:
         raise HTTPException(status_code=404, detail="Exercise not found")
+    clash = _by_name(db, current_user, data.name)
+    if clash is not None and clash.id != entry.id:
+        raise HTTPException(
+            status_code=409, detail=f"'{data.name}' is already in the list"
+        )
     for key, value in data.model_dump().items():
         setattr(entry, key, value)
-    entry.name = entry.name.strip()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail=f"'{data.name}' is already in the list"
+        )
     db.refresh(entry)
     return entry
 

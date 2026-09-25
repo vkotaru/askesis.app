@@ -15,6 +15,69 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+Everything here was found by an adversarial review of 2.3.0 before it was
+deployed, so none of it ever reached the server. **Do not deploy 2.3.0.**
+
+- **Restoring a backup no longer fails.** The strength tables added the first
+  child-of-a-child to the backup format (`exercise_sets` → `exercises` →
+  `activities`), which hit a guard that raised an error the handler did not
+  catch: an Internal Server Error, half the data already written, and no set
+  rows — every time, permanently.
+
+- **The shared exercise library travels with your backup.** It was exported as
+  zero rows, because every entry belongs to the household rather than to an
+  account. Restoring onto a fresh install would have rebuilt your whole training
+  history with every exercise unlinked from the library.
+
+- **A migration that would have crash-looped the server on PostgreSQL.** The
+  backfill read back inserted ids with `lastrowid`, which psycopg2 answers with
+  `0` rather than nothing — the next statement would have died on a foreign key
+  violation, taking the container's startup with it. SQLite hides this, which is
+  why it survived testing.
+
+- **Logged sets were invisible.** The activity list still rendered the old
+  four-column summary, so every set, RPE and note recorded by the new logger
+  showed as blank. Sets now render individually, coloured by kind.
+
+- **Editing a session no longer deletes its sets.** An edit that says nothing
+  about exercises — renaming a workout, a mutation queued by a client from
+  before this release, anything at all on a cardio activity — left them alone,
+  but an empty list was indistinguishable from silence and cleared them. The two
+  are now different instructions on all three write paths.
+
+- **Weights are logged in your own unit.** The logger read and wrote kilograms
+  whatever the setting said, so logging in pounds would have rewritten your
+  training history by a factor of 2.2 — and looked correct on the screen that
+  entered it.
+
+- **"Same as last time" no longer offers a warm-up.** Last session's numbers were
+  matched by position, so if you had opened with a warm-up, set one of today's
+  working block suggested that lighter weight — and one tap accepted it, which is
+  then what the session after that suggested.
+
+- **A malformed sync push can no longer break the activity list.** Values pushed
+  from a buggy client were stored unchecked and then rejected on the way back
+  out, which made `GET /api/activities` fail for good: the activity could not be
+  deleted, because it could not be loaded.
+
+- Duplicate exercise names are caught regardless of case, on rename as well as
+  creation; a blank name is refused; `%` and `_` in a search are searched for
+  rather than treated as wildcards; an exercise can no longer point at a
+  catalogue entry that does not exist or belongs to someone else; and the
+  MCP server's shared-table helper takes an allow-list instead of guessing from
+  a table's shape — it would have accepted `Activity`, and served every
+  account's sessions.
+
+### Added
+
+- **An Exercises page.** The shared library is now manageable: search it, give a
+  movement a video link and form notes, and archive one you no longer use.
+  Archive rather than delete, because sessions — including the other person's —
+  reference it. Until now the video link and form notes could not be set at all.
+
+
 ## [2.3.0] - 2026-09-25
 
 Alembic head: `add_routine_exercises`

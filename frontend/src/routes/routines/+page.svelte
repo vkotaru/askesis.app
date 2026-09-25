@@ -40,14 +40,24 @@
 
   async function load() {
     loading = true;
-    try {
-      [routines, catalog] = await Promise.all([api.getRoutines(), offlineApi.getCatalog()]);
+    // Settled, not all: these are independent, and `Promise.all` rejecting on
+    // either one left *both* lists blank — so a catalogue hiccup read as "you
+    // have no routines", which is indistinguishable from having deleted them.
+    const [routinesResult, catalogResult] = await Promise.allSettled([
+      api.getRoutines(),
+      offlineApi.getCatalog(),
+    ]);
+    if (routinesResult.status === 'fulfilled') {
+      routines = routinesResult.value;
       error = '';
-    } catch {
-      error = 'Could not load routines.';
-    } finally {
-      loading = false;
+    } else {
+      // Routines are server-only, so offline is the usual reason. Say which.
+      error = navigator.onLine
+        ? 'Could not load routines.'
+        : 'Routines need a connection. Your logged sessions still work offline.';
     }
+    if (catalogResult.status === 'fulfilled') catalog = catalogResult.value;
+    loading = false;
   }
 
   function openNew() {
@@ -85,6 +95,9 @@
   }
 
   async function remove(routine: Routine) {
+    // A routine is a plan someone built by hand and the delete is permanent;
+    // the icon sits next to the edit pencil, so a mis-tap is easy.
+    if (!confirm(`Delete the routine "${routine.name}"? This cannot be undone.`)) return;
     try {
       await api.deleteRoutine(routine.id);
       await load();

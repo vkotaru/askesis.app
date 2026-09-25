@@ -382,7 +382,9 @@ class ExerciseCatalog(Base):
         # write into needs the shared half deduped explicitly.
         Index(
             "uq_exercise_catalog_shared_name",
-            "name",
+            # lower(name): the API matches case-insensitively, so the index must
+            # too, or "Squat" and "squat" both exist and the lookup finds two.
+            text("lower(name)"),
             unique=True,
             sqlite_where=text("user_id IS NULL"),
             postgresql_where=text("user_id IS NULL"),
@@ -402,6 +404,14 @@ class Exercise(Base):
     __tablename__ = "exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # ondelete="CASCADE" is what this *should* be at the database level, and the
+    # relationship on Activity enforces it in the ORM. The DDL does not: the FK
+    # was created unnamed in the initial migration, and dropping an unnamed
+    # constraint inside a SQLite batch block is the classic way to make
+    # `alembic downgrade base` fail, which CI runs. Nothing in the app hard
+    # deletes an activity -- deletes are `deleted_at` -- so the gap costs
+    # nothing today; close it with the rest of the FK naming if that ever
+    # changes.
     activity_id: Mapped[int] = mapped_column(
         ForeignKey("activities.id", ondelete="CASCADE"), index=True
     )

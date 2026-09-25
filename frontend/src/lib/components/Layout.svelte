@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Menu, Users, Target, ListChecks } from 'lucide-svelte';
+  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Menu, Users, Target, ListChecks, Dumbbell } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
@@ -21,6 +21,7 @@
     { href: '/measurements', icon: Ruler, label: 'Measurements', color: 'text-strength-500' },
     { href: '/photos', icon: Camera, label: 'Photos', color: 'text-accent-500' },
     { href: '/routines', icon: ListChecks, label: 'Routines', color: 'text-strength-500' },
+    { href: '/exercises', icon: Dumbbell, label: 'Exercises', color: 'text-strength-500' },
     { href: '/training', icon: Target, label: 'Training', color: 'text-cardio-500' },
     { href: '/calendar', icon: CalendarDays, label: 'Calendar', color: 'text-mood-4' },
     { href: '/nutrition/foods', icon: Apple, label: 'Foods', color: 'text-nutrition-500' },

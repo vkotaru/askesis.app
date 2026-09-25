@@ -17,11 +17,13 @@
    *   usually the same weight, so the default should be "again" and the edit
    *   should be the exception.
    */
-  import { createEventDispatcher } from 'svelte';
   import { Plus, X, Search, ExternalLink, StickyNote, Trash2 } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { offlineApi } from '$lib/stores/data';
+  import { settings } from '$lib/stores/settings';
+  import { weightFromMetric, weightToMetric, getWeightLabel } from '$lib/utils/units';
   import {
+    ApiError,
     api,
     type Exercise,
     type ExerciseSet,
@@ -33,7 +35,27 @@
 
   export let exercises: Exercise[] = [];
 
-  const dispatch = createEventDispatcher<{ change: Exercise[] }>();
+  /**
+   * Weights are held in kilograms and shown in the user's unit.
+   *
+   * Everything in this app persists canonical metric and converts at the edge;
+   * this component is an edge. Logging in pounds and storing the number
+   * unconverted would silently rewrite a person's whole training history by a
+   * factor of 2.2 — and it would look right on the screen that entered it.
+   */
+  $: unit = $settings.weight_unit;
+  $: weightLabel = getWeightLabel(unit);
+
+  function toDisplay(kg: number | null | undefined): string {
+    if (kg == null) return '';
+    return String(Math.round(weightFromMetric(kg, unit) * 100) / 100);
+  }
+
+  function fromDisplay(raw: string): number | null {
+    const value = parseFloat(raw);
+    if (!isFinite(value)) return null;
+    return Math.round(weightToMetric(value, unit) * 1000) / 1000;
+  }
 
   let catalog: CatalogEntry[] = [];
   let catalogError = '';
@@ -53,8 +75,13 @@
       // Offline or none saved — the shortcut simply does not appear.
     }
   })();
-  /** Which exercise cards have their note field open. */
-  let noteOpen: Record<number, boolean> = {};
+  /** Which exercise cards have their note field open.
+   *
+   * An array rather than a map keyed by index: the two must stay aligned when a
+   * card is removed, and a plain map silently hands the deleted card's open
+   * state to whichever exercise slid into its slot.
+   */
+  let noteOpen: boolean[] = [];
 
   const SET_TYPES: SetType[] = ['warmup', 'working', 'failure'];
   const TYPE_LABEL: Record<SetType, string> = { warmup: 'W', working: '·', failure: 'F' };
@@ -103,7 +130,27 @@
       const entry = await offlineApi.createCatalogEntry({ name });
       catalog = [...catalog, entry];
       await addExercise(entry);
-    } catch {
+    } catch (err) {
+      // 409 means someone already added it — the other account, or you on
+      // another device. Link to the existing entry rather than treating this
+      // like being offline, which would log an unlinked duplicate and lose the
+      // video and the last-time numbers for no reason.
+      if (err instanceof ApiError && err.status === 409) {
+        try {
+          const matches = await offlineApi.getCatalog(name);
+          const found = matches.find(
+            (c) => c.name.toLowerCase() === name.toLowerCase()
+          );
+          if (found) {
+            catalog = [...catalog.filter((c) => c.id !== found.id), found];
+            await addExercise(found);
+            creating = false;
+            return;
+          }
+        } catch {
+          // Fall through to the unlinked fallback below.
+        }
+      }
       // Offline, most likely. Fall back to a plain named exercise so the set is
       // still logged — it just has no catalogue link, so no video and no
       // last-time numbers until it is added to the library properly.
@@ -125,8 +172,15 @@
     }
   }
 
+  /** Ids already fetched, *including the ones that failed*. */
+  const lastAttempted = new Set<number>();
+
   async function loadLast(catalogId: number) {
-    if (lastByCatalogId[catalogId]) return;
+    // The reactive prefetch below re-runs on every keystroke in the logger.
+    // Keying off `lastByCatalogId` alone only suppresses a repeat after a
+    // success, so an offline session fired one request per character typed.
+    if (lastAttempted.has(catalogId)) return;
+    lastAttempted.add(catalogId);
     try {
       const last = await api.getLastSession(catalogId);
       lastByCatalogId = { ...lastByCatalogId, [catalogId]: last };
@@ -137,6 +191,7 @@
 
   function removeExercise(index: number) {
     exercises = exercises.filter((_, i) => i !== index).map((e, i) => ({ ...e, position: i }));
+    noteOpen = noteOpen.filter((_, i) => i !== index);
     emit();
   }
 
@@ -153,6 +208,14 @@
     };
     exercises[index] = { ...exercises[index], sets_detail: [...sets, next] };
     exercises = exercises;
+    emit();
+  }
+
+  /** Write a typed weight back as kilograms. */
+  function setWeight(exerciseIndex: number, setIndex: number, raw: string) {
+    const sets = [...(exercises[exerciseIndex].sets_detail ?? [])];
+    sets[setIndex] = { ...sets[setIndex], weight_kg: fromDisplay(raw) };
+    exercises[exerciseIndex] = { ...exercises[exerciseIndex], sets_detail: sets };
     emit();
   }
 
@@ -199,8 +262,14 @@
     for (const r of routine.exercises) if (r.catalog_id) void loadLast(r.catalog_id);
   }
 
+  /** Tell Svelte the array changed.
+   *
+   * The parent uses `bind:exercises`, so it already shares these objects; what
+   * it does not get from a nested mutation is reactivity. Reassigning is what
+   * makes the volume line and the parent's own derived state recompute.
+   */
   function emit() {
-    dispatch('change', exercises);
+    exercises = exercises;
   }
 
   /**
@@ -224,11 +293,29 @@
     emit();
   }
 
-  /** What was done for this set last time, if anything, as placeholder text. */
+  /**
+   * What was done for this set last time, if anything, as placeholder text.
+   *
+   * Matched by **set type and its ordinal within that type**, not by position.
+   * Position alone is wrong the moment last session began with a warm-up: set 1
+   * of today's working block would offer the warm-up's 60 kg as "what you did",
+   * and the tap-to-accept below would write it in. Suggesting a number far
+   * under the working weight is not a small error — accepted once, it is what
+   * the next session then suggests.
+   */
   function lastSet(exercise: Exercise, setIndex: number): ExerciseSet | undefined {
     const id = exercise.catalog_id;
     if (!id) return undefined;
-    return lastByCatalogId[id]?.sets?.[setIndex];
+    const history = lastByCatalogId[id]?.sets;
+    if (!history?.length) return undefined;
+
+    const sets = exercise.sets_detail ?? [];
+    const type = sets[setIndex]?.set_type ?? 'working';
+    const ordinal = sets.slice(0, setIndex).filter((s) => s.set_type === type).length;
+    const sameType = history.filter((s) => s.set_type === type);
+    // Past the end means more sets than last time; the last one of that type is
+    // the honest answer, and it is never a lighter set of a different kind.
+    return sameType[ordinal] ?? sameType[sameType.length - 1];
   }
 
   function catalogEntry(exercise: Exercise): CatalogEntry | undefined {
@@ -274,7 +361,10 @@
           type="button"
           title="Note for this session"
           class={clsx('p-1', noteOpen[i] || exercise.notes ? 'text-primary-500' : 'text-gray-400')}
-          on:click={() => (noteOpen = { ...noteOpen, [i]: !noteOpen[i] })}
+          on:click={() => {
+            noteOpen[i] = !noteOpen[i];
+            noteOpen = noteOpen;
+          }}
         >
           <StickyNote size={14} />
         </button>
@@ -302,7 +392,8 @@
       <div
         class="grid grid-cols-[1.25rem_1fr_1fr_2rem_2.5rem_1.25rem] gap-1 text-[10px] text-gray-400 px-0.5"
       >
-        <span>#</span><span>kg</span><span>reps</span><span class="text-center">type</span
+        <span>#</span><span>{weightLabel}</span><span>reps</span><span class="text-center"
+          >type</span
         ><span class="text-center">RPE</span><span></span>
       </div>
 
@@ -314,15 +405,17 @@
             type="number"
             step="any"
             inputmode="decimal"
-            bind:value={set.weight_kg}
+            aria-label="Set {set.set_number} weight in {weightLabel}"
+            value={toDisplay(set.weight_kg)}
             on:focus={() => acceptLast(i, j, 'weight_kg')}
-            on:change={emit}
-            placeholder={previous?.weight_kg != null ? String(previous.weight_kg) : '—'}
+            on:input={(e) => setWeight(i, j, e.currentTarget.value)}
+            placeholder={previous?.weight_kg != null ? toDisplay(previous.weight_kg) : '—'}
             class="input py-1 text-sm tabular-nums"
           />
           <input
             type="number"
             inputmode="numeric"
+            aria-label="Set {set.set_number} reps"
             bind:value={set.reps}
             on:focus={() => acceptLast(i, j, 'reps')}
             on:change={emit}
@@ -332,6 +425,7 @@
           <button
             type="button"
             title={TYPE_TITLE[set.set_type]}
+            aria-label="Set {set.set_number}: {TYPE_TITLE[set.set_type]}. Tap to change."
             on:click={() => cycleType(i, j)}
             class={clsx(
               'h-7 rounded text-xs font-semibold',
@@ -346,6 +440,7 @@
             type="number"
             step="0.5"
             inputmode="decimal"
+            aria-label="Set {set.set_number} RPE, 1 to 10"
             bind:value={set.rpe}
             on:change={emit}
             placeholder="—"
@@ -407,7 +502,10 @@
 
   {#if exercises.length > 0}
     <p class="text-[11px] text-gray-400 text-right tabular-nums">
-      {totalSets} working sets · {Math.round(totalVolume).toLocaleString()} kg volume
+      {totalSets} working sets · {Math.round(
+        weightFromMetric(totalVolume, unit)
+      ).toLocaleString()}
+      {weightLabel} volume
     </p>
   {/if}
 </div>
@@ -470,7 +568,8 @@
       <!-- The library is communal, so say so before someone adds to it. -->
       <p class="text-[10px] text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-2">
         Exercises are shared — anything added here is available to everyone on this
-        install.
+        install. Add a video link or form notes on the
+        <a href="/exercises" class="text-primary-500 hover:underline">Exercises</a> page.
       </p>
     </div>
   </div>

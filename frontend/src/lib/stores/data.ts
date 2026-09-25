@@ -917,8 +917,15 @@ export const offlineApi = {
     // id could be serverId or localId — and must resolve to a row this account owns
     const existing = await findOwnedRow(db.activities, id, currentUserId());
 
+    // `exercises: undefined` means "this edit is not about them" all the way
+    // through — server, queue and cache alike. Coercing it to [] here would
+    // blank the cached session even when the server kept its rows, and the next
+    // push would then make that blanking real.
+    const patch: Record<string, unknown> = { ...data, updatedAt: now() };
+    if (data.exercises === undefined) delete patch.exercises;
+
     if (existing) {
-      await db.activities.update(existing.localId!, { ...data, exercises: data.exercises || [], updatedAt: now() } as UpdateSpec);
+      await db.activities.update(existing.localId!, patch as UpdateSpec);
     }
 
     try {
@@ -930,7 +937,7 @@ export const offlineApi = {
     } catch {
       if (existing) {
         await queueSync('activities', 'update', existing.localId!, existing.serverId, data as unknown as Record<string, unknown>);
-        return fromLocalActivity({ ...existing, ...data, exercises: data.exercises || [], updatedAt: now() });
+        return fromLocalActivity({ ...existing, ...patch } as typeof existing);
       }
       throw new Error('Activity not found locally and server unavailable');
     }
@@ -996,20 +1003,33 @@ export const offlineApi = {
    * `exerciseCatalog` is in SYNCED_TABLES but not USER_OWNED_TABLES.
    */
   async getCatalog(q?: string): Promise<CatalogEntry[]> {
-    revalidate(`exerciseCatalog:${q ?? ''}`, async () => {
-      const server = await api.getCatalog(q);
-      return mergeServerRows(
-        'exerciseCatalog',
-        db.exerciseCatalog,
-        server,
-        (e) => e.id,
-        (e) => toLocalCatalogEntry(e) as unknown as LocalExerciseCatalog,
-        false
-      );
-    });
+    revalidate(`exerciseCatalog:${q ?? ''}`, async () =>
+      // Under the lock, like every other merge path. Without it, the cold-start
+      // hydrate and a picker opened moments later both read an empty table and
+      // both bulkAdd — which is the duplicate-import failure merge-lock.ts was
+      // written to prevent, and CLAUDE.md names as non-negotiable.
+      serializeMerge(() =>
+        (async () => {
+          const server = await api.getCatalog(q);
+          return mergeServerRows(
+            'exerciseCatalog',
+            db.exerciseCatalog,
+            server,
+            (e) => e.id,
+            (e) => toLocalCatalogEntry(e) as unknown as LocalExerciseCatalog,
+            false
+          );
+        })()
+      )
+    );
 
     let rows = await db.exerciseCatalog.toArray();
-    rows = rows.filter((r) => !r.is_archived);
+    // Archived entries are out of the picker, and so is anything without a
+    // server id: `fromLocalCatalogEntry` would hand it a negative one, which an
+    // exercise would then store as its `catalog_id` and the server would reject
+    // or null out. Entries are created online only, so this should be empty —
+    // it is a guard against offering a link that cannot hold.
+    rows = rows.filter((r) => !r.is_archived && r.serverId != null);
     if (q) {
       const needle = q.toLowerCase();
       rows = rows.filter((r) => r.name.toLowerCase().includes(needle));

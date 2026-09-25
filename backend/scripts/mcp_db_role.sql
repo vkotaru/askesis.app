@@ -70,6 +70,11 @@ GRANT SELECT ON
     -- are needed by get_activity and get_exercise_history. Relationship targets
     -- count, not just tables named directly in a tool.
     exercise_catalog,
+    -- `exercises` is the join between an activity and its sets. Every tool that
+    -- reads a workout goes through it, and it was previously listed as
+    -- deliberately withheld -- which quietly broke `get_activity` from the day
+    -- this role was introduced. Relationship targets are not optional.
+    exercises,
     exercise_sets
 TO askesis_mcp;
 
@@ -99,7 +104,8 @@ TO askesis_mcp;
 --      data_shares     -- cross-user grants; the MCP identity is the OAuth
 --                         subject alone and must never widen through sharing
 --      progress_photos -- image paths; the tools expose no photos
---      exercises, meal_templates, workout_templates
+--      meal_templates, workout_templates, routine_exercises
+--                      -- routines are a plan, not history; no tool reads them
 --    No ALTER DEFAULT PRIVILEGES either: a table added by a future migration is
 --    unreadable until someone grants it here, on purpose. Fail closed.
 
@@ -127,6 +133,7 @@ SELECT has_table_privilege('askesis_mcp', 'users',            'SELECT') AS users
        has_table_privilege('askesis_mcp', 'food_items',       'SELECT') AS food_items,
        has_table_privilege('askesis_mcp', 'activities',       'SELECT') AS activities,
        has_table_privilege('askesis_mcp', 'exercise_catalog', 'SELECT') AS exercise_catalog,
+       has_table_privilege('askesis_mcp', 'exercises',        'SELECT') AS exercises,
        has_table_privilege('askesis_mcp', 'exercise_sets',    'SELECT') AS exercise_sets;
 
 \echo ''

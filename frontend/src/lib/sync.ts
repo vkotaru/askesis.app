@@ -26,12 +26,16 @@ export const syncErrors = writable<string[]>([]);
  * TABLE_MAP in backend/app/routers/sync.py.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+/** Shared libraries: rows belong to the install, so they get no userId. */
+const OWNERLESS_TABLES = new Set(['foods', 'exerciseCatalog']);
+
 const SYNCED_TABLES: Record<string, Table<any, number>> = {
   dailyLogs: db.dailyLogs,
   dailyNutrition: db.dailyNutrition,
   activities: db.activities,
   meals: db.meals,
   foods: db.foods,
+  exerciseCatalog: db.exerciseCatalog,
   measurements: db.measurements,
   photos: db.photos,
 };
@@ -457,8 +461,12 @@ async function mergeServerChanges(data: any, ownerId: number): Promise<void> {
     ['dailyNutrition', true],
     ['activities', false],
     ['meals', false],
-    // The food catalogue is shared and carries no owner.
+    // Both catalogues are shared and carry no owner. Without these entries the
+    // server's changes feed for them is read by nobody: an entry archived or
+    // renamed on one device never propagates, and a movement the other account
+    // adds stays invisible until a full list refetch happens to run.
     ['foods', false],
+    ['exerciseCatalog', false],
     ['measurements', true],
     ['photos', false],
   ];
@@ -470,7 +478,11 @@ async function mergeServerChanges(data: any, ownerId: number): Promise<void> {
       await mergeServerRecord(
         name,
         row,
-        name === 'foods' ? undefined : ownerId,
+        // Ownerless catalogues must NOT be stamped: a shared row carries
+        // user_id: null precisely so both accounts see it, and writing the
+        // current account onto it makes it personal — and then invisible to
+        // the other person after the next ownership sweep.
+        OWNERLESS_TABLES.has(name) ? undefined : ownerId,
         dateIsUnique,
         pending.get(name) ?? NO_PENDING
       );

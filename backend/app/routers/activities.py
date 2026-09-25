@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from pydantic import BaseModel, Field, field_validator
 from datetime import date, datetime
 
@@ -13,6 +13,7 @@ from app.models import (
     TimeOfDay,
 )
 from app.routers.auth import get_current_user, check_view_permission
+from app.routers.exercise_catalog import visible_catalog_ids
 
 router = APIRouter()
 
@@ -86,7 +87,13 @@ class ActivityCreate(BaseModel):
     icon: str | None = Field(
         None, max_length=50
     )  # Icon name (e.g., 'dumbbell', 'bike')
-    exercises: list[ExerciseCreate] = Field(default_factory=list, max_length=50)
+    # None and [] are different instructions, and the difference matters on
+    # update: None means "this edit is not about the exercises, leave them",
+    # [] means "I removed every one of them". A cardio edit, or an edit made
+    # from a cached row whose sets were never fetched, sends None -- with a
+    # default of [] it would instead delete a strength session's whole contents
+    # as a side effect of renaming it.
+    exercises: list[ExerciseCreate] | None = Field(None, max_length=50)
 
 
 class ActivityResponse(BaseModel):
@@ -114,16 +121,25 @@ class ActivityResponse(BaseModel):
         from_attributes = True
 
 
-def _write_exercises(db: Session, activity_id: int, exercises) -> None:
+def _write_exercises(db: Session, activity_id: int, exercises, user_id: int) -> None:
     """Insert exercises and their sets for one activity.
 
     Shared by create and update on purpose: these two paths have historically
-    drifted apart in this codebase (the offline sync path still guards its
-    replace with `if exercises_data:` while the REST path does not), and one
-    writer is the cheapest way to stop that happening again here.
+    drifted apart in this codebase, and one writer is the cheapest way to stop
+    that happening again here. The offline path in `sync.py` is a second writer
+    that cannot share this one without importing a router; it validates through
+    the same schemas so the two at least cannot disagree about what is legal.
     """
+    # A catalog_id is client-supplied and gets checked here rather than trusted:
+    # an unknown one is a foreign key violation (a 500 on save), and one of the
+    # other account's private entries would link the session to a row this user
+    # cannot read. Unlinking is the right failure -- `name` is denormalised, so
+    # the exercise still reads correctly.
+    allowed = visible_catalog_ids(db, user_id, (ex.catalog_id for ex in exercises))
     for order, ex in enumerate(exercises):
         payload = ex.model_dump(exclude={"sets_detail"})
+        if payload.get("catalog_id") not in allowed:
+            payload["catalog_id"] = None
         # Trust the list order over a client-supplied position: the UI reorders
         # by moving array elements, and a stale index would scramble the session.
         payload["position"] = order
@@ -150,6 +166,10 @@ def get_activities(
     target_user = check_view_permission(user_id, "activities", db, current_user)
     query = (
         db.query(Activity)
+        # Without this, a page of 50 strength sessions costs 50 exercise
+        # queries and one per exercise for its sets -- hundreds of round trips
+        # to render one list.
+        .options(selectinload(Activity.exercises).selectinload(Exercise.sets_detail))
         .filter(Activity.user_id == target_user.id)
         .filter(Activity.deleted_at.is_(None))
     )
@@ -174,6 +194,7 @@ def get_activity(
     target_user = check_view_permission(user_id, "activities", db, current_user)
     activity = (
         db.query(Activity)
+        .options(selectinload(Activity.exercises).selectinload(Exercise.sets_detail))
         .filter(Activity.id == activity_id, Activity.user_id == target_user.id)
         .filter(Activity.deleted_at.is_(None))
         .first()
@@ -198,7 +219,7 @@ def create_activity(
     db.add(activity)
     db.flush()
 
-    _write_exercises(db, activity.id, exercises)
+    _write_exercises(db, activity.id, exercises or [], current_user.id)
 
     db.commit()
     db.refresh(activity)
@@ -226,15 +247,17 @@ def update_activity(
     for key, value in activity_data.model_dump(exclude={"exercises"}).items():
         setattr(activity, key, value)
 
-    # Replace exercises. The ORM cascade removes the child sets with them, which
-    # a bulk `.delete()` would not -- that emits one DELETE and bypasses the
-    # relationship entirely, orphaning every set row.
-    for existing in (
-        db.query(Exercise).filter(Exercise.activity_id == activity_id).all()
-    ):
-        db.delete(existing)
-    db.flush()
-    _write_exercises(db, activity.id, activity_data.exercises)
+    # Replace exercises, but only if the request said anything about them (see
+    # the field's comment). The ORM cascade removes the child sets with them,
+    # which a bulk `.delete()` would not -- that emits one DELETE and bypasses
+    # the relationship entirely, orphaning every set row.
+    if activity_data.exercises is not None:
+        for existing in (
+            db.query(Exercise).filter(Exercise.activity_id == activity_id).all()
+        ):
+            db.delete(existing)
+        db.flush()
+        _write_exercises(db, activity.id, activity_data.exercises, current_user.id)
 
     db.commit()
     db.refresh(activity)

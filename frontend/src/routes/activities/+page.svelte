@@ -5,7 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import SourceBadge from '$lib/components/SourceBadge.svelte';
   import { clsx } from 'clsx';
-  import { type Activity as ActivityType, type ActivityInput, type TimeOfDay, type Exercise } from '$lib/api/client';
+  import { api, type Activity as ActivityType, type ActivityInput, type TimeOfDay, type Exercise } from '$lib/api/client';
   import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
   import { offlineApi, dataVersion } from '$lib/stores/data';
 
@@ -144,7 +144,32 @@
     selectedTimeOfDay = null;
   }
 
-  function openEditForm(activity: ActivityType) {
+  /** True for a cached row written before per-set logging existed.
+   *
+   * Such a row carries the old `sets`/`reps` strings and no `sets_detail`,
+   * while the server has since turned those into real set rows. The migration
+   * did not touch `updated_at`, so the incremental feed never re-sends them and
+   * a browser that was open across the upgrade keeps the old shape. Saving that
+   * form would push exercises with no sets and delete the migrated history.
+   */
+  function isStaleStrengthRow(activity: ActivityType): boolean {
+    return (activity.exercises ?? []).some(
+      (e) => (e.sets_detail ?? []).length === 0 && (e.sets != null || e.reps != null)
+    );
+  }
+
+  async function openEditForm(activity: ActivityType) {
+    if (isStaleStrengthRow(activity)) {
+      try {
+        // One targeted read, not a cursor reset: refill this row from the
+        // server so the form starts from what is actually stored.
+        const fresh = await api.getActivity(activity.id);
+        activity = { ...activity, exercises: fresh.exercises };
+      } catch {
+        // Offline. The form still opens; the guard in handleSubmit is what
+        // stops the save from destroying the sets it cannot see.
+      }
+    }
     editingActivity = activity;
     formName = activity.name;
     formActivityType = activity.activity_type;
@@ -185,8 +210,21 @@
       notes: formData.get('notes') as string,
       tags: selectedTags.join(','),
       icon: formIcon || undefined,
-      exercises: formExercises,
     };
+
+    // Only send exercises when this edit is about them. Two cases it protects:
+    // a cardio activity, which has none and would otherwise post an empty list
+    // every time it is touched; and a legacy row whose real sets could not be
+    // fetched (offline), where sending the sets-free cached shape would delete
+    // the migrated history. Omitting the key tells the server to leave the
+    // exercises exactly as they are.
+    const staleLegacy =
+      editingActivity !== null &&
+      isStaleStrengthRow(editingActivity) &&
+      formExercises.every((e) => (e.sets_detail ?? []).length === 0);
+    if (data.activity_type === 'strength' && !staleLegacy) {
+      data.exercises = formExercises;
+    }
 
     try {
       if (editingActivity) {
@@ -502,26 +540,53 @@
                   <div class="mt-4">
                     <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Exercises</h4>
                     <div class="overflow-x-auto">
-                      <table class="w-full text-sm">
-                        <thead>
-                          <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-                            <th class="pb-2 font-medium">Exercise</th>
-                            <th class="pb-2 font-medium text-center">Sets</th>
-                            <th class="pb-2 font-medium text-center">Reps</th>
-                            <th class="pb-2 font-medium text-center">Weight ({getWeightLabel($settings.weight_unit)})</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {#each activity.exercises as exercise}
-                            <tr class="border-b border-gray-100 dark:border-gray-700 last:border-0">
-                              <td class="py-2 font-medium">{exercise.name}</td>
-                              <td class="py-2 text-center">{exercise.sets || '-'}</td>
-                              <td class="py-2 text-center font-mono text-xs">{exercise.reps || '-'}</td>
-                              <td class="py-2 text-center">{exercise.weight_kg ? formatWeight(exercise.weight_kg, $settings.weight_unit) : '-'}</td>
-                            </tr>
-                          {/each}
-                        </tbody>
-                      </table>
+                      <!-- Per-set rows when present, falling back to the legacy
+                           single-row shape for sessions logged before per-set
+                           logging existed. Reading only the legacy columns is what
+                           made a freshly logged workout render as "Squat | - | - | -":
+                           the logger never writes them. -->
+                      <div class="space-y-3">
+                        {#each [...activity.exercises].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) as exercise}
+                          {@const sets = exercise.sets_detail ?? []}
+                          {@const work = sets.filter((s) => s.set_type !== 'warmup')}
+                          <div>
+                            <div class="flex items-baseline gap-2">
+                              <span class="font-medium">{exercise.name}</span>
+                              {#if sets.length > 0}
+                                <span class="text-xs text-gray-400">
+                                  {work.length} set{work.length === 1 ? '' : 's'}
+                                </span>
+                              {/if}
+                            </div>
+
+                            {#if sets.length > 0}
+                              <div class="mt-1 flex flex-wrap gap-1.5">
+                                {#each sets as set}
+                                  <span
+                                    class={clsx(
+                                      'px-2 py-0.5 rounded text-xs tabular-nums',
+                                      set.set_type === 'warmup' && 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+                                      set.set_type === 'working' && 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+                                      set.set_type === 'failure' && 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300'
+                                    )}
+                                    title={set.set_type}
+                                  >
+                                    {set.weight_kg != null ? formatWeight(set.weight_kg, $settings.weight_unit) : 'BW'}{#if set.reps != null}&nbsp;&times;&nbsp;{set.reps}{/if}{#if set.rpe != null}<span class="text-gray-400">&nbsp;@{set.rpe}</span>{/if}
+                                  </span>
+                                {/each}
+                              </div>
+                            {:else if exercise.sets || exercise.reps || exercise.weight_kg}
+                              <p class="mt-1 text-xs text-gray-500 font-mono">
+                                {exercise.sets ?? '-'} &times; {exercise.reps ?? '-'}{#if exercise.weight_kg} @ {formatWeight(exercise.weight_kg, $settings.weight_unit)}{/if}
+                              </p>
+                            {/if}
+
+                            {#if exercise.notes}
+                              <p class="mt-1 text-xs text-gray-400">{exercise.notes}</p>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
                     </div>
                   </div>
                 {/if}

@@ -10,9 +10,9 @@ from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import Date, or_
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.database import get_db
 from app.models import (
@@ -32,7 +32,9 @@ from app.models import (
     TimeOfDay,
 )
 from app.provenance import mark_manual, parse_sources
+from app.routers.activities import SET_TYPES, ExerciseCreate
 from app.routers.auth import get_current_user
+from app.routers.exercise_catalog import visible_catalog_ids
 
 logger = logging.getLogger("askesis.sync")
 
@@ -201,6 +203,13 @@ def get_changes(
             filters.append(model.deleted_at > since_dt)
 
         query = db.query(model).filter(or_(*filters))
+        if model is Activity:
+            # The serializer below walks exercises and their sets, so without
+            # this a cold-start pull of a few hundred sessions is a few thousand
+            # queries.
+            query = query.options(
+                selectinload(Activity.exercises).selectinload(Exercise.sets_detail)
+            )
 
         # Scope to current user.
         #
@@ -341,18 +350,93 @@ _EXCLUDE_FIELDS = {
 }
 
 
-def _write_exercises(db: Session, activity_id: int, exercises_data) -> None:
+#: Bounds the sanitiser clamps to. Deliberately the loosest reading of each
+#: field, because its job is only to keep a value inside what the REST schema
+#: will later agree to serialise -- not to second-guess what the user logged.
+_SET_BOUNDS = {
+    "weight_kg": (0.0, 1000.0),
+    "reps": (0, 1000),
+    "rpe": (0.0, 10.0),
+}
+
+
+def _sanitise_exercise(ex_data: dict) -> dict | None:
+    """Force one pushed exercise into something the REST schema will accept.
+
+    This exists because the two write paths validate differently and only one of
+    them is a boundary. `activities.py` puts every field through
+    `ExerciseCreate`; this path took the dict as given, so a client bug could
+    store `set_type="junk"` or a weight of 99999. Nothing rejected it on the way
+    in -- and then `GET /api/activities` validates on the way *out* and raises,
+    which is an unrecoverable 500 on the whole list for as long as the row
+    exists. The user cannot delete the activity, because they cannot load it.
+
+    So: validate against the same model the REST path uses, and if that fails,
+    clamp and retry rather than dropping the mutation. Returning None (skipping)
+    is the last resort, for an exercise that could never have been displayed.
+    Rejecting the push instead would be worse -- the client only clears queue
+    entries the server confirmed, so an unacceptable change would retry forever.
+    """
+    try:
+        return ExerciseCreate.model_validate(ex_data).model_dump()
+    except ValidationError:
+        pass
+
+    cleaned = dict(ex_data)
+    cleaned["name"] = (str(cleaned.get("name") or "").strip() or "Exercise")[:100]
+    sets_detail = []
+    for st in cleaned.get("sets_detail") or []:
+        if not isinstance(st, dict):
+            continue
+        st = dict(st)
+        if st.get("set_type") not in SET_TYPES:
+            st["set_type"] = "working"
+        for field, (low, high) in _SET_BOUNDS.items():
+            value = st.get(field)
+            if value is None:
+                continue
+            try:
+                st[field] = min(max(type(low)(value), low), high)
+            except (TypeError, ValueError):
+                st[field] = None
+        sets_detail.append(st)
+    cleaned["sets_detail"] = sets_detail[:50]
+
+    try:
+        return ExerciseCreate.model_validate(cleaned).model_dump()
+    except ValidationError:
+        logger.warning("Dropped an unusable pushed exercise: %r", ex_data)
+        return None
+
+
+def _write_exercises(
+    db: Session, activity_id: int, exercises_data, user_id: int
+) -> None:
     """Insert exercises and their sets from a pushed activity payload.
 
-    Mirrors `activities.py::_write_exercises`. The two cannot share code without
-    the sync module importing a router, but they must agree, so any change here
-    belongs there too.
+    Mirrors `activities.py::_write_exercises` and now shares its schema, so the
+    two cannot disagree about what a valid set is. Importing the router is safe
+    in this direction only: `activities.py` imports nothing from here.
     """
-    for order, ex_data in enumerate(exercises_data or []):
+    order = 0
+    # The REST path caps the list at 50 through `ActivityCreate`; this path has
+    # no schema over the envelope, so the cap has to be restated. Without it a
+    # single pushed change can insert unbounded rows.
+    incoming = [e for e in (exercises_data or [])[:50] if isinstance(e, dict)]
+    # Same check the REST path makes: an unknown catalog_id is a foreign key
+    # violation, and the other account's private entry is not ours to link to.
+    allowed = visible_catalog_ids(db, user_id, (e.get("catalog_id") for e in incoming))
+    for raw in incoming:
+        ex_data = _sanitise_exercise(raw)
+        if ex_data is None:
+            continue
+        catalog_id = ex_data.get("catalog_id")
+        if catalog_id not in allowed:
+            catalog_id = None
         ex = Exercise(
             activity_id=activity_id,
-            name=ex_data.get("name", ""),
-            catalog_id=ex_data.get("catalog_id"),
+            name=ex_data["name"],
+            catalog_id=catalog_id,
             position=order,
             notes=ex_data.get("notes"),
             # Legacy fields, accepted so a mutation queued by an older client
@@ -361,6 +445,7 @@ def _write_exercises(db: Session, activity_id: int, exercises_data) -> None:
             reps=ex_data.get("reps"),
             weight_kg=ex_data.get("weight_kg"),
         )
+        order += 1
         db.add(ex)
         db.flush()
         for number, st in enumerate(ex_data.get("sets_detail") or [], start=1):
@@ -377,7 +462,9 @@ def _write_exercises(db: Session, activity_id: int, exercises_data) -> None:
             )
 
 
-def _replace_exercises(db: Session, activity_id: int, exercises_data) -> None:
+def _replace_exercises(
+    db: Session, activity_id: int, exercises_data, user_id: int
+) -> None:
     """Swap an activity's exercises for the pushed list, including an empty one.
 
     Deletes through the ORM rather than with a bulk query delete: a bulk delete
@@ -387,7 +474,7 @@ def _replace_exercises(db: Session, activity_id: int, exercises_data) -> None:
     for existing in db.query(Exercise).filter(Exercise.activity_id == activity_id):
         db.delete(existing)
     db.flush()
-    _write_exercises(db, activity_id, exercises_data)
+    _write_exercises(db, activity_id, exercises_data, user_id)
 
 
 def _clean_data(data: dict | None) -> dict:
@@ -514,7 +601,7 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
     db.flush()
 
     if model == Activity:
-        _write_exercises(db, obj.id, exercises_data)
+        _write_exercises(db, obj.id, exercises_data, user.id)
 
     return obj.id
 
@@ -569,20 +656,30 @@ def _handle_update(
             data["feelings"] = ",".join(data["feelings"])
 
     if model == Activity:
+        has_exercises = "exercises" in data
         exercises_data = data.pop("exercises", [])
         if "activity_type" in data:
             data["activity_type"] = ActivityType(data["activity_type"])
         if "time_of_day" in data and data["time_of_day"]:
             data["time_of_day"] = TimeOfDay(data["time_of_day"])
 
-        # Replace exercises.
+        # Replace exercises -- but only if the payload said anything about them.
         #
-        # The `if exercises_data:` guard this replaces was a bug: removing every
-        # exercise from an activity offline sends `[]`, which is falsy, so the
-        # replace never ran and the old rows survived on the server -- while the
-        # REST path (activities.py) cleared them. The two write paths disagreed
-        # about the same edit depending on whether you were online.
-        _replace_exercises(db, obj.id, exercises_data)
+        # Two failure modes, opposite to each other, and the key is the only
+        # thing that tells them apart:
+        #
+        # * `[]` means "I removed every exercise". The `if exercises_data:`
+        #   guard that used to be here treated that as falsy and did nothing, so
+        #   the rows survived on the server while the REST path cleared them --
+        #   the same edit behaved differently depending on whether you had
+        #   signal.
+        # * *absent* means "this mutation is not about exercises", which is what
+        #   a rename or a duration edit queued by a pre-2.3 client looks like.
+        #   Treating that as `[]` would wipe the sets of every strength session
+        #   such a client touched -- silently, on a queue flushed after the
+        #   update, with no way to tell it happened.
+        if has_exercises:
+            _replace_exercises(db, obj.id, exercises_data, user.id)
 
     if model == Meal:
         data.pop("food_items", None)

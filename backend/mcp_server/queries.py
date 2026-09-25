@@ -36,6 +36,8 @@ from typing import Any, TypeVar
 
 from sqlalchemy.orm import Query, Session
 
+from app.models import ExerciseCatalog, FoodItem
+
 T = TypeVar("T")
 
 #: Rows returned by any single tool call, before the tool's own tighter cap.
@@ -63,6 +65,11 @@ def owned(db: Session, model: type[T], user_id: int) -> Query[T]:
     return q
 
 
+#: The only tables `shared()` will serve. Adding one is a deliberate statement
+#: that it contains nothing personal — check every column before you do.
+_SHARED_MODELS: frozenset[type] = frozenset({FoodItem, ExerciseCatalog})
+
+
 def shared(db: Session, model: type[T]) -> Query[T]:
     """Rows of a household-wide catalogue: everything, scoped to nobody.
 
@@ -76,8 +83,15 @@ def shared(db: Session, model: type[T]) -> Query[T]:
     Use this ONLY for tables with no personal content. A movement name and a
     video link are not private; a set you lifted is.
     """
-    if not hasattr(model, "name"):
-        raise TypeError(f"{model.__name__} does not look like a catalogue table")
+    # An allow-list, not a shape test. This used to accept anything with a
+    # `name` attribute -- which `Activity` has, so `shared(db, Activity)` would
+    # have quietly returned every account's sessions, defeating the one control
+    # this module exists to enforce. A guard on a table's *shape* cannot express
+    # "this table holds nothing private"; only a list of tables can.
+    if model not in _SHARED_MODELS:
+        raise TypeError(
+            f"{model.__name__} is not a shared catalogue; use owned() instead"
+        )
     q = db.query(model)
     if hasattr(model, "deleted_at"):
         q = q.filter(model.deleted_at.is_(None))

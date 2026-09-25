@@ -492,7 +492,25 @@ class AskesisDB extends Dexie {
         // still show the same workout twice. Sweep every synced table by
         // serverId instead. Unsynced rows (serverId == null) are left alone;
         // this DB is the only place they exist.
-        for (const name of SYNCED_TABLES) {
+        // Frozen at the stores that existed when v4 shipped.
+        //
+        // This used to iterate SYNCED_TABLES, which reads like the same thing and is
+        // not: an upgrade runs against ITS OWN version's schema, so the moment a later
+        // version adds a store, tx.table(newStore) throws "not part of transaction",
+        // the versionchange transaction aborts, and db.open() rejects forever for
+        // anyone upgrading across this step. Adding a store to a shared constant
+        // silently edited a shipped migration. Never point an upgrade at a list that
+        // can grow.
+        const V4_TABLES = [
+          'dailyLogs',
+          'activities',
+          'meals',
+          'foods',
+          'measurements',
+          'photos',
+          'dailyNutrition',
+        ] as const;
+        for (const name of V4_TABLES) {
           const table = tx.table(name);
           const duplicates = findDuplicateServerIds(await table.toArray());
           if (duplicates.length > 0) {

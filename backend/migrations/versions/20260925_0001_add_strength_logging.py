@@ -68,10 +68,16 @@ def upgrade() -> None:
     # treats NULLs as distinct, so (NULL, 'Squat') twice is permitted. For a
     # library both people write into, duplicates are the obvious failure -- so
     # the shared half gets a partial unique index of its own.
+    #
+    # On lower(name), not name: the API looks entries up case-insensitively, so
+    # a case-sensitive index would let "Squat" and "squat" both exist and then
+    # the lookup would match two rows and raise. The index has to enforce the
+    # same notion of "the same exercise" the API uses, or the two disagree and
+    # the disagreement is a 500.
     op.create_index(
         "uq_exercise_catalog_shared_name",
         "exercise_catalog",
-        ["name"],
+        [sa.text("lower(name)")],
         unique=True,
         sqlite_where=sa.text("user_id IS NULL"),
         postgresql_where=sa.text("user_id IS NULL"),
@@ -114,13 +120,18 @@ def upgrade() -> None:
     _backfill()
 
 
+#: Marker downgrade() reads back, so an unparseable rep value survives the round
+#: trip instead of being readable only by a human.
+_IMPORTED_REPS_PREFIX = "Imported reps: "
+
+
 def _backfill() -> None:
     """Turn the legacy string form into catalogue entries and real set rows."""
     bind = op.get_bind()
 
     rows = bind.execute(
         sa.text(
-            "SELECT id, name, sets, reps, weight_kg, notes FROM exercises "
+            "SELECT id, activity_id, name, sets, reps, weight_kg, notes FROM exercises "
             "ORDER BY activity_id, id"
         )
     ).fetchall()
@@ -131,43 +142,51 @@ def _backfill() -> None:
     # than attributed: the movement itself belongs to nobody, and guessing an
     # owner from whoever logged it first would make it invisible to the other
     # account.
-    catalog_ids: dict[str, int] = {}
-    for name in sorted(
-        {(r.name or "").strip() for r in rows if (r.name or "").strip()}
-    ):
-        result = bind.execute(
+    # Insert every distinct name, then read the ids back in one query.
+    #
+    # NOT `result.lastrowid`: psycopg2 returns **0** for a table with no OIDs
+    # rather than None, so a `lastrowid or fallback` idiom silently yields
+    # catalog_id=0 on Postgres and the very next UPDATE dies on a foreign key
+    # violation -- taking the whole migration, and the container's boot, with it.
+    # SQLite hides this completely, which is why it survived testing.
+    #
+    # Names are matched case-insensitively so "Bench Press" and "bench press"
+    # collapse to one movement instead of splitting a person's history in two.
+    by_lower: dict[str, str] = {}
+    for r in rows:
+        name = (r.name or "").strip()
+        if name:
+            by_lower.setdefault(name.lower(), name)
+
+    for name in sorted(by_lower.values()):
+        bind.execute(
             sa.text(
                 "INSERT INTO exercise_catalog (user_id, name, is_shared, is_archived) "
                 "VALUES (NULL, :name, :t, :f)"
             ),
             {"name": name, "t": True, "f": False},
         )
-        rid = result.lastrowid if hasattr(result, "lastrowid") else None
-        if rid is None:
-            rid = bind.execute(
-                sa.text(
-                    "SELECT id FROM exercise_catalog "
-                    "WHERE name = :name AND user_id IS NULL"
-                ),
-                {"name": name},
-            ).scalar()
-        catalog_ids[name] = int(rid)
+
+    catalog_ids: dict[str, int] = {
+        str(row.name).lower(): int(row.id)
+        for row in bind.execute(
+            sa.text("SELECT id, name FROM exercise_catalog WHERE user_id IS NULL")
+        )
+    }
 
     position_by_activity: dict[int, int] = {}
     for row in rows:
-        name = (row.name or "").strip()
+        name = (row.name or "").strip().lower()
         if name and name in catalog_ids:
             bind.execute(
                 sa.text("UPDATE exercises SET catalog_id = :c WHERE id = :i"),
                 {"c": catalog_ids[name], "i": row.id},
             )
 
-        # Preserve the order the rows already had, per activity.
-        act = bind.execute(
-            sa.text("SELECT activity_id FROM exercises WHERE id = :i"), {"i": row.id}
-        ).scalar()
-        pos = position_by_activity.get(act, 0)
-        position_by_activity[act] = pos + 1
+        # Preserve the order the rows already had, per activity. activity_id
+        # comes from the driving SELECT rather than a query per row.
+        pos = position_by_activity.get(row.activity_id, 0)
+        position_by_activity[row.activity_id] = pos + 1
         bind.execute(
             sa.text("UPDATE exercises SET position = :p WHERE id = :i"),
             {"p": pos, "i": row.id},
@@ -182,7 +201,7 @@ def _backfill() -> None:
         # text on the exercise note rather than inventing a number for it.
         unparsed = [p for p in parts if not p.isdigit()]
         if unparsed:
-            keep = f"Imported reps: {reps_raw}"
+            keep = f"{_IMPORTED_REPS_PREFIX}{reps_raw}"
             note = (row.notes or "").strip()
             merged = f"{note}\n{keep}" if note else keep
             bind.execute(
@@ -215,6 +234,15 @@ def downgrade() -> None:
     """
     bind = op.get_bind()
 
+    # What upgrade() parked on the note when a rep value was not a number, so
+    # this can put it back. Without it a "60s" hold upgrades to blank sets and
+    # downgrades to `reps = NULL`: the number is unrecoverable, the note says
+    # what it was, and the two halves of the round trip disagree.
+    notes_by_exercise = {
+        int(r.id): (r.notes or "")
+        for r in bind.execute(sa.text("SELECT id, notes FROM exercises"))
+    }
+
     grouped = bind.execute(
         sa.text(
             "SELECT exercise_id, COUNT(*) AS n, MAX(weight_kg) AS w "
@@ -230,6 +258,24 @@ def downgrade() -> None:
             {"e": row.exercise_id},
         ).fetchall()
         joined = ",".join(str(r.reps) for r in reps if r.reps is not None)
+
+        note = notes_by_exercise.get(int(row.exercise_id), "")
+        recovered = None
+        for line in note.splitlines():
+            if line.startswith(_IMPORTED_REPS_PREFIX):
+                recovered = line[len(_IMPORTED_REPS_PREFIX) :].strip()
+        if recovered:
+            joined = recovered
+            remainder = "\n".join(
+                line
+                for line in note.splitlines()
+                if not line.startswith(_IMPORTED_REPS_PREFIX)
+            ).strip()
+            bind.execute(
+                sa.text("UPDATE exercises SET notes = :n WHERE id = :i"),
+                {"n": remainder or None, "i": row.exercise_id},
+            )
+
         bind.execute(
             sa.text(
                 "UPDATE exercises SET sets = :s, reps = :r, weight_kg = :w "
