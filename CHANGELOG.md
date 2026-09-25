@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **The MCP service started with no database password and failed only on use.**
@@ -58,7 +62,6 @@ does not roll the database back — that head is what you would need to
   response to a database auth error is to reuse the app's connection string, which
   would silently discard the least-privilege role that is the only thing preventing
   a compromised connector from rewriting `users.password_hash`.
-
 
 ## [2.1.1] - 2026-09-24
 
@@ -806,7 +809,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.1.2...HEAD
+[2.1.2]: https://github.com/vkotaru/askesis.app/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/vkotaru/askesis.app/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/vkotaru/askesis.app/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/vkotaru/askesis.app/compare/v1.3.0...v2.0.0
