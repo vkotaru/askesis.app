@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **Today's step count is no longer withheld.** The Garmin importer deliberately
@@ -28,7 +32,6 @@ does not roll the database back — that head is what you would need to
   corrected as the day fills in and settles once it is over. The protections that
   matter are unaffected — a value you entered by hand is still never overwritten,
   and a field you deliberately cleared stays cleared.
-
 
 ## [2.2.0] - 2026-09-24
 
@@ -865,7 +868,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/vkotaru/askesis.app/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/vkotaru/askesis.app/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/vkotaru/askesis.app/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/vkotaru/askesis.app/compare/v2.1.0...v2.1.1
