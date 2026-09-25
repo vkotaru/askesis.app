@@ -5,7 +5,7 @@
   import ImportModal from '$lib/components/ImportModal.svelte';
   import SourceBadge from '$lib/components/SourceBadge.svelte';
   import { clsx } from 'clsx';
-  import { type DailyLog } from '$lib/api/client';
+  import { api, type DailyLog } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
   import { formatWater, formatWeight, waterToMetric, waterFromMetric, weightToMetric, weightFromMetric, getWaterLabel, getWeightLabel } from '$lib/utils/units';
@@ -59,6 +59,126 @@
   let caffeine_mg: number | undefined;
   let ate_outside = false;
   let notes = '';
+
+  // ── Quick entry: the two things that still have to be typed by hand ──────
+  //
+  // Steps, sleep and activities arrive from Garmin. Weight does not (the scale
+  // app does not sync), and neither do calories (they are read off MyFitnessPal
+  // and copied over). So those are the daily task, and this page is built
+  // around them.
+  //
+  // Meals here carry a label and a number and no food items, which is a
+  // perfectly valid Meal row — the nutrition tab and the dashboard both just
+  // sum `calories`, so nothing downstream has to know these were typed rather
+  // than itemised.
+  const QUICK_MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'] as const;
+
+  let mealCals: Record<string, number | undefined> = {};
+  // The row each label maps to, so an edit updates rather than piles up.
+  let mealRowId: Record<string, number | undefined> = {};
+  // A label the nutrition tab has split across several rows. Editing one of
+  // them here would silently disagree with the total, so those go read-only
+  // instead of guessing which row the number belongs to.
+  let mealLocked: Record<string, boolean> = {};
+
+  let protein_g: number | undefined;
+  let carbs_g: number | undefined;
+  let fat_g: number | undefined;
+
+  $: totalCals = QUICK_MEALS.reduce((sum, l) => sum + (mealCals[l] ?? 0), 0);
+
+  async function loadQuickEntry() {
+    try {
+      let meals = await offlineApi.getMeals(selectedDate, undefined);
+      if (meals.length === 0) {
+        // The offline layer answers from Dexie and refreshes in the background,
+        // so a device that has not cached THIS date yet gets an empty array and
+        // the real rows land later. For a chart that is fine; for a form it is
+        // not — you would be looking at blank calorie boxes for a day you
+        // already filled in, and typing into them would create duplicates.
+        //
+        // So when the cache has nothing, ask the server directly. Wrapped
+        // because offline this must stay empty rather than throw, and it only
+        // costs a request on days that genuinely have no meals logged.
+        try {
+          meals = await api.getMeals(selectedDate, undefined);
+        } catch {
+          // offline, or the server is unreachable — keep the empty result
+        }
+      }
+      const byLabel: Record<string, typeof meals> = {};
+      for (const m of meals) (byLabel[m.label] ??= []).push(m);
+
+      for (const label of QUICK_MEALS) {
+        const rows = byLabel[label] ?? [];
+        mealCals[label] = rows.length ? rows.reduce((s, m) => s + (m.calories ?? 0), 0) : undefined;
+        mealRowId[label] = rows.length === 1 ? rows[0].id : undefined;
+        mealLocked[label] = rows.length > 1;
+      }
+      mealCals = mealCals; mealRowId = mealRowId; mealLocked = mealLocked;
+    } catch {
+      for (const label of QUICK_MEALS) {
+        mealCals[label] = undefined; mealRowId[label] = undefined; mealLocked[label] = false;
+      }
+      mealCals = mealCals; mealRowId = mealRowId; mealLocked = mealLocked;
+    }
+
+    try {
+      const n = await offlineApi.getDailyNutrition(selectedDate, undefined);
+      protein_g = n?.protein_g ?? undefined;
+      carbs_g = n?.carbs_g ?? undefined;
+      fat_g = n?.fat_g ?? undefined;
+    } catch {
+      protein_g = undefined; carbs_g = undefined; fat_g = undefined;
+    }
+  }
+
+  async function saveMeal(label: string) {
+    if (mealLocked[label]) return;
+    const value = mealCals[label];
+    try {
+      if (mealRowId[label] !== undefined) {
+        await offlineApi.updateMeal(mealRowId[label]!, {
+          date: selectedDate,
+          label,
+          calories: value ?? 0,
+        });
+      } else if (value !== undefined && value !== null) {
+        // Only a real number creates a row. Tabbing through an empty field
+        // should not litter the day with zero-calorie meals.
+        const created = await offlineApi.createMeal({
+          date: selectedDate,
+          label,
+          calories: value,
+        });
+        mealRowId[label] = created.id;
+        mealRowId = mealRowId;
+      }
+      flashSaved(`meal:${label}`);
+    } catch (err) {
+      console.error('Failed to save meal calories:', err);
+    }
+  }
+
+  async function saveMacros(field: string) {
+    try {
+      await offlineApi.saveDailyNutrition({
+        date: selectedDate,
+        protein_g,
+        carbs_g,
+        fat_g,
+      });
+      flashSaved(field);
+    } catch (err) {
+      console.error('Failed to save macros:', err);
+    }
+  }
+
+  function flashSaved(key: string) {
+    fieldSaved[key] = true;
+    fieldSaved = fieldSaved;
+    setTimeout(() => { fieldSaved[key] = false; fieldSaved = fieldSaved; }, 1500);
+  }
 
   // Auto-save function - saves current form state
   async function autoSave(fieldName: string) {
@@ -133,8 +253,16 @@
     }
   }
 
-  onMount(() => {
+  // The page shows two independent records for one date — the daily log, and
+  // the meals/macros behind the quick-entry card — so every date change has to
+  // move both. One function, so a new navigation path cannot reload half a day.
+  function loadDay() {
     loadLog();
+    loadQuickEntry();
+  }
+
+  onMount(() => {
+    loadDay();
     loadRecentLogs();
   });
 
@@ -145,21 +273,37 @@
   $: if ($dataVersion !== seenDataVersion) {
     seenDataVersion = $dataVersion;
     loadRecentLogs();
+    refreshQuickEntry();
+  }
+
+  // The quick-entry card DOES follow background refreshes, unlike the form
+  // below it, and it has to: reads are served from the local cache first, so on
+  // a device that has not synced this date yet the first render is empty and
+  // the real numbers arrive moments later. Without this they never appear until
+  // the page is opened a second time.
+  //
+  // The clobbering risk that keeps loadLog() out of this block is handled by
+  // refusing to refresh while the user is inside the card — a half-typed
+  // calorie count must never be replaced mid-keystroke.
+  let quickCard: HTMLElement | undefined;
+  function refreshQuickEntry() {
+    if (quickCard && quickCard.contains(document.activeElement)) return;
+    loadQuickEntry();
   }
 
   function goToDate(date: string) {
     selectedDate = date;
-    loadLog();
+    loadDay();
   }
 
   function prevDay() {
     selectedDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
-    loadLog();
+    loadDay();
   }
 
   function nextDay() {
     selectedDate = format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
-    loadLog();
+    loadDay();
   }
 
   function toggleFeeling(feeling: string) {
@@ -198,7 +342,7 @@
 
   function handleDateChange(e: Event) {
     selectedDate = (e.target as HTMLInputElement).value;
-    loadLog();
+    loadDay();
   }
 
   // Check if current date has any data
@@ -255,28 +399,125 @@
     {/if}
   </div>
 
-  <form on:submit|preventDefault={handleSubmit} class="card p-6">
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div class="space-y-2">
-        <label for="weight" class="label flex items-center gap-2">
-          <Scale size={16} class="text-rest-500" />
-          Weight <span class="text-gray-400 font-normal">({getWeightLabel($settings.weight_unit)})</span>
-          {#if fieldSaved['weight']}
-            <Check size={14} class="text-primary-500 animate-pulse" />
-          {/if}
-        </label>
-        <input
-          id="weight"
-          type="number"
-          step="any"
-          bind:value={weight}
-          on:blur={() => autoSave('weight')}
-          placeholder="Enter weight"
-          class={clsx('input', fieldSaved['weight'] && 'ring-2 ring-primary-300')}
+  <!-- Quick entry — the only two things still typed by hand every day.
+       Garmin supplies steps, sleep and activities; the scale app and the food
+       tracker do not sync, so weight and calories land here. Everything else
+       this page can record is real but occasional, and sits under "More". -->
+  <div class="card p-6 space-y-5" bind:this={quickCard}>
+    <div class="space-y-2">
+      <label for="weight" class="label flex items-center gap-2">
+        <Scale size={16} class="text-rest-500" />
+        Weight <span class="text-gray-400 font-normal">({getWeightLabel($settings.weight_unit)})</span>
+        <SourceBadge source={sources['weight']} />
+        {#if fieldSaved['weight']}
+          <Check size={14} class="text-primary-500 animate-pulse" />
+        {/if}
+      </label>
+      <input
+        id="weight"
+        type="number"
+        step="any"
+        inputmode="decimal"
+        bind:value={weight}
+        on:blur={() => autoSave('weight')}
+        placeholder="Enter weight"
+        class={clsx('input text-lg', fieldSaved['weight'] && 'ring-2 ring-primary-300')}
+      />
+    </div>
 
-        />
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-3">
+      <div class="flex items-baseline gap-2">
+        <Utensils size={16} class="text-nutrition-500" />
+        <span class="label mb-0">Calories</span>
+        <span class="ml-auto text-sm text-gray-400">
+          total
+          <span class="ml-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white"
+            >{totalCals.toLocaleString()}</span
+          >
+        </span>
       </div>
 
+      <div class="grid grid-cols-2 gap-3">
+        {#each QUICK_MEALS as label}
+          <div class="space-y-1">
+            <label for="meal-{label}" class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+              {label}
+              {#if fieldSaved[`meal:${label}`]}
+                <Check size={12} class="text-primary-500 animate-pulse" />
+              {/if}
+            </label>
+            <input
+              id="meal-{label}"
+              type="number"
+              inputmode="numeric"
+              bind:value={mealCals[label]}
+              on:blur={() => saveMeal(label)}
+              disabled={mealLocked[label]}
+              placeholder="—"
+              class={clsx(
+                'input tabular-nums',
+                mealLocked[label] && 'opacity-60 cursor-not-allowed',
+                fieldSaved[`meal:${label}`] && 'ring-2 ring-primary-300'
+              )}
+            />
+            {#if mealLocked[label]}
+              <!-- Several rows share this label, so which one a typed number
+                   belongs to is genuinely ambiguous. Showing the sum and
+                   sending the user to the itemised view beats picking one. -->
+              <p class="text-[10px] text-gray-400 leading-tight">
+                itemised — edit in <a href="/nutrition" class="underline">Nutrition</a>
+              </p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-3">
+      <span class="label mb-0">Macros <span class="text-gray-400 font-normal">(g)</span></span>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="space-y-1">
+          <label for="protein" class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            Protein
+            {#if fieldSaved['protein']}<Check size={12} class="text-primary-500 animate-pulse" />{/if}
+          </label>
+          <input id="protein" type="number" step="any" inputmode="decimal"
+            bind:value={protein_g} on:blur={() => saveMacros('protein')} placeholder="—"
+            class={clsx('input tabular-nums', fieldSaved['protein'] && 'ring-2 ring-primary-300')} />
+        </div>
+        <div class="space-y-1">
+          <label for="carbs" class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            Carbs
+            {#if fieldSaved['carbs']}<Check size={12} class="text-primary-500 animate-pulse" />{/if}
+          </label>
+          <input id="carbs" type="number" step="any" inputmode="decimal"
+            bind:value={carbs_g} on:blur={() => saveMacros('carbs')} placeholder="—"
+            class={clsx('input tabular-nums', fieldSaved['carbs'] && 'ring-2 ring-primary-300')} />
+        </div>
+        <div class="space-y-1">
+          <label for="fat" class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            Fat
+            {#if fieldSaved['fat']}<Check size={12} class="text-primary-500 animate-pulse" />{/if}
+          </label>
+          <input id="fat" type="number" step="any" inputmode="decimal"
+            bind:value={fat_g} on:blur={() => saveMacros('fat')} placeholder="—"
+            class={clsx('input tabular-nums', fieldSaved['fat'] && 'ring-2 ring-primary-300')} />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Everything else this page records. Real, but not a daily task — sleep and
+       steps arrive from Garmin, and water is not being counted. Collapsed so the
+       two fields above are the whole screen on a phone. -->
+  <details class="mt-6 group">
+    <summary class="cursor-pointer select-none text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-2 py-2">
+      <ChevronRight size={16} class="transition-transform group-open:rotate-90" />
+      More — sleep, steps, water, caffeine, feelings, notes
+    </summary>
+
+  <form on:submit|preventDefault={handleSubmit} class="card p-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div class="space-y-2">
         <label for="sleep" class="label flex items-center gap-2">
           <Moon size={16} class="text-strength-500" />
@@ -445,6 +686,8 @@
       </div>
     {/if}
   </form>
+
+  </details>
 
 <!-- Import Button -->
     <div class="mt-6">
@@ -677,5 +920,5 @@
   bind:show={showImportModal}
   dataType="daily-logs"
   title="Import Daily Logs"
-  on:success={() => { loadLog(); loadRecentLogs(); }}
+  on:success={() => { loadDay(); loadRecentLogs(); }}
 />

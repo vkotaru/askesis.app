@@ -17,6 +17,22 @@ does not roll the database back — that head is what you would need to
 
 ### Changed
 
+- **The Daily Log page is now built around the two things still entered by hand.**
+  Garmin supplies steps, sleep and activities; the scale and the food tracker do
+  not sync, so weight and calories are the actual daily task. The page opens with
+  a single card: weight, four meal calorie boxes with a running total, and
+  protein/carbs/fat. Sleep, steps, water, caffeine, ate-out, feelings and notes
+  are unchanged but collapsed under "More" — nothing was removed.
+
+  This needed no migration. A meal row carrying a label and a calorie count with
+  no itemised foods is already valid, and both the nutrition tab and the dashboard
+  simply sum `calories`. Where a label has several rows — because it *was*
+  itemised — the box shows the sum, becomes read-only, and links to Nutrition
+  rather than guessing which row a typed number belongs to.
+
+
+### Changed
+
 - **The mobile bottom navigation is now a left icon rail.** The bar carried eleven
   destinations in a strip that fits about five, so reaching the rest meant
   scrolling a nav that gave no indication it scrolled — and it consumed the bottom

@@ -21,6 +21,43 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-24 — Daily Log rebuilt around the two fields still typed by hand
+
+**What changed**
+- `/daily-log` now leads with a quick-entry card: weight, four meal calorie
+  boxes with a computed total, and protein/carbs/fat. Everything else the page
+  records — sleep, steps, water, caffeine, ate-out, feelings, notes — moved
+  under a collapsed "More". Nothing was deleted.
+- **No migration.** The existing schema already fits: a `Meal` row carrying a
+  label and `calories` with no food items is valid, and the nutrition tab and
+  dashboard both just sum `calories`, so neither has to know these were typed
+  rather than itemised. Macros go to `DailyNutrition`, weight to `DailyLog`.
+
+**Why this shape**
+- Garmin supplies steps, sleep and activities. The scale app and the food
+  tracker do not sync, so weight and calories are the whole daily task — and
+  logging individual foods was abandoned as too much friction. The user is
+  copying four numbers out of another app, not building a food diary, and the
+  meal-logging UI was the wrong tool for that.
+
+**Watch out**
+- **`offlineApi.getMeals()` answers from Dexie and refreshes in the background**,
+  so on a device that has not cached that date it returns `[]` and the real rows
+  arrive later. Fine for a chart, wrong for a form: you would see blank boxes for
+  a day you had already filled in, and typing into them would create duplicate
+  rows. Relying on the `dataVersion` bump to repair it did **not** work
+  reliably — verified empty after a 28 s wait on a cold profile. The form now
+  falls back to `api.getMeals()` when the cache returns nothing, wrapped so
+  offline stays empty rather than throwing.
+- **A label can legitimately have several rows** (the nutrition tab itemises).
+  Editing one of them from a single box would silently disagree with the total,
+  so those boxes show the sum, go read-only, and point at Nutrition. Verified by
+  adding a second Breakfast: 437 + 150 renders as a locked 587.
+- Only a real number creates a row — tabbing through an empty box must not
+  litter the day with zero-calorie meals.
+- The card follows background refreshes but **refuses to while focus is inside
+  it**, so a half-typed calorie count is never replaced mid-keystroke.
+
 ## 2026-09-24 — Mobile left rail, and bike as equivalent steps
 
 **What changed**
