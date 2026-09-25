@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-09-25
+
+Alembic head: `add_routine_exercises`
+
 ### Fixed
 
 Everything here was found by an adversarial review of 2.3.0 before it was
@@ -76,7 +80,6 @@ deployed, so none of it ever reached the server. **Do not deploy 2.3.0.**
   movement a video link and form notes, and archive one you no longer use.
   Archive rather than delete, because sessions — including the other person's —
   reference it. Until now the video link and form notes could not be set at all.
-
 
 ## [2.3.0] - 2026-09-25
 
@@ -1024,7 +1027,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/vkotaru/askesis.app/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/vkotaru/askesis.app/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/vkotaru/askesis.app/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/vkotaru/askesis.app/compare/v2.2.1...v2.2.2
