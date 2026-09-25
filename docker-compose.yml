@@ -66,6 +66,11 @@ services:
     # They default to "unknown" — a bare `docker compose build` still works.
     build:
       context: .
+      # EXPLICIT target, and it must stay explicit. The Dockerfile's last stage is
+      # `mcp`, and a build with no target silently builds the LAST stage — which
+      # would hand the app container the MCP image: no routers, no SPA, no
+      # app.main. release.sh caught this, but only because that check exists.
+      target: app
       args:
         GIT_SHA: ${GIT_SHA:-unknown}
         GIT_REF: ${GIT_REF:-unknown}

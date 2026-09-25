@@ -142,13 +142,25 @@ step "Frontend: check + build"
 # out -- releases are immutable, so the fix costs another version.
 step "Docker: build the deployable image"
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  docker build -q -t "askesis-release-check:$TAG" . >/dev/null
+  # --target app explicitly: the Dockerfile's LAST stage is `mcp`, and an
+  # untargeted build silently produces that instead, which then fails the
+  # import check below for a reason that has nothing to do with the app.
+  docker build -q --target app -t "askesis-release-check:$TAG" . >/dev/null
   docker run --rm -e DEV_MODE=true -e SECRET_KEY=release-check-not-a-real-secret \
     -e DATABASE_URL="sqlite:////tmp/release-check.db" \
     "askesis-release-check:$TAG" \
     sh -c "python -c 'import app.main' && python -m alembic upgrade head" >/dev/null
   docker image rm -f "askesis-release-check:$TAG" >/dev/null 2>&1 || true
   echo "    image builds, imports and migrates"
+
+  # The mcp stage's final RUN asserts the dependency split (mcp_server imports;
+  # fastapi and app.main do not), so building it here makes that a release gate
+  # instead of something verified by hand.
+  if ! docker build -q --target mcp -t "askesis-mcp-check:$TAG" . >/dev/null; then
+    die "the mcp image failed to build; its stage asserts the isolation invariants"
+  fi
+  docker image rm -f "askesis-mcp-check:$TAG" >/dev/null 2>&1 || true
+  echo "    mcp image builds; fastapi and app.main absent"
 else
   echo "    !! SKIPPED: no usable docker. The image is NOT verified -- the last" >&2
   echo "    !! release that skipped this shipped a tag that would not build." >&2

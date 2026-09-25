@@ -49,6 +49,13 @@ dead ends we still remembered, not every step.
   `docker-compose.dev.yml` and I walked into it anyway. Fix: `:-` defaults, so an
   empty value reaches the container and `mcp_server/config.py` fails closed with a
   readable reason, plus `profiles: ["mcp"]` to keep it out of the stack.
+- **Adding a third Dockerfile stage broke `docker build` with no `--target`.**
+  BuildKit builds the LAST stage, which is now `mcp` — so `release.sh` produced
+  the MCP image and then failed `import app.main`, and `docker compose build`
+  would have handed the **app container the MCP image**: no routers, no SPA, no
+  `app.main`. Both now pass `--target` explicitly (`target: app` in compose).
+  Caught only because release.sh builds and imports; nothing else would have
+  noticed until the app 404'd everything.
 - **`DO $$ ... :mcp_password ... $$` in the role SQL failed** with `syntax error at
   or near ":"`. psql does not substitute `:vars` inside dollar-quoted bodies. Use
   `SELECT format(...) \gexec`. Only found by running it against a real Postgres.

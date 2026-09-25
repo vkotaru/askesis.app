@@ -17,6 +17,12 @@ does not roll the database back — that head is what you would need to
 
 ### Fixed
 
+- **Docker builds now name their stage explicitly.** Adding the `mcp` stage made
+  it the last one in the `Dockerfile`, and an untargeted `docker build` builds the
+  last stage — so `docker compose build` would have given the **app** container
+  the MCP image (no routers, no SPA, no `app.main`). `docker-compose.yml` pins
+  `target: app` and `release.sh` passes `--target app`; it also now builds the
+  `mcp` stage, whose own assertions make the dependency split a release gate.
 - **`deploy.sh`'s smoke test cried wolf on the first v2.0.0 deploy.** A trailing
   slash in `PUBLIC_URL` made the probe request `//api/version`, which the SPA
   catch-all answers with `200` and `index.html` rather than a 404 — so the commit
