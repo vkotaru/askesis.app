@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **A day missing from the Garmin steps response was missed forever.** Steps for
@@ -27,7 +31,6 @@ does not roll the database back — that head is what you would need to
   A day absent from the ranged response now gets its own single-day request. Days
   repaired that way are listed in the sync summary rather than fixed silently, so
   a pattern of them is visible instead of folklore.
-
 
 ## [2.2.1] - 2026-09-24
 
@@ -882,7 +885,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/vkotaru/askesis.app/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/vkotaru/askesis.app/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/vkotaru/askesis.app/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/vkotaru/askesis.app/compare/v2.1.1...v2.1.2
