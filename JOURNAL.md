@@ -21,6 +21,34 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-25 — Strength logging, stage 3: offline
+
+**What changed**
+- Sets ride nested inside the activity through the sync protocol, both
+  directions. Dexie `version(6)` adds `exerciseCatalog`, in `SYNCED_TABLES` but
+  **not** `USER_OWNED_TABLES`, exactly as `foods` is.
+- Fixed `sync.py`'s `if exercises_data:` guard, and one writer now serves both
+  the create and update push paths.
+
+**Watch out**
+- **The changes feed filtered the shared catalogue out of existence.** It scopes
+  every table with `hasattr(model, "user_id")` to `user_id == me` — and the
+  shared rows have `user_id IS NULL`, so they matched nothing and would never
+  have reached any client. `SHARED_CATALOG_MODELS` now matches NULL as well.
+  `FoodItem` has the same nullable shape and was silently affected too.
+- **Adding a catalogue entry is online-only, deliberately.** Sessions reference
+  an entry by server id; an offline-created one has none, so queueing it would
+  mean inventing a local id and rewriting every session that pointed at it once
+  the server answered. The logger instead falls back to a plain named exercise,
+  which loses the video link and nothing else.
+- **`if exercises_data:` was the bug**: clearing every exercise offline sends
+  `[]`, which is falsy, so the replace never ran and the rows survived — while
+  the REST path cleared them. The same edit behaved differently depending on
+  whether you had signal.
+- A test that pushes a **stale timestamp** is silently ignored by server-wins
+  conflict resolution and looks exactly like a broken write. Push with a
+  timestamp newer than the row, or you will debug the wrong thing.
+
 ## 2026-09-25 — Strength logging, stage 2: the session logger
 
 **What changed**

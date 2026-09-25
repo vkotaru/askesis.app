@@ -48,6 +48,7 @@ import {
   type LocalMeasurement,
   type LocalPhoto,
   type LocalDailyNutrition,
+  type LocalExerciseCatalog,
 } from '$lib/db';
 import {
   api,
@@ -64,6 +65,8 @@ import {
   type DailyNutritionInput,
   type ProgressPhoto,
   type PhotoView,
+  type CatalogEntry,
+  type CatalogInput,
 } from '$lib/api/client';
 import {
   queueSync,
@@ -596,6 +599,36 @@ function localToPhoto(p: LocalPhoto): ProgressPhoto {
 
 // ── Hydrate: populate Dexie from server on first load ────────────────────────
 
+function toLocalCatalogEntry(entry: CatalogEntry): UpdateSpec {
+  return {
+    serverId: entry.id,
+    name: entry.name,
+    muscle_group: entry.muscle_group,
+    video_url: entry.video_url,
+    notes: entry.notes,
+    is_shared: entry.is_shared,
+    is_archived: entry.is_archived,
+    // Carried through as-is. NULL means the row belongs to the install, and
+    // stamping it with the current account would make a shared entry look
+    // personal — and then invisible to the other account after a sign-out sweep.
+    userId: entry.user_id,
+    updatedAt: now(),
+  } as unknown as UpdateSpec;
+}
+
+function fromLocalCatalogEntry(local: LocalExerciseCatalog): CatalogEntry {
+  return {
+    id: local.serverId ?? -(local.localId ?? 0),
+    name: local.name,
+    muscle_group: local.muscle_group ?? null,
+    video_url: local.video_url ?? null,
+    notes: local.notes ?? null,
+    is_shared: local.is_shared ?? true,
+    is_archived: local.is_archived ?? false,
+    user_id: local.userId ?? null,
+  };
+}
+
 async function hydrateTable<T>(
   tableName: string,
   fetcher: () => Promise<T[]>,
@@ -674,6 +707,8 @@ export async function hydrateFromServer(userId?: number): Promise<void> {
     hydrateTable('activities', () => api.getActivities(undefined, undefined, undefined, 500), (a) => a.id, (a) => toLocalActivity(a, userId), false, userId),
     hydrateTable('meals', () => api.getMeals(undefined, undefined, undefined, undefined, 500), (m) => m.id, (m) => toLocalMeal(m, userId), false, userId),
     hydrateTable('foods', () => api.searchFoods(undefined, undefined, false, 200), (f) => f.id, toLocalFood),
+      // Ownerless, like foods: a NULL user_id means it belongs to the install.
+      hydrateTable('exerciseCatalog', () => api.getCatalog(), (e) => e.id, toLocalCatalogEntry),
     hydrateTable('measurements', () => api.getMeasurements(undefined, undefined, undefined), (m) => m.id, (m) => toLocalMeasurement(m, userId), true, userId),
     hydrateTable('photos', () => api.getPhotos(undefined, undefined, undefined, undefined), (p) => p.id, (p) => toLocalPhoto(p, userId), false, userId),
     hydrateTable('dailyNutrition', () => api.getNutritionHistory(undefined, undefined, undefined, 500), (n) => n.id, (n) => toLocalNutrition(n, userId), true, userId),
@@ -951,6 +986,63 @@ export const offlineApi = {
 
     if (limit) results = results.slice(0, limit);
     return results.map(fromLocalMeal);
+  },
+
+  /**
+   * The shared movement library, served from the cache first.
+   *
+   * No user scoping: these rows belong to the install, so `ownedBy` would filter
+   * out exactly the shared entries this feature exists to share. That is why
+   * `exerciseCatalog` is in SYNCED_TABLES but not USER_OWNED_TABLES.
+   */
+  async getCatalog(q?: string): Promise<CatalogEntry[]> {
+    revalidate(`exerciseCatalog:${q ?? ''}`, async () => {
+      const server = await api.getCatalog(q);
+      return mergeServerRows(
+        'exerciseCatalog',
+        db.exerciseCatalog,
+        server,
+        (e) => e.id,
+        (e) => toLocalCatalogEntry(e) as unknown as LocalExerciseCatalog,
+        false
+      );
+    });
+
+    let rows = await db.exerciseCatalog.toArray();
+    rows = rows.filter((r) => !r.is_archived);
+    if (q) {
+      const needle = q.toLowerCase();
+      rows = rows.filter((r) => r.name.toLowerCase().includes(needle));
+    }
+    // A cold cache would otherwise show an empty picker mid-workout, with the
+    // real list arriving moments later — the same trap the Daily Log hit.
+    if (rows.length === 0) {
+      try {
+        return await api.getCatalog(q);
+      } catch {
+        return [];
+      }
+    }
+    return rows
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(fromLocalCatalogEntry);
+  },
+
+  /**
+   * Add a movement. Online only, deliberately.
+   *
+   * A catalogue entry is referenced by id from every session that uses it, and
+   * an offline-created row has no server id to reference — queueing one would
+   * mean inventing a local id, then rewriting every session that pointed at it
+   * once the server answered. The logger falls back to a plain named exercise
+   * when this fails, which loses the video link and nothing else.
+   */
+  async createCatalogEntry(data: CatalogInput): Promise<CatalogEntry> {
+    const entry = await api.createCatalogEntry(data);
+    await db.exerciseCatalog.add(
+      toLocalCatalogEntry(entry) as unknown as LocalExerciseCatalog
+    );
+    return entry;
   },
 
   async createMeal(data: MealInput): Promise<Meal> {

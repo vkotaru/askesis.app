@@ -60,14 +60,50 @@ export interface LocalActivity {
   // Importer that created this row; absent for hand-entered ones. Not indexed.
   source?: string;
   external_id?: string;
+  // Sets ride nested inside the activity rather than in their own table. The
+  // sync protocol already carries `exercises` as a nested blob and Dexie stores
+  // non-indexed properties verbatim, so going one level deeper needs no new
+  // store and no schema version of its own.
   exercises: Array<{
     id?: number;
     name: string;
+    catalog_id?: number | null;
+    position?: number;
+    notes?: string;
+    sets_detail?: Array<{
+      id?: number;
+      set_number: number;
+      weight_kg?: number | null;
+      reps?: number | null;
+      set_type: string;
+      rpe?: number | null;
+      notes?: string | null;
+    }>;
+    // Legacy shape, still read so pre-catalogue rows render.
     sets?: number;
     reps?: string;
     weight_kg?: number;
-    notes?: string;
   }>;
+  updatedAt: string;
+}
+
+/**
+ * The shared movement library.
+ *
+ * Deliberately shaped like `LocalFood`: a row with no `userId` belongs to the
+ * install rather than to an account, which is why this table is in
+ * SYNCED_TABLES but NOT in USER_OWNED_TABLES.
+ */
+export interface LocalExerciseCatalog {
+  localId?: number;
+  serverId?: number;
+  name: string;
+  muscle_group?: string | null;
+  video_url?: string | null;
+  notes?: string | null;
+  is_shared?: boolean;
+  is_archived?: boolean;
+  userId?: number | null;
   updatedAt: string;
 }
 
@@ -281,6 +317,9 @@ export const SYNCED_TABLES = [
   'activities',
   'meals',
   'foods',
+  // Shared across the install, like `foods` — and for the same reason it is
+  // absent from USER_OWNED_TABLES below: these rows have no owner to scope by.
+  'exerciseCatalog',
   'measurements',
   'photos',
   'dailyNutrition',
@@ -371,6 +410,7 @@ class AskesisDB extends Dexie {
   activities!: Table<LocalActivity, number>;
   meals!: Table<LocalMeal, number>;
   foods!: Table<LocalFood, number>;
+  exerciseCatalog!: Table<LocalExerciseCatalog, number>;
   measurements!: Table<LocalMeasurement, number>;
   photos!: Table<LocalPhoto, number>;
   dailyNutrition!: Table<LocalDailyNutrition, number>;
@@ -512,6 +552,12 @@ class AskesisDB extends Dexie {
           await queue.bulkPut(untaggedQueue.map((e) => ({ ...e, userId: cachedUserId })));
         }
       });
+
+    // v6 adds the shared exercise library. Additive only: Dexie carries every
+    // existing store forward, and nothing in v1-v5 is touched.
+    this.version(6).stores({
+      exerciseCatalog: '++localId, serverId, name, updatedAt',
+    });
 
     // ── Future versions go here ────────────────────────────────────────────
   }

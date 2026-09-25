@@ -21,6 +21,8 @@ from app.models import (
     DailyNutrition,
     Activity,
     Exercise,
+    ExerciseSet,
+    ExerciseCatalog,
     Meal,
     FoodItem,
     BodyMeasurement,
@@ -67,8 +69,17 @@ class SyncPushResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Map client table names to SQLAlchemy models
+#: Tables whose rows may belong to the install rather than to one account, via
+#: a NULL user_id. They are visible to everyone here, so the sync feed must not
+#: scope them the way personal data is scoped.
+SHARED_CATALOG_MODELS = (FoodItem, ExerciseCatalog)
+
 TABLE_MAP = {
     "dailyLogs": DailyLog,
+    # Shared across the install, like `foods`. It syncs so the picker works in a
+    # gym with no signal; ownership scoping does not apply because a NULL user_id
+    # means the row belongs to everyone here.
+    "exerciseCatalog": ExerciseCatalog,
     "dailyNutrition": DailyNutrition,
     "activities": Activity,
     "meals": Meal,
@@ -97,12 +108,27 @@ def model_to_dict(obj, include_relationships: bool = False) -> dict:
             {
                 "id": ex.id,
                 "name": ex.name,
+                "catalog_id": ex.catalog_id,
+                "position": ex.position,
+                "notes": ex.notes,
+                "sets_detail": [
+                    {
+                        "id": st.id,
+                        "set_number": st.set_number,
+                        "weight_kg": st.weight_kg,
+                        "reps": st.reps,
+                        "set_type": st.set_type,
+                        "rpe": st.rpe,
+                        "notes": st.notes,
+                    }
+                    for st in sorted(ex.sets_detail, key=lambda x: x.set_number)
+                ],
+                # Legacy shape, still emitted so an older client keeps working.
                 "sets": ex.sets,
                 "reps": ex.reps,
                 "weight_kg": ex.weight_kg,
-                "notes": ex.notes,
             }
-            for ex in obj.exercises
+            for ex in sorted(obj.exercises, key=lambda e: e.position)
         ]
 
     # Include food_items for meals
@@ -176,9 +202,22 @@ def get_changes(
 
         query = db.query(model).filter(or_(*filters))
 
-        # Scope to current user
+        # Scope to current user.
+        #
+        # Two tables here are household libraries rather than personal data, and
+        # carry a NULLABLE user_id where NULL means "belongs to the install".
+        # A plain `user_id == me` would filter those rows out and the shared
+        # entries would never reach any client -- so they are matched explicitly.
         if hasattr(model, "user_id"):
-            query = query.filter(model.user_id == current_user.id)
+            if model in SHARED_CATALOG_MODELS:
+                query = query.filter(
+                    or_(
+                        model.user_id == current_user.id,
+                        model.user_id.is_(None),
+                    )
+                )
+            else:
+                query = query.filter(model.user_id == current_user.id)
 
         rows = query.all()
         if rows:
@@ -300,6 +339,55 @@ _EXCLUDE_FIELDS = {
     # relabel Garmin's values as the user's own.
     "sources",
 }
+
+
+def _write_exercises(db: Session, activity_id: int, exercises_data) -> None:
+    """Insert exercises and their sets from a pushed activity payload.
+
+    Mirrors `activities.py::_write_exercises`. The two cannot share code without
+    the sync module importing a router, but they must agree, so any change here
+    belongs there too.
+    """
+    for order, ex_data in enumerate(exercises_data or []):
+        ex = Exercise(
+            activity_id=activity_id,
+            name=ex_data.get("name", ""),
+            catalog_id=ex_data.get("catalog_id"),
+            position=order,
+            notes=ex_data.get("notes"),
+            # Legacy fields, accepted so a mutation queued by an older client
+            # still applies rather than failing forever in the queue.
+            sets=ex_data.get("sets"),
+            reps=ex_data.get("reps"),
+            weight_kg=ex_data.get("weight_kg"),
+        )
+        db.add(ex)
+        db.flush()
+        for number, st in enumerate(ex_data.get("sets_detail") or [], start=1):
+            db.add(
+                ExerciseSet(
+                    exercise_id=ex.id,
+                    set_number=number,
+                    weight_kg=st.get("weight_kg"),
+                    reps=st.get("reps"),
+                    set_type=st.get("set_type") or "working",
+                    rpe=st.get("rpe"),
+                    notes=st.get("notes"),
+                )
+            )
+
+
+def _replace_exercises(db: Session, activity_id: int, exercises_data) -> None:
+    """Swap an activity's exercises for the pushed list, including an empty one.
+
+    Deletes through the ORM rather than with a bulk query delete: a bulk delete
+    emits one statement and bypasses the relationship, leaving every child set
+    row orphaned.
+    """
+    for existing in db.query(Exercise).filter(Exercise.activity_id == activity_id):
+        db.delete(existing)
+    db.flush()
+    _write_exercises(db, activity_id, exercises_data)
 
 
 def _clean_data(data: dict | None) -> dict:
@@ -425,18 +513,8 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
     db.add(obj)
     db.flush()
 
-    # Handle exercises for activities
-    if model == Activity and exercises_data:
-        for ex_data in exercises_data:
-            ex = Exercise(
-                activity_id=obj.id,
-                name=ex_data.get("name", ""),
-                sets=ex_data.get("sets"),
-                reps=ex_data.get("reps"),
-                weight_kg=ex_data.get("weight_kg"),
-                notes=ex_data.get("notes"),
-            )
-            db.add(ex)
+    if model == Activity:
+        _write_exercises(db, obj.id, exercises_data)
 
     return obj.id
 
@@ -497,19 +575,14 @@ def _handle_update(
         if "time_of_day" in data and data["time_of_day"]:
             data["time_of_day"] = TimeOfDay(data["time_of_day"])
 
-        # Replace exercises
-        if exercises_data:
-            db.query(Exercise).filter(Exercise.activity_id == obj.id).delete()
-            for ex_data in exercises_data:
-                ex = Exercise(
-                    activity_id=obj.id,
-                    name=ex_data.get("name", ""),
-                    sets=ex_data.get("sets"),
-                    reps=ex_data.get("reps"),
-                    weight_kg=ex_data.get("weight_kg"),
-                    notes=ex_data.get("notes"),
-                )
-                db.add(ex)
+        # Replace exercises.
+        #
+        # The `if exercises_data:` guard this replaces was a bug: removing every
+        # exercise from an activity offline sends `[]`, which is falsy, so the
+        # replace never ran and the old rows survived on the server -- while the
+        # REST path (activities.py) cleared them. The two write paths disagreed
+        # about the same edit depending on whether you were online.
+        _replace_exercises(db, obj.id, exercises_data)
 
     if model == Meal:
         data.pop("food_items", None)

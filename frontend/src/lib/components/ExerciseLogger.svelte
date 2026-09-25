@@ -20,6 +20,7 @@
   import { createEventDispatcher } from 'svelte';
   import { Plus, X, Search, ExternalLink, StickyNote, Trash2 } from 'lucide-svelte';
   import { clsx } from 'clsx';
+  import { offlineApi } from '$lib/stores/data';
   import {
     api,
     type Exercise,
@@ -54,7 +55,7 @@
 
   async function loadCatalog() {
     try {
-      catalog = await api.getCatalog(pickerQuery || undefined);
+      catalog = await offlineApi.getCatalog(pickerQuery || undefined);
       catalogError = '';
     } catch {
       catalogError = 'Could not load the exercise list.';
@@ -88,11 +89,26 @@
     if (!name || creating) return;
     creating = true;
     try {
-      const entry = await api.createCatalogEntry({ name });
+      const entry = await offlineApi.createCatalogEntry({ name });
       catalog = [...catalog, entry];
       await addExercise(entry);
     } catch {
-      catalogError = `Could not add "${name}".`;
+      // Offline, most likely. Fall back to a plain named exercise so the set is
+      // still logged — it just has no catalogue link, so no video and no
+      // last-time numbers until it is added to the library properly.
+      exercises = [
+        ...exercises,
+        {
+          name,
+          position: exercises.length,
+          sets_detail: [
+            { set_number: 1, weight_kg: null, reps: null, set_type: 'working' },
+          ],
+        },
+      ];
+      showPicker = false;
+      emit();
+      catalogError = '';
     } finally {
       creating = false;
     }
