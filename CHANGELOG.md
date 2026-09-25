@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-24
+
+Alembic head: `add_mcp_oauth_tables`
+
 ### Fixed
 
 - **The MCP connector answered every request with `Invalid host header`.** Tailscale
@@ -29,7 +33,6 @@ does not roll the database back — that head is what you would need to
   overwrites rather than appends, so a client cannot forge one. Requests with no
   forwarded header (the TCP fallback, the test client) still pass — neither is
   reachable from the internet.
-
 
 ## [2.1.0] - 2026-09-24
 
@@ -758,7 +761,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/vkotaru/askesis.app/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/vkotaru/askesis.app/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/vkotaru/askesis.app/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/vkotaru/askesis.app/compare/v1.2.5...v1.3.0
