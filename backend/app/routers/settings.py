@@ -220,10 +220,20 @@ _BACKUP_SPEC: tuple[_TableSpec, ...] = (
     # user_id is nullable here: NULL means a shared/seed food owned by nobody.
     # Only my own rows travel; seed rows are part of the target install.
     _TableSpec("food_items", user_column="user_id"),
+    # Same nullable-user_id shape as food_items, and for the same reason: a NULL
+    # row is the household's shared movement library, part of the target install
+    # rather than something one person's backup should carry or recreate.
+    _TableSpec("exercise_catalog", user_column="user_id"),
     _TableSpec("meals", user_column="user_id"),
     _TableSpec("meal_food_items", required_parents=(("meal_id", "meals"),)),
     _TableSpec("activities", user_column="user_id"),
-    _TableSpec("exercises", required_parents=(("activity_id", "activities"),)),
+    _TableSpec(
+        "exercises",
+        required_parents=(("activity_id", "activities"),),
+        # Optional: rows predating the catalogue carry only a name.
+        optional_parents=(("catalog_id", "exercise_catalog"),),
+    ),
+    _TableSpec("exercise_sets", required_parents=(("exercise_id", "exercises"),)),
     _TableSpec("training_plans", user_column="user_id"),
     _TableSpec(
         "planned_workouts",

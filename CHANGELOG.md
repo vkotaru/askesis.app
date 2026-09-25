@@ -15,6 +15,24 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Strength training groundwork (no UI yet).** A shared exercise catalogue and
+  real per-set logging, replacing a shape that could only record `sets=4`,
+  `reps="10,10,8,8"` and one weight for a whole movement — so 3×5@100 then
+  1×3@110 had no representation at all.
+
+  The catalogue is **shared across the install**, following `food_items`: a NULL
+  `user_id` means the entry belongs to the household, so an exercise one person
+  adds is immediately usable by the other, with its video link and form notes
+  entered once. Training history stays private to each account.
+
+  Existing rows are migrated rather than discarded: `"10,10,8,8"` becomes four
+  set rows at the recorded weight, and rep values that are not counts (the
+  seeder writes `"60s"` for planks) are preserved in the exercise note instead of
+  being dropped. Reversible, though lossy in that direction by nature.
+
+
 ## [2.2.3] - 2026-09-24
 
 Alembic head: `add_mcp_oauth_tables`

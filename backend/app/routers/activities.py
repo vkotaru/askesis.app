@@ -1,10 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import date, datetime
 
 from app.database import get_db
-from app.models import User, Activity, Exercise, ActivityType, TimeOfDay
+from app.models import (
+    User,
+    Activity,
+    Exercise,
+    ExerciseSet,
+    ActivityType,
+    TimeOfDay,
+)
 from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
@@ -13,16 +20,51 @@ DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
 
 
+#: Only `working` counts toward volume; a warm-up should not inflate a total.
+SET_TYPES = ("warmup", "working", "failure")
+
+
+class ExerciseSetCreate(BaseModel):
+    set_number: int = Field(1, ge=1, le=100)
+    # Both nullable: a bodyweight movement has no weight, a timed hold no reps.
+    weight_kg: float | None = Field(None, ge=0, le=1000)
+    reps: int | None = Field(None, ge=0, le=1000)
+    set_type: str = Field("working")
+    rpe: float | None = Field(None, ge=0, le=10)
+    notes: str | None = Field(None, max_length=255)
+
+    @field_validator("set_type")
+    @classmethod
+    def _known_type(cls, v: str) -> str:
+        if v not in SET_TYPES:
+            raise ValueError(f"set_type must be one of {SET_TYPES}")
+        return v
+
+
+class ExerciseSetResponse(ExerciseSetCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
 class ExerciseCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    catalog_id: int | None = None
+    position: int = Field(0, ge=0, le=100)
+    notes: str | None = Field(None, max_length=500)
+    sets_detail: list[ExerciseSetCreate] = Field(default_factory=list, max_length=50)
+
+    # Legacy shape. Still accepted so an older client, an old queued offline
+    # mutation, or a CSV import keeps working; nothing new should send them.
     sets: int | None = Field(None, ge=1, le=100)
     reps: str | None = Field(None, max_length=50)
     weight_kg: float | None = Field(None, ge=0, le=1000)
-    notes: str | None = Field(None, max_length=500)
 
 
 class ExerciseResponse(ExerciseCreate):
     id: int
+    sets_detail: list[ExerciseSetResponse] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -70,6 +112,28 @@ class ActivityResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+def _write_exercises(db: Session, activity_id: int, exercises) -> None:
+    """Insert exercises and their sets for one activity.
+
+    Shared by create and update on purpose: these two paths have historically
+    drifted apart in this codebase (the offline sync path still guards its
+    replace with `if exercises_data:` while the REST path does not), and one
+    writer is the cheapest way to stop that happening again here.
+    """
+    for order, ex in enumerate(exercises):
+        payload = ex.model_dump(exclude={"sets_detail"})
+        # Trust the list order over a client-supplied position: the UI reorders
+        # by moving array elements, and a stale index would scramble the session.
+        payload["position"] = order
+        exercise = Exercise(activity_id=activity_id, **payload)
+        db.add(exercise)
+        db.flush()
+        for number, st in enumerate(ex.sets_detail, start=1):
+            data = st.model_dump()
+            data["set_number"] = number
+            db.add(ExerciseSet(exercise_id=exercise.id, **data))
 
 
 @router.get("/", response_model=list[ActivityResponse])
@@ -134,9 +198,7 @@ def create_activity(
     db.add(activity)
     db.flush()
 
-    for ex in exercises:
-        exercise = Exercise(activity_id=activity.id, **ex.model_dump())
-        db.add(exercise)
+    _write_exercises(db, activity.id, exercises)
 
     db.commit()
     db.refresh(activity)
@@ -164,11 +226,15 @@ def update_activity(
     for key, value in activity_data.model_dump(exclude={"exercises"}).items():
         setattr(activity, key, value)
 
-    # Replace exercises
-    db.query(Exercise).filter(Exercise.activity_id == activity_id).delete()
-    for ex in activity_data.exercises:
-        exercise = Exercise(activity_id=activity.id, **ex.model_dump())
-        db.add(exercise)
+    # Replace exercises. The ORM cascade removes the child sets with them, which
+    # a bulk `.delete()` would not -- that emits one DELETE and bypasses the
+    # relationship entirely, orphaning every set row.
+    for existing in (
+        db.query(Exercise).filter(Exercise.activity_id == activity_id).all()
+    ):
+        db.delete(existing)
+    db.flush()
+    _write_exercises(db, activity.id, activity_data.exercises)
 
     db.commit()
     db.refresh(activity)

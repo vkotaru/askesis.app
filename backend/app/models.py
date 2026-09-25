@@ -13,6 +13,7 @@ from sqlalchemy import (
     Boolean,
     Index,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
@@ -317,7 +318,11 @@ class Activity(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="activities")
-    exercises: Mapped[list["Exercise"]] = relationship(back_populates="activity")
+    exercises: Mapped[list["Exercise"]] = relationship(
+        back_populates="activity",
+        cascade="all, delete-orphan",
+        order_by="Exercise.position",
+    )
 
     __table_args__ = (
         Index("ix_activities_user_date", "user_id", "date"),
@@ -333,18 +338,121 @@ class Activity(Base):
     )
 
 
+class ExerciseCatalog(Base):
+    """The movement library, shared across everyone on this install.
+
+    Deliberately the same shape as `FoodItem`: a nullable `user_id` where NULL
+    means "belongs to the household, not to a person". This is a two-person app
+    and an exercise one of them adds has to be usable by the other, so the
+    default is shared. `is_shared` exists for the same reason it does on foods —
+    room for a private entry later without a schema change.
+
+    `video_url` is the how-do-I-do-this link, typed once here rather than
+    re-entered every session. `notes` is form cues; the *session* note lives on
+    `Exercise.notes` and answers a different question ("felt heavy today").
+
+    Rows are archived rather than deleted: a session references one by id, and
+    other people's history references it too.
+    """
+
+    __tablename__ = "exercise_catalog"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id")
+    )  # NULL = shared with the whole install
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    muscle_group: Mapped[str | None] = mapped_column(String(50))
+    video_url: Mapped[str | None] = mapped_column(String(500))
+    notes: Mapped[str | None] = mapped_column(Text)  # how to perform it
+    is_shared: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User | None"] = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_exercise_catalog_user_name"),
+        # The constraint above cannot police the shared rows: SQL treats NULLs as
+        # distinct, so (NULL, "Squat") twice would pass. A library two people
+        # write into needs the shared half deduped explicitly.
+        Index(
+            "uq_exercise_catalog_shared_name",
+            "name",
+            unique=True,
+            sqlite_where=text("user_id IS NULL"),
+            postgresql_where=text("user_id IS NULL"),
+        ),
+    )
+
+
 class Exercise(Base):
+    """One movement within one logged session.
+
+    `name` stays denormalised alongside `catalog_id` on purpose. The catalogue is
+    shared, so someone else renaming an entry would otherwise silently rewrite
+    what your past workouts say you did. The id is the link; the name is what
+    happened.
+    """
+
     __tablename__ = "exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    activity_id: Mapped[int] = mapped_column(ForeignKey("activities.id"))
+    activity_id: Mapped[int] = mapped_column(
+        ForeignKey("activities.id", ondelete="CASCADE"), index=True
+    )
+    # Nullable: rows predating the catalogue have only a name.
+    catalog_id: Mapped[int | None] = mapped_column(
+        ForeignKey("exercise_catalog.id"), index=True
+    )
     name: Mapped[str] = mapped_column(String(100))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str | None] = mapped_column(Text)  # this session, not the movement
+
+    # Superseded by `sets_detail` and kept only so the pre-catalogue rows stay
+    # readable and the migration stays reversible. Nothing new should write them.
     sets: Mapped[int | None] = mapped_column(Integer)
-    reps: Mapped[str | None] = mapped_column(String(50))  # "10,10,8" format
+    reps: Mapped[str | None] = mapped_column(String(50))  # legacy "10,10,8"
     weight_kg: Mapped[float | None] = mapped_column(Float)
-    notes: Mapped[str | None] = mapped_column(Text)
 
     activity: Mapped["Activity"] = relationship(back_populates="exercises")
+    catalog: Mapped["ExerciseCatalog | None"] = relationship("ExerciseCatalog")
+    sets_detail: Mapped[list["ExerciseSet"]] = relationship(
+        back_populates="exercise",
+        cascade="all, delete-orphan",
+        order_by="ExerciseSet.set_number",
+    )
+
+
+class ExerciseSet(Base):
+    """One set: a weight, a rep count, and how hard it was.
+
+    Both `weight_kg` and `reps` are nullable — bodyweight movements have no
+    weight, and a timed hold has no reps. `set_type` is a plain String, not a
+    SQLAlchemy Enum, because Enum persists the member NAME rather than its value
+    and that has already caused one silent bug in this codebase. Allowed values
+    are validated at the API boundary.
+    """
+
+    __tablename__ = "exercise_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exercise_id: Mapped[int] = mapped_column(
+        ForeignKey("exercises.id", ondelete="CASCADE"), index=True
+    )
+    set_number: Mapped[int] = mapped_column(Integer, default=1)
+    weight_kg: Mapped[float | None] = mapped_column(Float)
+    reps: Mapped[int | None] = mapped_column(Integer)
+    # warmup | working | failure. Only `working` counts toward volume.
+    set_type: Mapped[str] = mapped_column(String(10), default="working")
+    rpe: Mapped[float | None] = mapped_column(Float)  # 1-10, or RIR if you prefer
+    notes: Mapped[str | None] = mapped_column(String(255))
+
+    exercise: Mapped["Exercise"] = relationship(back_populates="sets_detail")
 
 
 class BodyMeasurement(Base):

@@ -21,6 +21,37 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-25 — Strength logging, stage 1: schema, migration, catalogue API
+
+**What changed**
+- `exercise_catalog` (shared), `exercise_sets` (per-set rows), and `exercises`
+  gains `catalog_id` + `position`, an index on `activity_id`, and the cascade it
+  was the only parent in the codebase to lack.
+- `/api/exercise-catalog` CRUD + `/{id}/last`; activities now accept nested sets.
+
+**Watch out**
+- **`UNIQUE(user_id, name)` cannot dedupe the shared rows.** SQL treats NULLs as
+  distinct, so `(NULL, 'Squat')` twice passes a composite unique constraint. For
+  a library two people write into, duplicate names are *the* obvious failure —
+  so the shared half needs a **partial unique index** (`WHERE user_id IS NULL`)
+  on top. Verified both halves: a second shared "Squat" is rejected, a private
+  one with the same name is still allowed.
+- **Shared catalogue, private history — and they must be tested separately.**
+  `_visible()` returns shared ∪ mine; `/{id}/last` joins through `Activity` to
+  filter on the owner. Verified with two accounts logging the same movement on
+  the same day: both see the entry, each gets their own numbers back (100kg vs
+  40kg). Getting only one of these right looks like it works.
+- **The update path must `db.delete()` each exercise, not bulk `.delete()`.** A
+  bulk delete emits one DELETE and bypasses the ORM relationship, orphaning
+  every child set row. Verified: 0 orphans after replacing a session's contents.
+- The backfill preserves what it cannot parse. `"60s,60s,45s"` has no integer rep
+  count, so those sets are created with null reps and the original string is
+  appended to the exercise note rather than dropped. `"10,10,8,8"` round-trips
+  exactly through `downgrade`.
+- **The app warns about this itself** — `import app.main` prints "Tables absent
+  from the backup spec" for any table missing from `_BACKUP_SPEC`. Worth reading
+  the startup output after adding a table.
+
 ## 2026-09-24 — Weekly calorie average divided by 7 regardless
 
 **What changed**
