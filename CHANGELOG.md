@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-25
+
+Alembic head: `add_routine_exercises`
+
 ### Added
 
 - **Routines.** Save a workout you repeat, with target sets, reps and weight per
@@ -66,7 +70,6 @@ does not roll the database back — that head is what you would need to
   set rows at the recorded weight, and rep values that are not counts (the
   seeder writes `"60s"` for planks) are preserved in the exercise note instead of
   being dropped. Reversible, though lossy in that direction by nature.
-
 
 ## [2.2.3] - 2026-09-24
 
@@ -958,7 +961,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.2.3...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/vkotaru/askesis.app/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/vkotaru/askesis.app/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/vkotaru/askesis.app/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/vkotaru/askesis.app/compare/v2.2.0...v2.2.1
