@@ -250,6 +250,13 @@ def build_app(config: MCPConfig, verifier: TokenVerifier) -> Starlette:
     routes = [
         Route("/mcp", _reject_legacy, methods=["GET", "DELETE"]),
         Route("/healthz", oauth.healthz, methods=["GET"]),
+        # Before Mount("/"), so this shadows the SDK's own copy of the same
+        # document -- see protected_resource_metadata for why we must.
+        Route(
+            "/.well-known/oauth-protected-resource/mcp",
+            oauth.protected_resource_metadata(config),
+            methods=["GET"],
+        ),
         Route(
             "/.well-known/oauth-authorization-server",
             oauth.authorization_server_metadata(config),

@@ -130,6 +130,38 @@ def authorization_server_metadata(config: MCPConfig):
     return handler
 
 
+def protected_resource_metadata(config: MCPConfig):
+    """RFC 9728. The first document Claude fetches, and it shadows the SDK's.
+
+    The SDK serves this too, from `AuthSettings(issuer_url=AnyHttpUrl(...))` --
+    but pydantic's AnyHttpUrl normalises a bare origin by APPENDING a trailing
+    slash, so the SDK's version advertises the authorization server as
+    "https://host/" while our RFC 8414 document above reports `issuer` as
+    "https://host". A client that checks those two agree sees a mismatch, and a
+    client that builds the metadata URL by concatenation gets
+    "https://host//.well-known/oauth-authorization-server", which is a 404 here.
+    Either way the connector fails with a generic transport error and nothing
+    useful in any log.
+
+    Listing this route before Mount("/") shadows the SDK's copy, so both
+    documents are emitted by this module and cannot drift apart again.
+    """
+
+    async def handler(request: Request) -> Response:
+        return _json(
+            {
+                "resource": config.resource_url,
+                # Exactly config.public_origin: no trailing slash, byte-identical
+                # to the `issuer` in authorization_server_metadata above.
+                "authorization_servers": [config.public_origin],
+                "scopes_supported": [config.scope],
+                "bearer_methods_supported": ["header"],
+            }
+        )
+
+    return handler
+
+
 # ── Dynamic client registration (RFC 7591) ───────────────────────────────────
 
 

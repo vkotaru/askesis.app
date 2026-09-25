@@ -66,6 +66,15 @@ dead ends we still remembered, not every step.
   `!backend/scripts/*.sql`; dumps never live there.
 
 **Watch out**
+- **The SDK's RFC 9728 document disagreed with ours about the issuer.** It builds
+  `authorization_servers` from `AuthSettings(issuer_url=AnyHttpUrl(...))`, and
+  pydantic's `AnyHttpUrl` normalises a bare origin by **appending a trailing
+  slash** — so it advertised `https://host/` while our RFC 8414 document reported
+  `issuer` as `https://host`. A client checking those agree rejects; one that
+  concatenates gets `https://host//.well-known/oauth-authorization-server`, which
+  **404s here** (verified). Either way: generic transport error, nothing in any log.
+  Fixed by serving our own route ahead of `Mount("/")`, so both documents come
+  from `oauth.py` and cannot drift apart again.
 - **An unset `MCP_DB_PASSWORD` produced a service that looked up and was not.**
   Because compose has to use `${MCP_DB_PASSWORD:-}` (a required `:?` would break
   *app* deploys — see above), an unset value yields a valid DSN with an empty

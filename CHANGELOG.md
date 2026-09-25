@@ -17,6 +17,33 @@ does not roll the database back — that head is what you would need to
 
 ### Fixed
 
+- **The MCP service started with no database password and failed only on use.**
+  `docker-compose.yml` has to interpolate `MCP_DB_PASSWORD` with a default rather
+  than a requirement — compose resolves the whole file before running anything, so
+  a required value on an unused service would break `docker compose up` for the
+  *app*. The cost was that an unset or misnamed variable produced a valid DSN with
+  an empty password: the container came up, `/healthz` reported `ok` because it
+  issues no queries, and every real request returned 500. `mcp_server/config.py`
+  now refuses to start without one, as every other setting there already does.
+
+  It also refuses a `DATABASE_URL` naming the app's `askesis` role. Reusing the
+  app's connection string is the intuitive response to a database auth error, and
+  it would silently discard the least-privilege role that is the only thing
+  stopping a compromised connector from rewriting `users.password_hash`.
+
+- **The two OAuth discovery documents disagreed about the issuer.** The SDK builds
+  `authorization_servers` from a pydantic `AnyHttpUrl`, which appends a trailing
+  slash to a bare origin, so the protected-resource document advertised
+  `https://host/` while the authorization-server document reported `issuer` as
+  `https://host`. A client that validates those match rejects the server, and one
+  that builds the metadata URL by concatenation requests
+  `https://host//.well-known/oauth-authorization-server` — a 404. Both failures
+  surface only as a generic connection error. Askesis now serves its own
+  RFC 9728 document ahead of the SDK's, so both come from one place.
+
+
+### Fixed
+
 - **The MCP service started successfully with no database password and failed only
   on use.** `docker-compose.yml` must interpolate `MCP_DB_PASSWORD` with a default
   rather than a requirement — compose resolves the entire file before running
