@@ -31,7 +31,7 @@ from app.models import (
     ActivityType,
     TimeOfDay,
 )
-from app.provenance import mark_manual, parse_sources
+from app.provenance import mark_manual, user_edited, parse_sources
 from app.routers.activities import SET_TYPES, ExerciseCreate
 from app.routers.auth import get_current_user
 from app.routers.exercise_catalog import visible_catalog_ids
@@ -566,10 +566,13 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
         )
         if existing:
             touched = [k for k in data if k != "date" and hasattr(existing, k)]
+            # Claim only what the value shows the user actually changed — see
+            # the note on the update path below.
+            edited = [k for k in touched if user_edited(getattr(existing, k), data[k])]
             for key in touched:
                 setattr(existing, key, data[key])
-            if model == DailyLog and touched:
-                existing.sources = mark_manual(existing.sources, touched)
+            if model == DailyLog and edited:
+                existing.sources = mark_manual(existing.sources, edited)
             existing.updated_at = datetime.utcnow()
             db.flush()
             return existing.id
@@ -697,16 +700,33 @@ def _handle_update(
     model_columns = {c.name for c in model.__table__.columns}
     data = _coerce_column_types(model, data)
     touched = [k for k in data if k in model_columns]
+
+    # An edit made offline earns the same provenance an online one would, or the
+    # queue would become a way to launder a hand-entered value into looking like
+    # an importer's.
+    #
+    # But only the fields whose value actually MOVED. A client pushes whole
+    # rows, never diffs, so a payload sent to record a weight also carries that
+    # day's step count exactly as the client received it. Marking everything in
+    # the payload as hand-entered made that weight entry claim the steps — and
+    # `garmin.py` honours a person's claim by never correcting the field again.
+    # A 6am sync writing 43 steps, followed by any daily-log edit that day, froze
+    # the count at 43 permanently: re-syncing could not fix it, because the
+    # importer had been told a human owned that number.
+    #
+    # Computed BEFORE the writes below, because afterwards there is nothing left
+    # to compare against.
+    edited = (
+        [k for k in touched if k != "date" and user_edited(getattr(obj, k), data[k])]
+        if model == DailyLog
+        else []
+    )
+
     for key in touched:
         setattr(obj, key, data[key])
 
-    # An edit made offline earns the same provenance an online one would, or
-    # the queue would become a way to launder a hand-entered value into
-    # looking like an importer's.
-    if model == DailyLog:
-        touched = [k for k in touched if k != "date"]
-        if touched:
-            obj.sources = mark_manual(obj.sources, touched)
+    if edited:
+        obj.sources = mark_manual(obj.sources, edited)
 
     obj.updated_at = datetime.utcnow()
     db.flush()

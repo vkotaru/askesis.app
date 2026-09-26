@@ -5,7 +5,7 @@ from datetime import date
 
 from app.database import get_db
 from app.models import User, DailyLog
-from app.provenance import mark_manual, parse_sources
+from app.provenance import mark_manual, parse_sources, user_edited
 from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
@@ -134,13 +134,21 @@ def create_or_update_log(
     if existing:
         # Update only provided fields (preserve existing data)
         touched = [k for k in data if k != "date"]
-        for key in touched:
-            setattr(existing, key, data[key])
         # A person set these, including any they set to empty. That claim is
         # what stops an importer refilling a field the user deliberately
         # cleared -- see app/provenance.py.
-        if touched:
-            existing.sources = mark_manual(existing.sources, touched)
+        #
+        # Only the ones whose value moved, though. `exclude_unset` already drops
+        # fields the request omitted, but the form posts what it loaded, so a
+        # submit that changed only the weight still carries the day's steps. The
+        # value is the evidence: unchanged means the client echoed it back, not
+        # that someone typed it. Claiming it anyway locks the importer out of its
+        # own reading for good.
+        edited = [k for k in touched if user_edited(getattr(existing, k), data[k])]
+        for key in touched:
+            setattr(existing, key, data[key])
+        if edited:
+            existing.sources = mark_manual(existing.sources, edited)
         db.commit()
         db.refresh(existing)
         return DailyLogResponse.from_orm_with_feelings(existing)

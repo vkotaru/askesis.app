@@ -15,6 +15,30 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Garmin step counts could freeze at a partial number and never correct.** If
+  the scheduled sync ran early — writing, say, 43 steps for a day barely started
+  — and you then logged anything else for that day, that edit silently claimed
+  the step count as hand-entered. The importer honours a person's entry by never
+  overwriting it, so the partial number stuck for good and re-syncing could not
+  shift it.
+
+  The cause: clients push whole rows rather than diffs, so a request sent to
+  record a weight also carries that day's steps exactly as the client received
+  them. Every field in the payload was being marked as hand-entered. Now only
+  fields whose value actually changed are. Clearing a field still counts as an
+  edit, so a blank you set deliberately is still protected from the importer.
+
+### Added
+
+- **`scripts/garmin_steps_report.py`** — shows Garmin's ranged call, Garmin's
+  per-day call, the stored value and who owns it, side by side for each day, so
+  a disagreement between the four is visible rather than inferred. `--repair`
+  hands a wrongly claimed day back to the importer (dry run by default);
+  `--offline` reports on the database alone, without a Garmin session.
+
+
 ## [2.4.0] - 2026-09-25
 
 Alembic head: `add_routine_exercises`

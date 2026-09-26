@@ -21,6 +21,51 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-26 — One weight entry silently claimed the day's step count
+
+Reported three times as "Garmin isn't importing my steps", and three times I looked at
+`garmin.py` and said the fetch was fine. The fetch *was* fine. The write gate was not.
+
+**What changed**
+- `sync.py` and `daily_log.py` now mark a field `manual` only when its value actually
+  **moved**, via the new `provenance.user_edited`. They used to mark every field present
+  in the payload.
+- New `scripts/garmin_steps_report.py`: prints Garmin's ranged call, Garmin's per-day
+  call, the stored value and its owner side by side, with `--repair` to hand a wrongly
+  claimed field back to the importer. `--offline` works without a Garmin session.
+
+**The trap**
+Clients push **whole rows, never diffs**. The phone logs a weight and posts the entire
+day back — step count included, exactly as its cache received it. Marking everything in
+the payload as hand-entered meant a weight entry claimed the steps. `garmin.py` honours a
+person's claim by never touching the field again, so:
+
+```
+06:00  scheduled sync writes steps=43   (a day barely started — correct, and self-correcting)
+08:00  user logs their weight           -> steps:manual, on a number nobody typed
+19:00  scheduled sync has steps=4187    -> refused. 43 forever, and re-syncing cannot fix it.
+```
+
+The value is the evidence for authorship: unchanged means the client echoed it back.
+Clearing a field is still a change (4000 → None), so the deliberate-blank rule survives —
+there are three assertions covering exactly that in the repro used to fix this.
+
+**What didn't work**
+The repair's first cut *removed* the `steps` entry from `sources`. That leaves the field
+with no recorded owner, and `garmin.py` treats unknown ownership as fill-blanks-only — so
+a wrong-but-present count stayed exactly as stuck. The repair has to **reassign** the field
+to `garmin`, not un-flag it. Caught only because the repair was tested end to end
+(repair → sync → assert the number moved) rather than checked for "did it clear the flag".
+
+**Watch out**
+- Provenance is written on **three** paths: `daily_log.py` (REST), and two branches of
+  `sync.py` (the create-that-upserts, and the update). A rule added to one belongs in all
+  three; the bug above lived in the two sync branches while the REST path was half-right.
+- Any future importer inherits this. The rule is "did the value move", not "was the key
+  present" — see `provenance.user_edited`.
+- `--repair` cannot distinguish a count frozen by this bug from one genuinely typed. It is
+  dry-run by default and lists every day with its value for that reason.
+
 ## 2026-09-25 — Strength logging, stage 5: what Claude can see
 
 **What changed**

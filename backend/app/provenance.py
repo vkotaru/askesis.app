@@ -24,6 +24,7 @@ reading -- for good.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 MANUAL = "manual"
 
@@ -60,6 +61,23 @@ def mark(raw: str | None, fields: Iterable[str], owner: str) -> str | None:
     for field in fields:
         sources[field] = owner
     return format_sources(sources)
+
+
+def user_edited(current: Any, incoming: Any) -> bool:
+    """Did this field actually change, or is the client echoing what it holds?
+
+    The distinction is the whole difference between "the user typed this" and
+    "the user typed something *else* on the same form". Clients send whole rows,
+    not diffs: the phone logs a weight and posts the entire day back, step count
+    included, because that is what its cached copy says. Treating every field in
+    the payload as hand-entered means one weight entry claims the day's steps,
+    and an importer that respects a person's claim then refuses to correct its
+    own reading ever again.
+
+    Clearing a field is still an edit: 4,000 -> None differs, so it is marked,
+    and the blank is protected exactly as before.
+    """
+    return current != incoming
 
 
 def mark_manual(raw: str | None, fields: Iterable[str]) -> str | None:
