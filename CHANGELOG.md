@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-25
+
+Alembic head: `add_routine_exercises`
+
 ### Changed
 
 - **The dashboard's top row is three cards, not four.** Water is gone — it was
@@ -53,7 +57,6 @@ does not roll the database back — that head is what you would need to
 
 - The dev server's API proxy target can be overridden with `API_PROXY_TARGET`,
   for a machine where something else already holds `:8000`.
-
 
 ## [2.3.1] - 2026-09-25
 
@@ -1067,7 +1070,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/vkotaru/askesis.app/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/vkotaru/askesis.app/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/vkotaru/askesis.app/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/vkotaru/askesis.app/compare/v2.2.2...v2.2.3
