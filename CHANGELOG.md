@@ -15,6 +15,46 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Changed
+
+- **The dashboard's top row is three cards, not four.** Water is gone — it was
+  never logged, and a permanently empty card was taking the space that lets
+  weight, sleep and steps sit on one line. Tapping any of the three now scrolls
+  to that metric's chart and highlights it briefly: the snapshot says where you
+  are, the chart says which way you are going.
+
+- **The week summary shows averages only.** Total calories sat in the first slot
+  beside three macro *averages*, so the four numbers were different kinds of
+  thing and the row could not be read across. All four are now the average per
+  day logged, and the heading says how many of the seven days that was.
+
+### Added
+
+- **A sleep trend chart**, alongside the weight one: per night, with a 7-night
+  rolling average and the same range selector. Nights with no figure are gaps,
+  not zeros — an unworn watch should not read as insomnia.
+
+### Fixed
+
+- **The Calories & Protein average was still dividing by seven.** The dashboard
+  heading was corrected in 2.2.2 but the chart's own label was not, so a week
+  with four logged days reported 1,261 cal/day instead of 2,208. It now divides
+  by the days that have a figure and says how many those were.
+
+- **Bars in the Calories & Protein chart sat out of line with each other.** The
+  burn figure under a day's label only rendered on days with recorded activity,
+  and the row is bottom-aligned — so every day *without* one started its bars a
+  line lower. The slot is now always present.
+
+- **The dashed target and average lines were a few pixels off the bars** they
+  exist to be compared against, on both the Calories & Protein and the Steps
+  chart. Each was positioned with a hardcoded offset that no longer matched what
+  sits under the bars.
+
+- The dev server's API proxy target can be overridden with `API_PROXY_TARGET`,
+  for a machine where something else already holds `:8000`.
+
+
 ## [2.3.1] - 2026-09-25
 
 Alembic head: `add_routine_exercises`

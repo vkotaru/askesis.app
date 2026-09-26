@@ -15,16 +15,29 @@
   $: maxProtein = Math.max(...data.map(d => d.protein) , (proteinTarget || 0) * 1.2, 1);
   $: hasBurned = data.some(d => (d.burnedCalories || 0) > 0);
 
-  // Weekly averages
-  $: avgCalories = data.length > 0
-    ? Math.round(data.reduce((sum, d) => sum + d.calories, 0) / data.length)
-    : 0;
+  // Averages over the days that HAVE a figure, never over the calendar week.
+  // `data` is always seven days long — one entry per date, zero where nothing was
+  // logged — so dividing by `data.length` made a partly-logged week read as
+  // starvation: two days totalling 4,400 reported as 631 cal/day. A day with no
+  // meals is a gap in the record, not a day of fasting.
+  $: calorieDays = data.filter((d) => d.calories > 0);
+  $: avgCalories =
+    calorieDays.length > 0
+      ? Math.round(calorieDays.reduce((sum, d) => sum + d.calories, 0) / calorieDays.length)
+      : 0;
   $: proteinDays = data.filter(d => d.protein > 0);
   $: avgProtein = proteinDays.length > 0
     ? Math.round(proteinDays.reduce((sum, d) => sum + d.protein, 0) / proteinDays.length)
     : 0;
 
-  $: intakeHeight = 200; // px
+  // The bars, and the space under them that the day label and the burn figure
+  // occupy. `labelSpace` has to match what those two actually take (19px + 8px),
+  // because the dashed reference lines are positioned from the bottom of the
+  // container and have to line up with the bars, not with the labels: a target
+  // line sitting 3px off the bar it is there to be compared against is exactly
+  // the kind of thing that reads as a chart you cannot trust.
+  const intakeHeight = 200; // px
+  const labelSpace = 27; // px — day label (19) + burn slot (8)
 </script>
 
 <div class="card p-4 md:p-6">
@@ -63,10 +76,22 @@
   {#if avgCalories > 0 || avgProtein > 0}
     <div class="flex items-center gap-3 mb-3 text-[10px] text-gray-400 flex-wrap">
       {#if avgCalories > 0}
-        <span>Avg: <span class="font-medium text-orange-400">{avgCalories}</span> cal/day</span>
+        <span>
+          Avg: <span class="font-medium text-orange-400">{avgCalories}</span> cal/day
+          <span class="text-gray-500">
+            over {calorieDays.length} logged day{calorieDays.length === 1 ? '' : 's'}
+          </span>
+        </span>
       {/if}
       {#if avgProtein > 0}
-        <span>Avg: <span class="font-medium text-blue-400">{avgProtein}g</span> protein/day</span>
+        <span>
+          Avg: <span class="font-medium text-blue-400">{avgProtein}g</span> protein/day
+          {#if proteinDays.length !== calorieDays.length}
+            <span class="text-gray-500">
+              over {proteinDays.length} day{proteinDays.length === 1 ? '' : 's'}
+            </span>
+          {/if}
+        </span>
       {/if}
       {#if calorieTarget}
         <span>Target: <span class="font-medium text-amber-400">{calorieTarget}</span> cal</span>
@@ -78,13 +103,16 @@
   {/if}
 
   {#if data.length > 0}
-    <div class="flex items-end gap-2 relative" style="height: {intakeHeight + 40}px;">
+    <div
+      class="flex items-end gap-2 relative"
+      style="height: {intakeHeight + labelSpace + 16}px;"
+    >
       <!-- Calorie target line -->
       {#if calorieTarget && maxCalories > 0}
         {@const targetPct = (calorieTarget / maxCalories) * 100}
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-amber-400/60 pointer-events-none z-10"
-          style="bottom: {24 + (targetPct / 100) * intakeHeight}px;"
+          style="bottom: {labelSpace + (targetPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
@@ -93,7 +121,7 @@
         {@const proTargetPct = (proteinTarget / maxProtein) * 100}
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-blue-400/60 pointer-events-none z-10"
-          style="bottom: {24 + (proTargetPct / 100) * intakeHeight}px;"
+          style="bottom: {labelSpace + (proTargetPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
@@ -102,7 +130,7 @@
         {@const avgPct = (avgCalories / maxCalories) * 100}
         <div
           class="absolute left-0 right-0 border-t-2 border-dashed border-orange-400/60 pointer-events-none z-10"
-          style="bottom: {24 + (avgPct / 100) * intakeHeight}px;"
+          style="bottom: {labelSpace + (avgPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
@@ -111,7 +139,7 @@
         {@const avgProPct = (avgProtein / maxProtein) * 100}
         <div
           class="absolute left-0 right-0 border-t border-dotted border-blue-400/50 pointer-events-none z-10"
-          style="bottom: {24 + (avgProPct / 100) * intakeHeight}px;"
+          style="bottom: {labelSpace + (avgProPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 
@@ -166,10 +194,14 @@
             {format(parseISO(day.date), 'EEE')}
           </span>
 
-          <!-- Burn value below day label -->
-          {#if burned > 0}
-            <span class="text-[8px] text-red-400 -mt-0.5">−{burned}</span>
-          {/if}
+          <!-- Burn value below the day label, in a slot that is always present.
+               The row is bottom-aligned, so an element that appears on some days
+               and not others changes where that column's bars start: the days
+               with a burn figure sat a line higher than the days without, and
+               the chart read as if two bars had been nudged out of line. -->
+          <span class="text-[8px] text-red-400 -mt-0.5 h-2.5 leading-none">
+            {#if burned > 0}−{burned}{/if}
+          </span>
         </button>
       {/each}
     </div>

@@ -79,8 +79,10 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/auth': 'http://localhost:8000',
+      // Overridable, because :8000 is a popular port — another app on this
+      // machine holding it should not mean the dev server cannot be run.
+      '/api': process.env.API_PROXY_TARGET || 'http://localhost:8000',
+      '/auth': process.env.API_PROXY_TARGET || 'http://localhost:8000',
     },
   },
 });

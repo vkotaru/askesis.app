@@ -30,6 +30,13 @@
     active.length > 0 ? Math.round(active.reduce((sum, r) => sum + r.total, 0) / active.length) : 0;
   $: avgPct = maxTotal > 0 ? (avgTotal / maxTotal) * 100 : 0;
 
+  // Same two numbers the nutrition chart names, and for the same reason: the
+  // dashed average line is positioned from the bottom of the container, so it
+  // has to clear exactly what sits under the bars (the gap plus the day label)
+  // or it floats off the bars it is drawn to be compared against.
+  const barHeight = 200; // px
+  const labelSpace = 19; // px — gap (4) + day label (15)
+
   const k = (n: number) => `${(n / 1000).toFixed(1)}k`;
 </script>
 
@@ -58,11 +65,14 @@
     {/if}
   </div>
 
-  <div class="flex items-end gap-2 relative" style="height: 240px;">
+  <div
+    class="flex items-end gap-2 relative"
+    style="height: {barHeight + labelSpace + 21}px;"
+  >
     {#if avgTotal > 0}
       <div
         class="absolute left-0 right-0 border-t-2 border-dashed border-green-400/60 pointer-events-none z-10"
-        style="bottom: {(avgPct / 100) * 200 + 24}px;"
+        style="bottom: {labelSpace + (avgPct / 100) * barHeight}px;"
       ></div>
     {/if}
 
@@ -85,7 +95,7 @@
         <!-- Stacked, bike on top: the walked figure is the measured one, so it
              keeps the baseline and stays comparable across days regardless of
              whether that day had a ride. -->
-        <div class="w-full flex flex-col justify-end" style="height: 200px;">
+        <div class="w-full flex flex-col justify-end" style="height: {barHeight}px;">
           {#if day.biked > 0}
             <div
               class="w-full rounded-t-md transition-all {isToday

@@ -32,6 +32,15 @@ repo is expected to follow (offline-first, PWA, real auth).
 `DEV_MODE=true`. Vite proxies `/api` and `/auth` to `:8000`, so the frontend is same-origin
 in dev. API docs at `:8000/docs`.
 
+`:8000` is a popular port and another app on the machine may already hold it. Point both
+halves somewhere else rather than giving up on the dev server — `API_PROXY_TARGET` is
+read by `vite.config.ts` and forwarded into the container by `docker-compose.dev.yml`:
+
+```bash
+cd backend && ./venv/bin/python -m uvicorn app.main:app --port 8011   # or any free port
+cd frontend && API_PROXY_TARGET=http://localhost:8011 ./npm.sh run dev
+```
+
 **Two compose files, and they never run on the same machine.** `docker-compose.yml` is
 the production stack and runs only on the home server, driven by `deploy.sh`; it requires real
 secrets and will not load anywhere else. `docker-compose.dev.yml` is the frontend

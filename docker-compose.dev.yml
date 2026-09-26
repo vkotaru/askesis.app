@@ -50,6 +50,11 @@ x-node: &node
     # named volume root-owned, which this non-root user then cannot write to.
     # Only `install` pays for it, and node_modules/ persists in the bind mount.
     npm_config_cache: /tmp/.npm-cache
+    # Where the dev server proxies /api and /auth. Empty means the default
+    # :8000 that vite.config.ts falls back to; set it when something else on
+    # the machine already holds that port:
+    #   API_PROXY_TARGET=http://localhost:8011 ./npm.sh run dev
+    API_PROXY_TARGET: "${API_PROXY_TARGET:-}"
 
 services:
   # One-shot commands: check, build, install. `run --rm npm <args>` appends to

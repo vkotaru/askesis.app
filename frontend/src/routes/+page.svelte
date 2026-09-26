@@ -18,6 +18,7 @@
     WeeklyTrainingCard,
     WeeklyTargetsCard,
     StepsBarCard,
+    SleepTrendCard,
   } from '$lib/components/cards';
 
   // Global (non-week-scoped) data
@@ -126,6 +127,13 @@
     .reverse()
     .map(l => ({ date: l.date, weight: l.weight! }));
 
+  // Sleep trend — same shape. A night with no figure is dropped rather than
+  // plotted as zero: an unworn watch is missing data, not a sleepless night.
+  $: sleepPoints = logs
+    .filter((l) => l.sleep_hours)
+    .reverse()
+    .map((l) => ({ date: l.date, hours: l.sleep_hours! }));
+
   // Per-day maps for selected week
   $: dailyCaloriesMap = weekMeals.reduce((acc, meal) => {
     acc[meal.date] = (acc[meal.date] || 0) + (meal.calories || 0);
@@ -205,6 +213,23 @@
     calories: dailyCaloriesMap[selectedDay] || 0,
     burned: dailyBurnedMap[selectedDay] || 0,
   } : null;
+
+  /**
+   * Jump from a snapshot tile to the chart for that metric.
+   *
+   * The snapshot answers "where am I" and the chart answers "which way am I
+   * going"; tapping the number is the natural way to ask the second question,
+   * and scrolling past three other cards to find it is not.
+   */
+  function jumpToTrend(e: CustomEvent<'weight' | 'sleep' | 'steps'>) {
+    const el = document.getElementById(`trend-${e.detail}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // A brief ring, because a smooth scroll that lands mid-page leaves no clue
+    // which of several similar cards was the destination.
+    el.classList.add('ring-2', 'ring-primary-400');
+    setTimeout(() => el.classList.remove('ring-2', 'ring-primary-400'), 1600);
+  }
 
   function openDay(e: CustomEvent<string>) {
     selectedDay = e.detail;
@@ -300,16 +325,20 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
     </div>
   {:else}
-    <div class="mb-8">
-      <MetricSnapshotCard {logs} />
+    <div class="mb-6">
+      <MetricSnapshotCard {logs} on:jump={jumpToTrend} />
     </div>
 
+    <!-- Averages only, and every one of them over the days that actually have a
+         figure. The week total used to sit in the calories slot beside three
+         macro averages, so the four numbers were not the same kind of thing and
+         the row could not be read across. -->
     <div class="mb-8">
       <TodayNutritionCard
-        title="Week Avg / Totals — {weekCaloriesAvg} cal/day{caloriesDaysLogged > 0 && caloriesDaysLogged < 7
-          ? ` over ${caloriesDaysLogged} day${caloriesDaysLogged === 1 ? '' : 's'}`
+        title="Week average per day logged{caloriesDaysLogged > 0
+          ? ` — ${caloriesDaysLogged} of 7 days`
           : ''}"
-        calories={weekTotalCalories}
+        calories={weekCaloriesAvg}
         protein_g={weekProteinAvg}
         carbs_g={weekCarbsAvg}
         fat_g={weekFatAvg}
@@ -339,19 +368,29 @@
         on:dayClick={openDay}
       />
 
-      <StepsBarCard
-        steps={stepsData}
-        subtitle="Click a day for details"
-        on:dayClick={openDay}
-      />
+      <!-- id + scroll-margin: the snapshot tiles scroll here, and without the
+           margin a sticky header would land on top of the card title. -->
+      <div id="trend-steps" class="scroll-mt-20 rounded-xl transition-shadow">
+        <StepsBarCard
+          steps={stepsData}
+          subtitle="Click a day for details"
+          on:dayClick={openDay}
+        />
+      </div>
 
-      <WeightTrendCard
-        {weightPoints}
-        weightUnit={$settings.weight_unit}
-        showRangeSelector={true}
-        showMovingAverage={true}
-        interactive={true}
-      />
+      <div id="trend-weight" class="scroll-mt-20 rounded-xl transition-shadow">
+        <WeightTrendCard
+          {weightPoints}
+          weightUnit={$settings.weight_unit}
+          showRangeSelector={true}
+          showMovingAverage={true}
+          interactive={true}
+        />
+      </div>
+
+      <div id="trend-sleep" class="scroll-mt-20 rounded-xl transition-shadow">
+        <SleepTrendCard {sleepPoints} />
+      </div>
 
       <RecentActivitiesCard
         activities={recentActivities}

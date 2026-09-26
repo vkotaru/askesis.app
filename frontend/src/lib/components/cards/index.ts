@@ -2,6 +2,7 @@ export { default as MetricSnapshotCard } from './MetricSnapshotCard.svelte';
 export { default as TodayNutritionCard } from './TodayNutritionCard.svelte';
 export { default as CurrentWeightCard } from './CurrentWeightCard.svelte';
 export { default as WeightTrendCard } from './WeightTrendCard.svelte';
+export { default as SleepTrendCard } from './SleepTrendCard.svelte';
 export { default as RecentActivitiesCard } from './RecentActivitiesCard.svelte';
 export { default as NutritionChartCard } from './NutritionChartCard.svelte';
 export { default as RaceCountdownCard } from './RaceCountdownCard.svelte';
