@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-09-26
+
+Alembic head: `add_routine_exercises`
+
 ### Fixed
 
 - **Garmin step counts could freeze at a partial number and never correct.** If
@@ -37,7 +41,6 @@ does not roll the database back — that head is what you would need to
   a disagreement between the four is visible rather than inferred. `--repair`
   hands a wrongly claimed day back to the importer (dry run by default);
   `--offline` reports on the database alone, without a Garmin session.
-
 
 ## [2.4.0] - 2026-09-25
 
@@ -1094,7 +1097,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/vkotaru/askesis.app/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/vkotaru/askesis.app/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/vkotaru/askesis.app/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/vkotaru/askesis.app/compare/v2.2.3...v2.3.0
