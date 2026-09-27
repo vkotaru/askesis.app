@@ -41,6 +41,9 @@ does not roll the database back — that head is what you would need to
 - **Tighter dashboard spacing.** One 16px rhythm between every row and column,
   down from 24–32px, which was costing most of a phone screen to whitespace.
 
+- The sleep chart's y-axis lands on whole hours. Five evenly-spaced ticks across
+  0–10 fall on 2.5s, which printed as "0 3 5 8 10".
+
 - Every target is now clearable, not just the weekly training ones. `calorie_target`
   and `protein_target` were guarded in a way that made them permanent once set —
   the same trap the daily log's blank-a-field bug fell into.

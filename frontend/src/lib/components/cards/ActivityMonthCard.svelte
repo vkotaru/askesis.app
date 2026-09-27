@@ -93,7 +93,7 @@
   }
 </script>
 
-<div class="card p-4 md:p-6">
+<div class="card p-4 md:p-6" data-testid="month-card">
   <div class="flex items-center gap-2 mb-1">
     <CalendarDays size={20} class="text-mood-4" />
     <h2 class="text-lg font-semibold">Last {weeks} weeks</h2>
@@ -124,7 +124,10 @@
           title={day.items.map(label).join('\n')}
           on:click={() => dispatch('dayClick', day.iso)}
           class={clsx(
-            'aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 p-0.5 transition-colors',
+            // A fixed height, not aspect-square: the card spans the full grid
+            // width, so square cells would be ~140px tall and the icons would
+            // float in acres of white. A month view's cells are wide and short.
+            'h-12 rounded-md flex flex-col items-center justify-center gap-0.5 p-0.5 transition-colors',
             day.future
               ? 'opacity-30 cursor-default'
               : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700',
@@ -137,7 +140,7 @@
         >
           <span
             class={clsx(
-              'text-[9px] leading-none tabular-nums',
+              'text-[10px] leading-none tabular-nums',
               day.isToday ? 'text-primary-500 font-semibold' : 'text-gray-400'
             )}
           >

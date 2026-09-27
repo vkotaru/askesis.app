@@ -361,7 +361,12 @@
         <RaceCountdownCard plan={activePlanData} />
       {/if}
 
-      <ActivityMonthCard activities={allActivities} on:dayClick={openDay} />
+      <!-- Full width: seven day columns squeezed into half the grid make the
+           cells too small to read an icon in, and it is the last card, so a
+           half-width one leaves an empty column beside it either way. -->
+      <div class="lg:col-span-2">
+        <ActivityMonthCard activities={allActivities} on:dayClick={openDay} />
+      </div>
     </div>
   {/if}
 </div>

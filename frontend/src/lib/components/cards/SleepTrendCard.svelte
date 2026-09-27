@@ -66,7 +66,11 @@
     if (data.length < 4) return null;
     const size = Math.max(2, Math.floor(data.length / 3));
     const mean = (xs: typeof data) => xs.reduce((s, p) => s + p.hours, 0) / xs.length;
-    return mean(data.slice(-size)) - mean(data.slice(0, size));
+    const delta = mean(data.slice(-size)) - mean(data.slice(0, size));
+    // Below a tenth of an hour there is nothing to report, and rounding it for
+    // display produced "-0.0 hrs" — a signed zero, which reads as a decline
+    // that is not there. Six minutes either way is not a trend.
+    return Math.abs(delta) < 0.05 ? null : delta;
   })();
 
   $: rolling = data.map((_, i) => {
@@ -112,10 +116,15 @@
     centre: x(i),
   }));
 
-  $: ticks = Array.from({ length: 5 }, (_, i) => ({
-    value: yMin + (span * i) / 4,
-    y: pad.top + innerH - (i / 4) * innerH,
-  }));
+  // Ticks on whole hours. Five evenly-spaced ticks across 0..10 land on 2.5s,
+  // and printing those with no decimals gave an axis reading "0 3 5 8 10" —
+  // which looks like a mistake because it is one. Step up through 1/2/5 until
+  // about five intervals fit, so every label is a round number.
+  $: tickStep = [1, 2, 5, 10].find((v) => span / v <= 6) ?? 10;
+  $: ticks = Array.from({ length: Math.floor(span / tickStep) + 1 }, (_, i) => {
+    const value = yMin + i * tickStep;
+    return { value, y: pad.top + innerH - ((value - yMin) / span) * innerH };
+  });
 
   const hrs = (h: number) => `${h.toFixed(1)} hrs`;
 </script>
