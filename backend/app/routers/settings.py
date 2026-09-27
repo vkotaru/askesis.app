@@ -34,6 +34,8 @@ class UserSettingsSchema(BaseModel):
     # Nutrition targets
     calorie_target: int | None = None
     protein_target: int | None = None
+    # Daily step goal, drawn as a target line on the steps chart.
+    step_target: int | None = None
     # Weekly training plan. Distances are km; the client converts for display.
     weekly_run_km: float | None = None
     weekly_bike_km: float | None = None
@@ -55,6 +57,7 @@ class UserSettingsUpdate(BaseModel):
     water_unit: str | None = None
     calorie_target: int | None = None
     protein_target: int | None = None
+    step_target: int | None = None
     weekly_run_km: float | None = None
     weekly_bike_km: float | None = None
     weekly_disciplines: str | None = None
@@ -134,16 +137,21 @@ def update_settings(
         settings.weight_unit = settings_data.weight_unit
     if settings_data.water_unit is not None:
         settings.water_unit = settings_data.water_unit
-    if settings_data.calorie_target is not None:
-        settings.calorie_target = settings_data.calorie_target
-    if settings_data.protein_target is not None:
-        settings.protein_target = settings_data.protein_target
     # Targets use exclude_unset rather than a None check, because clearing one
-    # has to be possible: None means "no target", which the tile renders as no
-    # bar at all. A `is not None` guard here would make a target permanent once
-    # set, which is the same trap the daily log's blank-a-field bug fell into.
+    # has to be possible: None means "no target", which the charts render as no
+    # line at all. A `is not None` guard makes a target permanent once set --
+    # the same trap the daily log's blank-a-field bug fell into, and the reason
+    # calorie_target and protein_target moved into this list rather than keeping
+    # the guards they used to have.
     supplied = settings_data.model_dump(exclude_unset=True)
-    for field in ("weekly_run_km", "weekly_bike_km", "weekly_disciplines"):
+    for field in (
+        "calorie_target",
+        "protein_target",
+        "step_target",
+        "weekly_run_km",
+        "weekly_bike_km",
+        "weekly_disciplines",
+    ):
         if field in supplied:
             setattr(settings, field, supplied[field])
 

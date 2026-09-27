@@ -4,67 +4,13 @@
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type CalendarEvent, type PlannedWorkout } from '$lib/api/client';
-  import { ICON_MAP, LEGEND_ICONS } from '$lib/utils/activityIcons';
+  import { ICON_MAP, LEGEND_ICONS, getActivityEmoji } from '$lib/utils/activityIcons';
 
   function getIconComponent(iconName: string | undefined) {
     if (iconName && ICON_MAP[iconName]) {
       return ICON_MAP[iconName];
     }
     return null;
-  }
-
-  // Activity name to emoji mapping (fallback when no icon set)
-  const ACTIVITY_EMOJIS: Record<string, string> = {
-    // Cardio
-    'run': '🏃',
-    'running': '🏃',
-    'morning run': '🏃',
-    'evening run': '🏃',
-    'jog': '🏃',
-    'cycling': '🚴',
-    'bike': '🚴',
-    'biking': '🚴',
-    'swimming': '🏊',
-    'swim': '🏊',
-    'hike': '🥾',
-    'hiking': '🥾',
-    'trail hike': '🥾',
-    'walk': '🚶',
-    'walking': '🚶',
-    'evening walk': '🚶',
-    'hiit': '🔥',
-    'hiit session': '🔥',
-    'cardio': '❤️',
-    // Strength
-    'strength': '💪',
-    'upper body': '💪',
-    'lower body': '🦵',
-    'leg day': '🦵',
-    'legs': '🦵',
-    'core': '🧘',
-    'abs': '🧘',
-    'back': '💪',
-    'chest': '💪',
-    'arms': '💪',
-    'shoulders': '💪',
-    'full body': '🏋️',
-    'weights': '🏋️',
-    'yoga': '🧘',
-    'stretching': '🤸',
-  };
-
-  function getActivityEmoji(name: string, type: string): string {
-    const lowerName = name.toLowerCase();
-
-    // Check for exact or partial match
-    for (const [key, emoji] of Object.entries(ACTIVITY_EMOJIS)) {
-      if (lowerName.includes(key)) {
-        return emoji;
-      }
-    }
-
-    // Fallback based on type
-    return type === 'cardio' ? '🏃' : '💪';
   }
 
   let currentDate = new Date();

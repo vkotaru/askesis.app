@@ -6,6 +6,8 @@
   export let steps: { date: string; steps: number | null; bikeSteps?: number }[] = [];
   export let today: string = format(new Date(), 'yyyy-MM-dd');
   export let subtitle: string = 'last 7 days';
+  /** Daily step goal, drawn as a solid line. Null means no goal set. */
+  export let target: number | null = null;
 
   const dispatch = createEventDispatcher<{ dayClick: string }>();
 
@@ -19,7 +21,9 @@
     return { ...d, walked, biked, total: walked + biked };
   });
 
-  $: maxTotal = Math.max(...rows.map(r => r.total), 1);
+  // The target is part of the scale: a goal you are nowhere near still has to be
+  // on the chart, or the line sits off the top and tells you nothing.
+  $: maxTotal = Math.max(...rows.map(r => r.total), target ?? 0, 1);
   $: anyBike = rows.some(r => r.biked > 0);
 
   // Averaged over days that recorded SOMETHING. A day with no step data is a
@@ -29,6 +33,7 @@
   $: avgTotal =
     active.length > 0 ? Math.round(active.reduce((sum, r) => sum + r.total, 0) / active.length) : 0;
   $: avgPct = maxTotal > 0 ? (avgTotal / maxTotal) * 100 : 0;
+  $: targetPct = target && maxTotal > 0 ? (target / maxTotal) * 100 : 0;
 
   // Same two numbers the nutrition chart names, and for the same reason: the
   // dashed average line is positioned from the bottom of the container, so it
@@ -54,6 +59,12 @@
         Avg <span class="font-medium text-green-500">{k(avgTotal)}</span>/day
       </span>
     {/if}
+    {#if target}
+      <span class="flex items-center gap-1">
+        <span class="inline-block w-4 h-0 border-t-2 border-red-500"></span>
+        Target <span class="font-medium text-red-500">{k(target)}</span>
+      </span>
+    {/if}
     {#if anyBike}
       <span class="flex items-center gap-1">
         <span class="inline-block w-2 h-2 rounded-sm bg-green-400"></span> walked
@@ -73,6 +84,17 @@
       <div
         class="absolute left-0 right-0 border-t-2 border-dashed border-green-400/60 pointer-events-none z-10"
         style="bottom: {labelSpace + (avgPct / 100) * barHeight}px;"
+      ></div>
+    {/if}
+
+    <!-- Solid, and red, against the average's dashed green. One is where you
+         mean to get to and the other is where you have been; drawn alike they
+         would be two anonymous lines. -->
+    {#if target}
+      <div
+        class="absolute left-0 right-0 border-t-2 border-red-500 pointer-events-none z-10"
+        style="bottom: {labelSpace + (targetPct / 100) * barHeight}px;"
+        title="Target {target.toLocaleString()} steps"
       ></div>
     {/if}
 

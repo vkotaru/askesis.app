@@ -15,6 +15,46 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A daily step target.** Set it under Settings → Daily Targets and it is drawn
+  on the steps chart as a solid red line, against the average's dashed green —
+  one is where you mean to get to, the other is where you have been. Clear the
+  field to remove the line.
+
+- **The dashboard's last card is now a calendar of the last five weeks**, with
+  the icons for what you did under each date, replacing the eight-week distance
+  bar chart. The chart answered a question the Weekly Targets tile above already
+  answers better — against a target rather than in the abstract — while nothing
+  showed the *shape* of a month: which days you trained, where the rest days
+  fell, how long a gap ran. Rolling rather than calendar-month, so the current
+  week is always complete; tapping a day opens the same detail dialog as the
+  other charts.
+
+### Changed
+
+- **The sleep trend is bars per night with the 7-night average over them**, not
+  one line through both. A night's sleep is a measured quantity and a bar is how
+  quantities compare; the average is a trend and a line is how a trend reads.
+  The bars are zero-based, so a bar's height means the hours in it.
+
+- **Tighter dashboard spacing.** One 16px rhythm between every row and column,
+  down from 24–32px, which was costing most of a phone screen to whitespace.
+
+- Every target is now clearable, not just the weekly training ones. `calorie_target`
+  and `protein_target` were guarded in a way that made them permanent once set —
+  the same trap the daily log's blank-a-field bug fell into.
+
+### Fixed
+
+- **`./db.sh new` was generating a migration that dropped every table.**
+  `migrations/env.py` imported `Base` but never `app.models`, so the metadata
+  Alembic compared the database against was empty and autogenerate concluded the
+  whole schema had been removed. Nothing was ever applied — every migration in
+  this repo happens to be hand-written — and CI could not have caught it, because
+  dropping everything and recreating it round-trips cleanly on a fresh database.
+
+
 ## [2.4.2] - 2026-09-27
 
 Alembic head: `add_routine_exercises`

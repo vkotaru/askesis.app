@@ -136,6 +136,8 @@ class UserSettings(Base):
     protein_target: Mapped[int | None] = mapped_column(
         Integer
     )  # Daily protein goal in grams
+    # Daily step goal. A count, so no unit conversion: a step is a step.
+    step_target: Mapped[int | None] = mapped_column(Integer)
     # Weekly training plan. Distances are canonical metric (km) like everything
     # else -- app/units.py converts at the API boundary, never in storage.
     weekly_run_km: Mapped[float | None] = mapped_column(Float)

@@ -15,10 +15,10 @@
     RecentActivitiesCard,
     NutritionChartCard,
     RaceCountdownCard,
-    WeeklyTrainingCard,
     WeeklyTargetsCard,
     StepsBarCard,
     SleepTrendCard,
+    ActivityMonthCard,
   } from '$lib/components/cards';
 
   // Global (non-week-scoped) data
@@ -238,47 +238,6 @@
     selectedDay = null;
   }
 
-  // Weekly training multi-week data (unchanged)
-  function isBikeActivity(name: string): boolean {
-    const lower = name.toLowerCase();
-    return lower.includes('bike') || lower.includes('cycling') || lower.includes('ride') || lower.includes('cycle');
-  }
-
-  function isRunActivity(name: string): boolean {
-    const lower = name.toLowerCase();
-    return lower.includes('run') || lower.includes('running') || lower.includes('jog');
-  }
-
-  function getWeeks(numWeeks: number): { start: Date; end: Date; label: string }[] {
-    const weeks: { start: Date; end: Date; label: string }[] = [];
-    const now = new Date();
-    const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
-    for (let i = numWeeks - 1; i >= 0; i--) {
-      const ws = addWeeks(currentWeekStart, -i);
-      const we = endOfWeek(ws, { weekStartsOn: 1 });
-      weeks.push({ start: ws, end: we, label: format(ws, 'MMM d') });
-    }
-    return weeks;
-  }
-
-  $: weeks = getWeeks(8);
-
-  $: weeklyTrainingData = weeks.map(week => {
-    const wa = allActivities.filter(a => {
-      const actDate = parseISO(a.date);
-      return actDate >= week.start && actDate <= week.end;
-    });
-    return {
-      label: week.label,
-      bikeMiles: Math.round(wa
-        .filter(a => isBikeActivity(a.name) && a.distance_km)
-        .reduce((sum, a) => sum + distanceFromMetric(a.distance_km || 0, $settings.distance_unit), 0) * 10) / 10,
-      roadMiles: Math.round(wa
-        .filter(a => isRunActivity(a.name) && a.distance_km)
-        .reduce((sum, a) => sum + distanceFromMetric(a.distance_km || 0, $settings.distance_unit), 0) * 10) / 10,
-      strengthCount: wa.filter(a => a.activity_type === 'strength').length,
-    };
-  });
 </script>
 
 <svelte:head>
@@ -286,7 +245,7 @@
 </svelte:head>
 
 <div>
-  <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
+  <div class="mb-4 flex items-center justify-between flex-wrap gap-3">
     <div>
       <h1 class="text-2xl font-bold">Dashboard</h1>
       <p class="text-gray-500 text-sm mt-1">{weekRangeLabel}</p>
@@ -325,7 +284,7 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
     </div>
   {:else}
-    <div class="mb-6">
+    <div class="mb-4">
       <MetricSnapshotCard {logs} on:jump={jumpToTrend} />
     </div>
 
@@ -333,7 +292,7 @@
          figure. The week total used to sit in the calories slot beside three
          macro averages, so the four numbers were not the same kind of thing and
          the row could not be read across. -->
-    <div class="mb-8">
+    <div class="mb-4">
       <TodayNutritionCard
         title="Week average per day logged{caloriesDaysLogged > 0
           ? ` — ${caloriesDaysLogged} of 7 days`
@@ -345,7 +304,7 @@
       />
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 relative">
       {#if weekLoading}
         <div class="absolute inset-0 bg-white/40 dark:bg-black/30 z-20 rounded-lg flex items-center justify-center pointer-events-none">
           <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
@@ -373,6 +332,7 @@
       <div id="trend-steps" class="scroll-mt-20 rounded-xl transition-shadow">
         <StepsBarCard
           steps={stepsData}
+          target={$settings.step_target ?? null}
           subtitle="Click a day for details"
           on:dayClick={openDay}
         />
@@ -401,10 +361,7 @@
         <RaceCountdownCard plan={activePlanData} />
       {/if}
 
-      <WeeklyTrainingCard
-        weeklyData={weeklyTrainingData}
-        distanceLabel={$settings.distance_unit}
-      />
+      <ActivityMonthCard activities={allActivities} on:dayClick={openDay} />
     </div>
   {/if}
 </div>

@@ -473,7 +473,9 @@
     <div class="card p-6">
       <div class="flex items-center gap-2 mb-4">
         <Flame size={20} class="text-nutrition-500" />
-        <h2 class="text-lg font-semibold">Nutrition Goals</h2>
+        <!-- Was "Nutrition Goals"; steps are a daily target too, and a third
+             card for one number would be worse than one honest heading. -->
+        <h2 class="text-lg font-semibold">Daily Targets</h2>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
         <div>
@@ -508,7 +510,25 @@
             }}
           />
         </div>
-        <p class="text-xs text-gray-400 sm:col-span-2">Shown as target lines on the nutrition chart</p>
+        <div>
+          <label for="step-target" class="label">Daily Step Target</label>
+          <input
+            id="step-target"
+            type="number"
+            class="input"
+            min="0"
+            step="500"
+            placeholder="e.g. 8000"
+            value={$settings.step_target || ''}
+            on:blur={(e) => {
+              const val = parseInt(e.currentTarget.value);
+              settings.updateSetting('step_target', val > 0 ? val : null);
+            }}
+          />
+        </div>
+        <p class="text-xs text-gray-400 sm:col-span-2">
+          Each is drawn as a target line on its chart. Clear a field to remove the line.
+        </p>
       </div>
     </div>
 

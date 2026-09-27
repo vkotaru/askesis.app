@@ -113,6 +113,19 @@ cd backend
 ./db.sh fresh                 # DESTRUCTIVE — dev only
 ```
 
+**Read what `./db.sh new` generates; never apply it unread.** It compares
+`app/models.py` against the dev database, and the models have drifted from it in
+ways that are deliberate — the Google columns are kept on purpose, several
+indexes were renamed in the models but not in the DB — so autogenerate proposes
+those as changes too, alongside the one you wanted. Every migration in this repo
+is hand-written for that reason: use the generated file as a diff to read, then
+write the single change yourself.
+
+Until 2026-09-27 it was worse than noisy: `migrations/env.py` never imported
+`app.models`, so the metadata alembic compared against was empty and autogenerate
+emitted a migration that **dropped every table in the schema**. Fixed, and the
+import carries a comment saying why it must stay.
+
 **Releasing** (`RELEASING.md` is the full process):
 
 ```bash

@@ -363,6 +363,8 @@ export interface UserSettings {
   water_unit: WaterUnit;
   calorie_target?: number | null;
   protein_target?: number | null;
+  /** Daily step goal. A count, so no unit conversion. */
+  step_target?: number | null;
   /** Weekly training plan. Distances are km — convert only for display. */
   weekly_run_km?: number | null;
   weekly_bike_km?: number | null;

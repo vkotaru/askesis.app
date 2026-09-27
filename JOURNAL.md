@@ -21,6 +21,36 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-27 — `./db.sh new` was generating a drop-the-whole-schema migration
+
+Found by accident, while adding one nullable column.
+
+**What changed**
+- `migrations/env.py` now imports `app.models`. It imported `Base` from
+  `app.database` and nothing else, so `Base.metadata` held **zero** tables
+  (verified: 0 before the import, 23 after).
+
+**The trap**
+Defining a model class is what registers its table on the metadata. With an empty
+`target_metadata`, `alembic revision --autogenerate` concludes every table in the
+database has been *removed* — and emits exactly that: `op.drop_table` for all 23,
+with a `downgrade()` that recreates them. It is ~600 lines of plausible-looking
+migration. `CLAUDE.md` documented `./db.sh new` as the normal workflow, and CI
+runs `upgrade head && downgrade base` on a **fresh** database, where dropping
+everything and putting it back passes cleanly.
+
+Nothing was ever applied, because every migration in this repo happens to have
+been hand-written. That is luck, not process.
+
+**Watch out**
+- Even fixed, autogenerate is a diff to *read*, not to apply. The models have
+  deliberate drift from the database (the Google columns are kept on purpose;
+  several indexes are renamed in the models only), so it proposes those too. It
+  wanted to drop five `user_settings` Google columns alongside the one column
+  being added.
+- CI cannot catch this class of bug: a migration that drops everything and
+  rebuilds it round-trips on an empty database. Only reading the file catches it.
+
 ## 2026-09-26 — One weight entry silently claimed the day's step count
 
 Reported three times as "Garmin isn't importing my steps", and three times I looked at

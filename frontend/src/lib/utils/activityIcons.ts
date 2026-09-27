@@ -69,3 +69,68 @@ export const LEGEND_ICONS: ActivityIcon[] = [
   { value: 'mountain', label: 'Hike', icon: Mountain },
   { value: 'flame', label: 'HIIT', icon: Flame },
 ];
+
+
+// ── Emoji fallback ───────────────────────────────────────────────────────────
+//
+// For an activity saved without an explicit icon, which is most of them: the
+// picker is optional and nobody reaches for it while logging a workout. Matched
+// on the name, which is why the keys include the phrasings people actually type
+// ("leg day", "morning run") rather than a tidy taxonomy.
+//
+// Lived inline in the calendar page until the dashboard's month card needed the
+// same fallback. One table, or the two views disagree about what a run looks
+// like.
+
+const ACTIVITY_EMOJIS: Record<string, string> = {
+  // Cardio
+  'run': '🏃',
+  'running': '🏃',
+  'morning run': '🏃',
+  'evening run': '🏃',
+  'jog': '🏃',
+  'cycling': '🚴',
+  'bike': '🚴',
+  'biking': '🚴',
+  'swimming': '🏊',
+  'swim': '🏊',
+  'hike': '🥾',
+  'hiking': '🥾',
+  'trail hike': '🥾',
+  'walk': '🚶',
+  'walking': '🚶',
+  'evening walk': '🚶',
+  'hiit': '🔥',
+  'hiit session': '🔥',
+  'cardio': '❤️',
+  // Strength
+  'strength': '💪',
+  'upper body': '💪',
+  'lower body': '🦵',
+  'leg day': '🦵',
+  'legs': '🦵',
+  'core': '🧘',
+  'abs': '🧘',
+  'back': '💪',
+  'chest': '💪',
+  'arms': '💪',
+  'shoulders': '💪',
+  'full body': '🏋️',
+  'weights': '🏋️',
+  'yoga': '🧘',
+  'stretching': '🤸',
+};
+
+export function getActivityEmoji(name: string, type: string): string {
+  const lowerName = name.toLowerCase();
+
+  // Check for exact or partial match
+  for (const [key, emoji] of Object.entries(ACTIVITY_EMOJIS)) {
+    if (lowerName.includes(key)) {
+      return emoji;
+    }
+  }
+
+  // Fallback based on type
+  return type === 'cardio' ? '🏃' : '💪';
+}

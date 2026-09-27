@@ -1,11 +1,16 @@
 <script lang="ts">
   /**
-   * Sleep over time, as a line with a 7-night average behind it.
+   * Sleep over time: a bar per night, with the 7-night average drawn over them
+   * as a line.
    *
-   * Deliberately shaped like `WeightTrendCard` rather than like the steps bars:
-   * sleep is a level you drift around, not a daily total you accumulate, and the
-   * question is which way the level is moving. The rolling average is the part
-   * that answers it — a single bad night says nothing.
+   * Each of the two encodes what it is good at, which a single mark cannot do.
+   * A night's sleep is a measured quantity, and a bar is how you compare
+   * quantities — you can see at a glance which nights were short. The average is
+   * not a measurement of anything; it is a trend, and a line is how a trend
+   * reads. Drawing the nights as a line (the first version of this card) made
+   * every night look like a point on a continuous signal, which sleep is not:
+   * the gaps between bars are where nights are missing, and a line closes them
+   * silently.
    *
    * Nights with no figure are **gaps, not zeros**. They are dropped from the
    * line rather than plotted at the bottom, and left out of every average: a
@@ -75,26 +80,37 @@
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
-  // Anchored to a plausible range of a night's sleep rather than to the data, so
-  // the line does not swing wildly on a quiet week — but widened when a reading
-  // falls outside it.
-  $: yMin = Math.min(4, ...data.map((p) => Math.floor(p.hours) - 1));
+  // Zero-based, because these are bars now. A window fitted to the data (the
+  // previous 4..10) makes a 6.2-hour night a stub beside a 6.4-hour one, which
+  // is a lie about proportion that a line chart gets away with and a bar chart
+  // does not: the height of a bar has to mean the hours in it.
+  const yMin = 0;
   $: yMax = Math.max(10, target ?? 0, ...data.map((p) => Math.ceil(p.hours) + 1));
   $: span = yMax - yMin || 1;
 
-  $: x = (i: number) => pad.left + (i / Math.max(data.length - 1, 1)) * innerW;
+  // One slot per night, and x is the CENTRE of that slot — a bar is drawn from
+  // the slot's edges, and the average line has to pass through bar centres or it
+  // will not line up with the thing it averages.
+  $: slot = innerW / Math.max(data.length, 1);
+  $: x = (i: number) => pad.left + slot * (i + 0.5);
   $: y = (h: number) => pad.top + innerH - ((h - yMin) / span) * innerH;
+  // Wide bars with a hairline gap, narrowing as the range grows; never thinner
+  // than a pixel, or a long range renders as an empty grid.
+  $: barW = Math.max(1, Math.min(slot - 2, 28));
 
-  $: linePath =
-    data.length > 1
-      ? data.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p.hours)}`).join(' ')
-      : '';
   $: avgPath =
     rolling.length > 1
       ? rolling.map((h, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(h)}`).join(' ')
       : '';
 
-  $: points = data.map((p, i) => ({ x: x(i), y: y(p.hours), hours: p.hours, date: p.date }));
+  $: bars = data.map((p, i) => ({
+    x: x(i) - barW / 2,
+    y: y(p.hours),
+    h: Math.max(pad.top + innerH - y(p.hours), 1),
+    hours: p.hours,
+    date: p.date,
+    centre: x(i),
+  }));
 
   $: ticks = Array.from({ length: 5 }, (_, i) => ({
     value: yMin + (span * i) / 4,
@@ -204,40 +220,36 @@
           />
         {/if}
 
+        {#each bars as bar}
+          <rect
+            x={bar.x}
+            y={bar.y}
+            width={barW}
+            height={bar.h}
+            rx={Math.min(2, barW / 2)}
+            class={clsx(
+              'cursor-pointer transition-all',
+              hovered?.date === bar.date ? 'fill-strength-600' : 'fill-strength-400'
+            )}
+            role="presentation"
+            on:mouseenter={() =>
+              (hovered = { x: bar.centre, y: bar.y, hours: bar.hours, date: bar.date })}
+          />
+        {/each}
+
+        <!-- After the bars, not before: SVG paints in document order and has no
+             z-index, so drawn first the average would sit behind them. -->
         {#if avgPath}
           <path
             d={avgPath}
             fill="none"
             stroke="currentColor"
-            stroke-width="1.5"
-            stroke-dasharray="4,4"
-            class="text-orange-400"
-          />
-        {/if}
-
-        {#if linePath}
-          <path
-            d={linePath}
-            fill="none"
-            stroke="currentColor"
             stroke-width="2"
             stroke-linecap="round"
             stroke-linejoin="round"
-            class="text-strength-500"
+            class="text-orange-500"
           />
         {/if}
-
-        {#each points as point}
-          {@const r = points.length > 90 ? 1.5 : points.length > 30 ? 2.5 : 4}
-          <circle
-            cx={point.x}
-            cy={point.y}
-            r={hovered?.date === point.date ? r + 2 : r}
-            class="fill-strength-500 cursor-pointer transition-all"
-            role="presentation"
-            on:mouseenter={() => (hovered = point)}
-          />
-        {/each}
 
         <text x={pad.left} y={height - 8} text-anchor="start" class="fill-gray-400 text-[10px]">
           {format(parseISO(data[0].date), 'MMM d')}
@@ -271,11 +283,11 @@
 
     <div class="flex items-center justify-center gap-6 mt-4 text-xs text-gray-500 flex-wrap">
       <div class="flex items-center gap-2">
-        <div class="w-4 h-0.5 bg-strength-500 rounded"></div>
+        <div class="w-2 h-3 bg-strength-400 rounded-sm"></div>
         <span>Per night</span>
       </div>
       <div class="flex items-center gap-2">
-        <div class="w-4 h-0.5 bg-orange-400 rounded" style="border-top: 2px dashed;"></div>
+        <div class="w-4 h-0.5 bg-orange-500 rounded"></div>
         <span>7-night avg</span>
       </div>
       {#if target}

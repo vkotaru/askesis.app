@@ -7,7 +7,7 @@ export { default as RecentActivitiesCard } from './RecentActivitiesCard.svelte';
 export { default as NutritionChartCard } from './NutritionChartCard.svelte';
 export { default as RaceCountdownCard } from './RaceCountdownCard.svelte';
 export { default as WeeklyTargetsCard } from './WeeklyTargetsCard.svelte';
-export { default as WeeklyTrainingCard } from './WeeklyTrainingCard.svelte';
 export { default as WeekCalendarCard } from './WeekCalendarCard.svelte';
 export { default as StepsBarCard } from './StepsBarCard.svelte';
+export { default as ActivityMonthCard } from './ActivityMonthCard.svelte';
 export { default as MeasurementsCard } from './MeasurementsCard.svelte';

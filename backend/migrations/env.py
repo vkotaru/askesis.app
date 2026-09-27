@@ -11,6 +11,15 @@ from alembic import context
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.database import Base
+
+# Imported for its side effect, and it is load-bearing: defining a model class
+# is what registers its table on `Base.metadata`. Without this line the metadata
+# is EMPTY, and `alembic revision --autogenerate` concludes that every table in
+# the database has been removed -- it generates a migration that drops the
+# entire schema, downgrade-only-in-reverse, and looks plausible until you read
+# it. That is what `./db.sh new` produced for every migration in this repo's
+# history, which is why they are all hand-written.
+import app.models  # noqa: F401
 from app.config import get_settings
 
 # this is the Alembic Config object
