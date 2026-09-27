@@ -139,7 +139,18 @@ def main() -> int:
         print(header)
         print("-" * len(header))
 
-        locked: list[DailyLog] = []
+        # (log, why) for every day whose step count a person is recorded as
+        # owning when the evidence says otherwise. Three distinct shapes, and
+        # only the first is the one that gets reported as "Garmin is broken":
+        #
+        #   stale   stored disagrees with Garmin -> actively wrong on screen
+        #   blank   stored is empty, Garmin has a number -> the day can never
+        #           fill, and nothing on screen hints at why
+        #   label   stored already equals Garmin's figure -> harmless today, but
+        #           the claim is false, so the next revision is refused too
+        #
+        # `blank` is the one that hides: it renders as an ordinary missing day.
+        locked: list[tuple[DailyLog, str]] = []
         for day in days:
             iso = day.isoformat()
             log = logs.get(day)
@@ -163,16 +174,30 @@ def main() -> int:
             truth = range_val if in_range and range_val else single_val
             verdict = ""
             if api is None:
+                # No Garmin session, so there is nothing to compare against:
+                # which of the three shapes this is cannot be known here, and
+                # saying "already correct" would be a claim, not a finding.
                 verdict = "MANUAL LOCK" if owner == MANUAL else ""
+                if owner == MANUAL:
+                    locked.append((log, "?"))
             elif truth is None:
                 verdict = "garmin has nothing"
             elif stored is None:
                 verdict = "MISSING — never imported"
+                if owner == MANUAL:
+                    verdict += " (MANUAL LOCK — import cannot fill it)"
+                    locked.append((log, "blank"))
             elif truth != stored:
                 verdict = "STORED IS STALE"
                 if owner == MANUAL:
                     verdict += " (MANUAL LOCK — import refuses to correct it)"
-                    locked.append(log)
+                    locked.append((log, "stale"))
+            elif owner == MANUAL:
+                # Matches Garmin to the digit. Nobody types a number that lands
+                # exactly on the watch's, so this is the same mislabelling --
+                # currently harmless, and it will refuse the next revision.
+                verdict = "mislabelled (value is Garmin's own)"
+                locked.append((log, "label"))
             if not in_range and truth is not None:
                 verdict = (verdict + " | range dropped this day").lstrip(" |")
 
@@ -184,20 +209,19 @@ def main() -> int:
                 f"{owner:<9}{verdict}"
             )
 
-        if args.offline:
-            locked = [
-                log
-                for day, log in sorted(logs.items())
-                if parse_sources(log.sources).get("steps") == MANUAL
-            ]
-
         if not args.repair:
             if locked:
+                blocked = sum(1 for _, why in locked if why in ("stale", "blank"))
+                tail = (
+                    f"{blocked} of them wrong or unfillable right now.\n"
+                    if api is not None
+                    else "none of them checked against Garmin (--offline).\n"
+                )
                 print(
-                    f"\n{len(locked)} day(s) have a manual lock on steps. "
-                    "Re-syncing will NOT fix those.\n"
-                    "Hand them back to the importer with --repair "
-                    "(add --apply to write)."
+                    f"\n{len(locked)} day(s) claim a hand-entered step count, "
+                    + tail
+                    + "Re-syncing will NOT fix those. Hand them back to the "
+                    "importer with --repair (add --apply to write)."
                 )
             return 0
 
@@ -209,16 +233,31 @@ def main() -> int:
         print(
             f"on these days back to '{garmin.SOURCE}', so the next sync corrects them:"
         )
+        note = {
+            "stale": "wrong on screen; will be corrected",
+            "blank": "empty and unfillable; will be filled",
+            "label": "already correct; relabelled so future revisions land",
+            "?": "unchecked — run without --offline to see what Garmin says",
+        }
         # Reassigned to the importer, NOT merely un-flagged. Dropping the entry
         # leaves the field with no recorded owner, and `garmin.py` treats unknown
         # ownership as fill-blanks-only -- so a wrong-but-present count would sit
         # there exactly as stuck as before, which is how this repair failed its
         # first test. Naming the importer as owner is also the honest claim: the
         # number came from the importer, and the manual flag was never true.
-        for log in locked:
-            print(f"  {log.date}  steps={log.steps}  -> owner = {garmin.SOURCE}")
+        for log, why in locked:
+            stored = "blank" if log.steps is None else str(log.steps)
+            print(f"  {log.date}  stored={stored:<7} {why:<6} {note[why]}")
             if args.apply:
                 log.sources = mark_provider(log.sources, ["steps"], garmin.SOURCE)
+
+        if any(why == "blank" for _, why in locked):
+            print(
+                "\nNote: a blank marked as hand-entered is ALSO what a day you "
+                "deliberately\ncleared looks like. Repairing one refills it from "
+                "Garmin. Check the dates\nabove before applying if you ever "
+                "emptied a step count on purpose."
+            )
 
         if args.apply:
             db.commit()

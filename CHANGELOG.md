@@ -42,6 +42,12 @@ Alembic head: `add_routine_exercises`
   hands a wrongly claimed day back to the importer (dry run by default);
   `--offline` reports on the database alone, without a Garmin session.
 
+  `--repair` covers three shapes, not just the obvious one: a count that
+  disagrees with Garmin, a **blank** that can never be filled (which looks
+  like an ordinary missing day and hides in plain sight), and one that
+  already matches Garmin but carries a false claim that would refuse the
+  next revision.
+
 ## [2.4.0] - 2026-09-25
 
 Alembic head: `add_routine_exercises`
