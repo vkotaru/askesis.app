@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-09-27
+
+Alembic head: `add_routine_exercises`
+
 ### Fixed
 
 - **`--repair` now fixes every locked day, not just the visibly wrong one.**
@@ -37,7 +41,6 @@ does not roll the database back — that head is what you would need to
 - `--offline` no longer guesses at the reason: with no Garmin session there is
   nothing to compare against, so it reports the shape as unchecked rather than
   claiming the stored value is already correct.
-
 
 ## [2.4.1] - 2026-09-26
 
@@ -1121,7 +1124,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.4.2...HEAD
+[2.4.2]: https://github.com/vkotaru/askesis.app/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/vkotaru/askesis.app/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/vkotaru/askesis.app/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/vkotaru/askesis.app/compare/v2.3.0...v2.3.1
