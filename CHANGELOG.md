@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-27
+
+Alembic head: `add_step_target`
+
 ### Added
 
 - **A daily step target.** Set it under Settings → Daily Targets and it is drawn
@@ -56,7 +60,6 @@ does not roll the database back — that head is what you would need to
   whole schema had been removed. Nothing was ever applied — every migration in
   this repo happens to be hand-written — and CI could not have caught it, because
   dropping everything and recreating it round-trips cleanly on a fresh database.
-
 
 ## [2.4.2] - 2026-09-27
 
@@ -1167,7 +1170,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.4.2...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/vkotaru/askesis.app/compare/v2.4.2...v2.5.0
 [2.4.2]: https://github.com/vkotaru/askesis.app/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/vkotaru/askesis.app/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/vkotaru/askesis.app/compare/v2.3.1...v2.4.0
