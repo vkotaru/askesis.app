@@ -15,6 +15,30 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--repair` now fixes every locked day, not just the visibly wrong one.**
+  A real run found four days carrying a false "hand-entered" claim on their
+  step count and the repair offered to fix one. The two it missed:
+
+  - a **blank** that the importer can never fill. It renders as an ordinary
+    missing day, so nothing on screen suggests it is locked rather than simply
+    absent.
+  - a value that **already matches** Garmin exactly. Harmless today, but the
+    claim is false, so the next revision of that figure is refused too. Nobody
+    types a number that lands exactly on the watch's, so an exact match is
+    evidence the value came from the importer and was mislabelled.
+
+  The dry run now says which of the three shapes each day is and what repairing
+  it will do — "will be filled from Garmin" and "relabelled, value unchanged"
+  deserve different consent. A blank is also what a day you deliberately cleared
+  looks like, so that case prints a warning naming the dates.
+
+- `--offline` no longer guesses at the reason: with no Garmin session there is
+  nothing to compare against, so it reports the shape as unchecked rather than
+  claiming the stored value is already correct.
+
+
 ## [2.4.1] - 2026-09-26
 
 Alembic head: `add_routine_exercises`
@@ -41,12 +65,6 @@ Alembic head: `add_routine_exercises`
   a disagreement between the four is visible rather than inferred. `--repair`
   hands a wrongly claimed day back to the importer (dry run by default);
   `--offline` reports on the database alone, without a Garmin session.
-
-  `--repair` covers three shapes, not just the obvious one: a count that
-  disagrees with Garmin, a **blank** that can never be filled (which looks
-  like an ordinary missing day and hides in plain sight), and one that
-  already matches Garmin but carries a false claim that would refuse the
-  next revision.
 
 ## [2.4.0] - 2026-09-25
 
