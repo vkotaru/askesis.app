@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-09-27
+
+Alembic head: `add_app_mode`
+
 ### Changed
 
 - **Switching app mode is blocked while offline** rather than applying and then
@@ -24,7 +28,6 @@ does not roll the database back — that head is what you would need to
   with no explanation. The unselected option is disabled with a line saying why;
   the selected one stays clickable, because disabling both would look like the
   setting itself had failed.
-
 
 ## [2.6.1] - 2026-09-27
 
@@ -1228,7 +1231,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.2...HEAD
+[2.6.2]: https://github.com/vkotaru/askesis.app/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/vkotaru/askesis.app/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/vkotaru/askesis.app/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/vkotaru/askesis.app/compare/v2.4.2...v2.5.0
