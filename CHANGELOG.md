@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-27
+
+Alembic head: `add_app_mode`
+
 ### Added
 
 - **Each account chooses what the app is.** At the top of Settings: *Everything*
@@ -39,7 +43,6 @@ does not roll the database back — that head is what you would need to
   by index and `<svelte:component>` then keeps the instance it already had, so
   filtering the nav relabelled the rows while leaving the previous icons in
   place — "Daily Log" rendered with the Shared icon. Keyed by route now.
-
 
 ## [2.5.0] - 2026-09-27
 
@@ -1196,7 +1199,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/vkotaru/askesis.app/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/vkotaru/askesis.app/compare/v2.4.2...v2.5.0
 [2.4.2]: https://github.com/vkotaru/askesis.app/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/vkotaru/askesis.app/compare/v2.4.0...v2.4.1
