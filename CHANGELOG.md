@@ -15,6 +15,25 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **The exercise library comes with 97 exercises.** It used to start empty, so
+  the first session meant typing every movement's name before logging a single
+  set — the wrong first five minutes for an app whose argument is that it beats
+  a notes app. Covers the standard lifts and machines across chest, back,
+  shoulders, legs, arms and core, plus cardio, **warm-up and mobility work**
+  (bike, band pull-aparts, leg swings) and **cool-down stretches** (foam
+  rolling, couch stretch, pigeon pose).
+
+  Warm-up appears in two senses on purpose, and they are different things: a
+  warm-up *set* of a working lift is the `W` toggle on a set row; a warm-up
+  *exercise* is ten minutes on the bike, and is its own entry.
+
+  Shared with the whole install, like the rest of the library. Anything you had
+  already added is kept — matching is case-insensitive, so an existing "bench
+  press" is not joined by a second "Bench Press".
+
+
 ## [2.8.0] - 2026-09-27
 
 Alembic head: `add_app_mode`
