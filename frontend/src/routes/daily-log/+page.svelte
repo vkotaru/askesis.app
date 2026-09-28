@@ -209,14 +209,20 @@
         // count at 43 for days.
         _edited: FIELD_COLUMNS[fieldName] ?? [],
         date: selectedDate,
-        weight: weight ? weightToMetric(weight, $settings.weight_unit) : undefined,
+        // `null`, never `undefined`, for a field you emptied. JSON.stringify
+        // drops undefined, so the server never learned the field was cleared —
+        // it looked identical to "this request is not about that field", and
+        // the next sync put the old value straight back. Clearing your weight,
+        // water, notes or last feeling silently did nothing. `steps`,
+        // `sleep_hours` and `caffeine_mg` already sent null and already worked.
+        weight: weight ? weightToMetric(weight, $settings.weight_unit) : null,
         sleep_hours,
         steps,
-        water_ml: water ? Math.round(waterToMetric(water, $settings.water_unit)) : undefined,
-        feelings: feelings.length > 0 ? feelings : undefined,
+        water_ml: water ? Math.round(waterToMetric(water, $settings.water_unit)) : null,
+        feelings,
         caffeine_mg,
         ate_outside,
-        notes: notes || undefined,
+        notes: notes || null,
       });
       // You just typed over it, so it is yours now — the server records the
       // same thing. Reflect it here instead of leaving a stale watch icon
@@ -244,11 +250,13 @@
     try {
       const log = await offlineApi.getDailyLog(selectedDate);
       weight = log.weight ? weightFromMetric(log.weight, $settings.weight_unit) : undefined;
-      sleep_hours = log.sleep_hours;
-      steps = log.steps;
+      // `?? undefined`: the server's null means "cleared", and a bound number
+      // input wants undefined for empty. Same value, different vocabulary.
+      sleep_hours = log.sleep_hours ?? undefined;
+      steps = log.steps ?? undefined;
       water = log.water_ml ? waterFromMetric(log.water_ml, $settings.water_unit) : undefined;
       feelings = log.feelings ?? [];
-      caffeine_mg = log.caffeine_mg;
+      caffeine_mg = log.caffeine_mg ?? undefined;
       ate_outside = log.ate_outside ?? false;
       notes = log.notes ?? '';
       sources = log.sources ?? {};

@@ -154,7 +154,16 @@ garmin(4187)
 push({"date": DAY.isoformat(), "weight": 71.5, "_edited": ["weight"]})
 check("weight (unowned) is written", row().weight, 71.5)
 
-# 8. Empty feelings must not 500 (reviewer finding 4).
+# 8. Clearing a field from the FORM must reach the server. The form used to send
+#    `undefined` for an emptied weight/water/notes, which JSON.stringify drops --
+#    so "cleared" was indistinguishable from "this request is not about that
+#    field" and the old value came straight back on the next sync.
+reset()
+rest({"weight": 74.0, "_edited": ["weight"]})
+rest({"weight": None, "_edited": ["weight"]})
+check("clearing weight from the form sticks", row().weight, None)
+
+# 9. Empty feelings must not 500 (reviewer finding 4).
 reset()
 check(
     "REST feelings=[] does not crash",

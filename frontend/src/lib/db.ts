@@ -26,14 +26,16 @@ export interface LocalDailyLog {
   serverId?: number;
   date: string;
   userId?: number;
-  weight?: number;
-  sleep_hours?: number;
-  steps?: number;
-  water_ml?: number;
-  feelings?: string[];
-  caffeine_mg?: number;
-  ate_outside?: boolean;
-  notes?: string;
+  // `| null` mirrors the server type: null is a field the user emptied, which
+  // is a different statement from absent. See DailyLog in api/client.ts.
+  weight?: number | null;
+  sleep_hours?: number | null;
+  steps?: number | null;
+  water_ml?: number | null;
+  feelings?: string[] | null;
+  caffeine_mg?: number | null;
+  ate_outside?: boolean | null;
+  notes?: string | null;
   // Per-field provenance from the server, e.g. { steps: 'garmin' }. Not
   // indexed, so it needs no schema version bump — Dexie is schemaless for
   // anything it is not asked to index. Rows cached before this existed simply

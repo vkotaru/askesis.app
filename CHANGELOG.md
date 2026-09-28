@@ -15,6 +15,17 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Clearing your weight, water, notes or feelings did nothing.** The form sent
+  `undefined` for an emptied field, which `JSON.stringify` drops — so the server
+  could not tell "I cleared this" from "this request isn't about that field",
+  and the old value came back on the next sync. Steps, sleep and caffeine were
+  always fine; these four were not. Found by the review, and it quietly
+  contradicted the promise made one release earlier that a field you clear on
+  purpose stays clear.
+
+
 ## [2.6.3] - 2026-09-27
 
 Alembic head: `add_app_mode`

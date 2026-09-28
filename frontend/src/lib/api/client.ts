@@ -16,14 +16,19 @@ export interface LoginResponse {
 export interface DailyLog {
   id: number;
   date: string;
-  weight?: number;
-  sleep_hours?: number;
-  steps?: number;
-  water_ml?: number;
-  feelings?: string[];
-  caffeine_mg?: number;
-  ate_outside?: boolean;
-  notes?: string;
+  // `| null` is load-bearing, not decoration: null is how a client says "I
+  // emptied this", and it has to be distinguishable from `undefined`, which
+  // JSON.stringify drops and which therefore means "this request says nothing
+  // about that field". Typing these as optional-only let the Daily Log form
+  // send `undefined` for a cleared field, so clearing never reached the server.
+  weight?: number | null;
+  sleep_hours?: number | null;
+  steps?: number | null;
+  water_ml?: number | null;
+  feelings?: string[] | null;
+  caffeine_mg?: number | null;
+  ate_outside?: boolean | null;
+  notes?: string | null;
   /**
    * Per-field provenance, e.g. `{ steps: 'garmin', weight: 'manual' }`.
    * Server-owned and read-only — it is stripped from anything pushed back, so
