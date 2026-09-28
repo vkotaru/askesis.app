@@ -15,6 +15,56 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+Everything an adversarial review of this release series turned up, cleared.
+
+### Fixed
+
+- **Restoring a backup onto a different install could attach your data to the
+  wrong records.** Backups preserve ids, so a record whose id already existed
+  was skipped — and its children were then checked against whatever *local*
+  record held that id. A 150 kg squat set ended up inside an easy run on the
+  wrong date, reported as success. Child rows now attach only to records the
+  same restore actually inserted; anything left out is counted and explained in
+  the result. Restoring onto a fresh install is unaffected, and re-running a
+  restore is still a no-op.
+
+- **A corrupt or hostile backup could permanently break your daily log.** The
+  restore checked dates, booleans and enums but let any number or string
+  through, so `{"steps": "lots"}` stored happily and then failed validation on
+  every read — `GET /api/daily-log/` returned 500 for good, and the row could
+  not be deleted because the list would not load. Numbers, text and text length
+  are now checked, as is `app_mode`, which the file could previously set to
+  anything.
+
+- **A change queued offline could overwrite newer server data.** The
+  create-that-becomes-an-update path skipped the server-wins timestamp check
+  that the update path makes.
+
+- **The Garmin step report mis-read genuine zero-step days** as "MISSING — never
+  imported", and `--repair` offered to fill days Garmin has nothing for. It
+  compared raw Garmin values against normalised stored ones; it now normalises
+  both through the importer's own function. `--offline --repair` also no longer
+  suppresses its own safety warning — that was the run with the least
+  information behind it.
+
+- **The weight/sleep/steps tile showed yesterday's date** anywhere west of
+  Greenwich. `new Date('2026-09-26')` parses as UTC midnight and was formatted
+  with local getters.
+
+- **The sleep chart's ranges were one night short** — "1W" showed six. The
+  cutoff carried the current time of day while each night parses to midnight.
+
+- Two more unkeyed loops in the five-week calendar, the same pattern that put
+  the Shared icon on Daily Log; and its "days trained" count could exceed its
+  own total when an activity was logged for a future date.
+
+- The strength-mode part list named six keys that nothing consulted, so its
+  "hidden until someone decides it belongs" guarantee did not hold. Every card
+  it names now consults it, and an unknown key warns in development.
+
+- Removed a sleep-target line that was wired up but never passed a value.
+
+
 ## [2.6.4] - 2026-09-27
 
 Alembic head: `add_app_mode`

@@ -373,6 +373,33 @@ def _python_value(column: sa.Column, value: Any, table_name: str) -> Any:
             return value
         if isinstance(column.type, sa.Boolean):
             return bool(value)
+        # Numbers and strings need checking too, and used not to be.
+        #
+        # SQLite and PostgreSQL both accept a string in an INTEGER column under
+        # type affinity, so `{"steps": "lots"}` restored happily — and then every
+        # later read failed its response model. `GET /api/daily-log/` returned
+        # 500 for good, which meant the row could not be deleted either, because
+        # the list would not load. That is the same unrecoverable shape
+        # `_sanitise_exercise` exists to prevent on the sync path, and the enum
+        # branch above already reasons about: a file should not be able to break
+        # an account.
+        if isinstance(column.type, sa.Integer):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError("expected a whole number")
+            return value
+        if isinstance(column.type, sa.Float):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("expected a number")
+            return float(value)
+        if isinstance(column.type, (sa.String, sa.Text)):
+            if not isinstance(value, str):
+                raise ValueError("expected text")
+            # A String(n) column silently truncates on some backends and raises
+            # on others; neither is what the file said.
+            length = getattr(column.type, "length", None)
+            if length and len(value) > length:
+                raise ValueError(f"longer than {length} characters")
+            return value
     except (TypeError, ValueError):
         raise HTTPException(
             status_code=400,
@@ -579,6 +606,19 @@ def _validate_backup(payload: Any) -> tuple[dict[str, Any], list[str]]:
             }
             for row in rows
         ]
+
+        # app_mode is a plain String column, so the type check above is happy
+        # with "banana". PUT validates it; restore has to as well, or the file
+        # is a way around the endpoint that guards it.
+        if table_name == "user_settings":
+            for row in decoded:
+                mode = row.get("app_mode")
+                if mode is not None and mode not in APP_MODES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Backup has an unknown app_mode: {mode!r}",
+                    )
+
         restorable[table_name] = {"columns": columns, "rows": decoded}
 
     return restorable, skipped
@@ -614,6 +654,10 @@ async def restore_database(
     tables_restored: list[str] = []
     total_inserted = 0
     total_skipped = 0
+    # Per table, the primary keys THIS run inserted. See the note at the parent
+    # check below — "exists with that id" is not the same as "is that row".
+    inserted_ids: dict[str, set[int]] = {}
+    orphaned = 0
 
     try:
         # Spec order, not file order: parents are inserted before their children.
@@ -625,12 +669,31 @@ async def restore_database(
             table = Base.metadata.tables[spec.table]
             columns = [c for c in table_data["columns"] if c != spec.user_column]
 
-            parent_ids = {
-                parent: _owned_ids(db, current_user.id, parent)
+            # Parents this restore actually INSERTED, not parents that merely
+            # exist with that id.
+            #
+            # The file preserves primary keys, so on an install that already has
+            # a row at that id the parent is skipped as a duplicate — and its
+            # children then validated against whatever the LOCAL row with that id
+            # happens to be. Restoring one machine's backup onto another put a
+            # 150 kg squat set inside somebody's easy run, on the wrong date, and
+            # reported "Restore completed."
+            #
+            # A child may therefore only attach to a parent this run inserted.
+            # On a fresh install that is every parent, so nothing is lost. On a
+            # re-run onto the same install the parent is skipped and the child is
+            # skipped with it, which is what made the restore idempotent to begin
+            # with. Only the cross-install case changes, and it changes from
+            # silent corruption to a counted skip.
+            restored_parents = {
+                parent: set()
                 for _, parent in spec.required_parents + spec.optional_parents
             }
+            for parent in restored_parents:
+                restored_parents[parent] = inserted_ids.get(parent, set())
 
             inserted = 0
+            inserted_ids.setdefault(spec.table, set())
             for row in table_data["rows"]:
                 # Values were decoded and type-checked by _validate_backup.
                 values = {name: row.get(name) for name in columns}
@@ -643,14 +706,18 @@ async def restore_database(
 
                 drop_row = False
                 for fk_column, parent in spec.required_parents:
-                    if values.get(fk_column) not in parent_ids[parent]:
+                    if values.get(fk_column) not in restored_parents[parent]:
                         drop_row = True
                         break
                 if drop_row:
                     total_skipped += 1
+                    orphaned += 1
                     continue
                 for fk_column, parent in spec.optional_parents:
-                    if values.get(fk_column) not in parent_ids[parent]:
+                    # An optional parent that was not restored is nulled, not
+                    # guessed at. `exercises.name` is denormalised for exactly
+                    # this: the movement still reads, it is just unlinked.
+                    if values.get(fk_column) not in restored_parents[parent]:
                         values[fk_column] = None
 
                 try:
@@ -659,6 +726,8 @@ async def restore_database(
                     with db.begin_nested():
                         db.execute(sa.insert(table).values(**values))
                     inserted += 1
+                    if values.get("id") is not None:
+                        inserted_ids[spec.table].add(values["id"])
                 except IntegrityError:
                     # Already present, or violates a constraint. Expected on a
                     # re-run; skipping is what makes restore idempotent.
@@ -689,6 +758,12 @@ async def restore_database(
     message = f"Restore completed. {total_inserted} rows restored"
     if total_skipped:
         message += f", {total_skipped} skipped (already present or not yours)"
+    if orphaned:
+        message += (
+            f". {orphaned} row(s) were left out because the record they belong to "
+            "was not restored — most likely this account already has a different "
+            "record with that id"
+        )
     message += "."
     if tables_skipped:
         message += (

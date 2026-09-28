@@ -19,7 +19,7 @@
    * space that lets the other three sit on one line.
    */
   import { createEventDispatcher } from 'svelte';
-  import { format } from 'date-fns';
+  import { format, parseISO } from 'date-fns';
   import { Scale, Moon, Footprints, ChevronRight } from 'lucide-svelte';
   import { settings } from '$lib/stores/settings';
   import { weightFromMetric, getWeightLabel } from '$lib/utils/units';
@@ -97,7 +97,12 @@
           <!-- The slot is always here, so the three tiles stay the same height
                whether or not a reading happens to be from today. -->
           <p class="text-[10px] sm:text-xs text-gray-400 mt-0.5 sm:mt-1 h-3.5">
-            {tile.asOf && tile.asOf !== today ? format(new Date(tile.asOf), 'MMM d') : ''}
+            <!-- parseISO, not new Date: `new Date('2026-09-26')` is parsed as
+                 UTC midnight per spec and then formatted with local getters, so
+                 anywhere west of Greenwich this rendered the day before. On the
+                 one tile whose entire job is "a stale number must not pass for a
+                 current one", showing the wrong date is the whole failure. -->
+            {tile.asOf && tile.asOf !== today ? format(parseISO(tile.asOf), 'MMM d') : ''}
           </p>
         </div>
         <div class="p-1.5 sm:p-2 rounded-lg {tile.tintClass} shrink-0">

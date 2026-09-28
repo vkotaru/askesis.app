@@ -105,21 +105,37 @@ export function routeAllowed(mode: AppMode | string | null | undefined, path: st
  * the other way round is a nutrition tracker quietly reappearing.
  */
 const STRENGTH_PARTS = [
-  // Dashboard
   'snapshot',
   'steps',
   'weight',
   'sleep',
   'recentActivities',
   'activityMonth',
-  // Settings
-  'stepTarget',
-  'units',
-  'appearance',
-  'account',
+];
+
+// Everything this list can decide. A part rendered without a `partVisible` call
+// is simply always visible, which quietly made the allow-list above a comment
+// rather than a rule — it named ten keys and six of them were consulted by
+// nothing. Listing the parts here means a new one that forgets its `{#if}` is
+// caught by the check below instead of shipping visible in every mode.
+const KNOWN_PARTS = [
+  ...STRENGTH_PARTS,
+  'weekNutrition',
+  'weeklyTargets',
+  'nutritionChart',
+  'racePlan',
+  'nutritionTargets',
+  'weeklyPlan',
+  'modePicker',
 ];
 
 export function partVisible(mode: AppMode | string | null | undefined, key: string): boolean {
+  if (import.meta.env.DEV && !KNOWN_PARTS.includes(key)) {
+    // A typo'd key would otherwise read as "hidden in strength mode" and the
+    // card would vanish with no error. Dev-only: a mismatch in production
+    // should not break the page.
+    console.warn(`[appMode] unknown part "${key}" — add it to KNOWN_PARTS`);
+  }
   // The control that sets the mode is never hidden by the mode, for the same
   // reason /settings is always routable.
   if (key === 'modePicker') return true;

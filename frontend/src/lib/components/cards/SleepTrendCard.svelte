@@ -17,13 +17,11 @@
    * night the watch went uncharged is missing data, and drawing it as "no sleep"
    * would make an unworn watch look like insomnia.
    */
-  import { format, subDays, subMonths, parseISO } from 'date-fns';
+  import { format, startOfDay, subDays, subMonths, parseISO } from 'date-fns';
   import { Moon, TrendingUp, TrendingDown } from 'lucide-svelte';
   import { clsx } from 'clsx';
 
   export let sleepPoints: { date: string; hours: number }[] = [];
-  /** Hours per night the user is aiming for, drawn as a reference line. */
-  export let target: number | null = null;
 
   type TimeRange = '1w' | '2w' | '1m' | '6m' | 'all';
   let selectedRange: TimeRange = '1m';
@@ -38,7 +36,10 @@
   let hovered: { x: number; y: number; hours: number; date: string } | null = null;
 
   function rangeCutoff(range: TimeRange): Date | null {
-    const now = new Date();
+    // From the START of the day, not from this moment. A row's date parses to
+    // local midnight, so a cutoff carrying the current clock time excluded the
+    // oldest night in every range — "1W" showed six.
+    const now = startOfDay(new Date());
     switch (range) {
       case '1w':
         return subDays(now, 7);
@@ -89,7 +90,7 @@
   // is a lie about proportion that a line chart gets away with and a bar chart
   // does not: the height of a bar has to mean the hours in it.
   const yMin = 0;
-  $: yMax = Math.max(10, target ?? 0, ...data.map((p) => Math.ceil(p.hours) + 1));
+  $: yMax = Math.max(10, ...data.map((p) => Math.ceil(p.hours) + 1));
   $: span = yMax - yMin || 1;
 
   // One slot per night, and x is the CENTRE of that slot — a bar is drawn from
@@ -216,19 +217,6 @@
           hrs
         </text>
 
-        {#if target}
-          <line
-            x1={pad.left}
-            y1={y(target)}
-            x2={width - pad.right}
-            y2={y(target)}
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-dasharray="5,3"
-            class="text-amber-400/70"
-          />
-        {/if}
-
         {#each bars as bar}
           <rect
             x={bar.x}
@@ -299,12 +287,6 @@
         <div class="w-4 h-0.5 bg-orange-500 rounded"></div>
         <span>7-night avg</span>
       </div>
-      {#if target}
-        <div class="flex items-center gap-2">
-          <div class="w-4 h-0.5 bg-amber-400 rounded" style="border-top: 2px dashed;"></div>
-          <span>Target</span>
-        </div>
-      {/if}
     </div>
   {:else}
     <div class="h-48 flex items-center justify-center text-gray-400 text-center px-4">

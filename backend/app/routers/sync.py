@@ -511,6 +511,20 @@ def _coerce_column_types(model: type, data: dict) -> dict:
     return out
 
 
+def _client_timestamp(change: SyncChange) -> datetime:
+    """When the client says it made this change, as a naive UTC datetime.
+
+    Falls back to now on anything unparseable, which makes an unstamped change
+    the newest rather than the oldest — the opposite would silently discard it.
+    """
+    try:
+        return datetime.fromisoformat(
+            (change.timestamp or "").replace("Z", "+00:00")
+        ).replace(tzinfo=None)
+    except (ValueError, AttributeError):
+        return datetime.utcnow()
+
+
 def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> int:
     """Create a new record from client data. Returns server ID."""
     data = _clean_data(change.data)
@@ -548,7 +562,14 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
     if change.serverId:
         existing = db.query(model).filter(model.id == change.serverId).first()
         if existing and hasattr(existing, "user_id") and existing.user_id == user.id:
-            # Already exists — treat as update
+            # Already exists — treat as update, including the server-wins check
+            # that `_handle_update` makes. Without it this branch was a way past
+            # it: a create queued offline hours ago overwrote a newer server row
+            # unconditionally, purely because the client had labelled it a create.
+            if getattr(
+                existing, "updated_at", None
+            ) and existing.updated_at > _client_timestamp(change):
+                return existing.id
             for key, value in data.items():
                 if hasattr(existing, key):
                     setattr(existing, key, value)
@@ -664,13 +685,7 @@ def _handle_update(
         raise ValueError("Permission denied")
 
     # Server-wins conflict resolution: compare timestamps
-    client_ts = change.timestamp
-    try:
-        client_dt = datetime.fromisoformat(client_ts.replace("Z", "+00:00")).replace(
-            tzinfo=None
-        )
-    except (ValueError, AttributeError):
-        client_dt = datetime.utcnow()
+    client_dt = _client_timestamp(change)
 
     if not created_in_batch and obj.updated_at and obj.updated_at > client_dt:
         # Server version is newer — skip this update (server wins)

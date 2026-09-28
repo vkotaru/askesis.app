@@ -289,9 +289,11 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
     </div>
   {:else}
-    <div class="mb-4">
-      <MetricSnapshotCard {logs} on:jump={jumpToTrend} />
-    </div>
+    {#if shows('snapshot')}
+      <div class="mb-4">
+        <MetricSnapshotCard {logs} on:jump={jumpToTrend} />
+      </div>
+    {/if}
 
     <!-- Averages only, and every one of them over the days that actually have a
          figure. The week total used to sit in the calories slot beside three
@@ -340,6 +342,7 @@
 
       <!-- id + scroll-margin: the snapshot tiles scroll here, and without the
            margin a sticky header would land on top of the card title. -->
+      {#if shows('steps')}
       <div id="trend-steps" class="scroll-mt-20 rounded-xl transition-shadow">
         <StepsBarCard
           steps={stepsData}
@@ -348,7 +351,9 @@
           on:dayClick={openDay}
         />
       </div>
+      {/if}
 
+      {#if shows('weight')}
       <div id="trend-weight" class="scroll-mt-20 rounded-xl transition-shadow">
         <WeightTrendCard
           {weightPoints}
@@ -358,15 +363,20 @@
           interactive={true}
         />
       </div>
+      {/if}
 
+      {#if shows('sleep')}
       <div id="trend-sleep" class="scroll-mt-20 rounded-xl transition-shadow">
         <SleepTrendCard {sleepPoints} />
       </div>
+      {/if}
 
-      <RecentActivitiesCard
-        activities={recentActivities}
-        distanceUnit={$settings.distance_unit}
-      />
+      {#if shows('recentActivities')}
+        <RecentActivitiesCard
+          activities={recentActivities}
+          distanceUnit={$settings.distance_unit}
+        />
+      {/if}
 
       {#if activePlanData && shows('racePlan')}
         <RaceCountdownCard plan={activePlanData} />
@@ -375,9 +385,11 @@
       <!-- Full width: seven day columns squeezed into half the grid make the
            cells too small to read an icon in, and it is the last card, so a
            half-width one leaves an empty column beside it either way. -->
-      <div class="lg:col-span-2">
-        <ActivityMonthCard activities={allActivities} on:dayClick={openDay} />
-      </div>
+      {#if shows('activityMonth')}
+        <div class="lg:col-span-2">
+          <ActivityMonthCard activities={allActivities} on:dayClick={openDay} />
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

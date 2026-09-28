@@ -77,8 +77,11 @@
     };
   });
 
+  // Both halves count the same days. `activeDays` used to include future ones
+  // while `totalDays` excluded them, so an activity logged for tomorrow —
+  // a planned session, a mis-typed date — rendered "22 of 21 days trained".
   $: activeDays = rows.reduce(
-    (n, row) => n + row.days.filter((d) => d.items.length > 0).length,
+    (n, row) => n + row.days.filter((d) => !d.future && d.items.length > 0).length,
     0
   );
   $: totalDays = rows.reduce((n, row) => n + row.days.filter((d) => !d.future).length, 0);
@@ -114,7 +117,7 @@
       <span class="text-[10px] text-gray-400 flex items-center justify-end pr-1 tabular-nums">
         {row.showLabel ? row.label : ''}
       </span>
-      {#each row.days as day}
+      {#each row.days as day (day.iso)}
         <button
           type="button"
           disabled={day.future}
@@ -150,7 +153,12 @@
           <!-- Up to two marks, then a count. A day with five logged activities
                would otherwise render five illegible glyphs in a cell this size. -->
           <span class="flex items-center justify-center gap-0.5 leading-none">
-            {#each day.items.slice(0, 2) as activity}
+            <!-- Keyed, like the nav: an unkeyed {#each} updates by index and
+                 <svelte:component> keeps the instance it already had, so a
+                 revalidation that reorders two activities on one day would
+                 leave the first one's icon on the second. The same pattern put
+                 the Shared icon on Daily Log. -->
+            {#each day.items.slice(0, 2) as activity (activity.id ?? activity.name)}
               {@const Icon = iconFor(activity)}
               {#if Icon}
                 <span

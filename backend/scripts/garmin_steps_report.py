@@ -50,6 +50,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import garmin
+from app.garmin import steps_from
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import DailyLog
@@ -58,16 +59,25 @@ from scripts.garmin_sync import resolve_user
 
 
 def fetch_range(api, start: str, end: str) -> dict[str, int | None]:
-    """The one ranged call the scheduled sync makes, verbatim."""
+    """The one ranged call the scheduled sync makes, verbatim.
+
+    Normalised through `garmin.steps_from` — the same function the importer
+    uses — so this compares like with like. Raw, it did not: Garmin reports an
+    unmeasured day as 0 and the importer stores that as NULL, so a genuine
+    zero-step day read as `range=0, stored=None`, printed "MISSING — never
+    imported", and `--repair` offered to fill a day Garmin has nothing for. A
+    float total did the same in the other direction and showed "STORED IS
+    STALE" against a value that matched.
+    """
     rows = api.get_daily_steps(start, end)
-    return {r["calendarDate"]: r.get("totalSteps") for r in rows}
+    return {r["calendarDate"]: steps_from(r.get("totalSteps")) for r in rows}
 
 
 def fetch_single(api, iso: str) -> int | None:
     """The same day on its own — the sync's fallback when the range drops one."""
     for row in api.get_daily_steps(iso, iso):
         if row.get("calendarDate") == iso:
-            return row.get("totalSteps")
+            return steps_from(row.get("totalSteps"))
     return None
 
 
@@ -251,7 +261,11 @@ def main() -> int:
             if args.apply:
                 log.sources = mark_provider(log.sources, ["steps"], garmin.SOURCE)
 
-        if any(why == "blank" for _, why in locked):
+        # `?` is the offline shape: unchecked, so it MIGHT be a blank. The
+        # warning used to be gated on "blank" alone, which meant --offline
+        # reassigned every locked day with the caution silently suppressed —
+        # exactly the run with the least information behind it.
+        if any(why in ("blank", "?") for _, why in locked):
             print(
                 "\nNote: a blank marked as hand-entered is ALSO what a day you "
                 "deliberately\ncleared looks like. Repairing one refills it from "

@@ -21,6 +21,40 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-28 — What the adversarial review was worth
+
+Ten findings, all fixed. Two were the kind that only a reviewer looking for them
+would find, and both are worth remembering as shapes rather than as bugs.
+
+**Restore: "a row exists with that id" is not "that is the row."** Backups
+preserve primary keys. On an install that already has a row at that id the
+parent is skipped as a duplicate, and its children were then validated against
+the *local* row — so one machine's squat sets were filed inside another
+machine's easy run, and the response said "Restore completed." The fix is that
+a child may only attach to a parent **this run inserted**; `_owned_ids` answers
+reachability, which is a different question and was the wrong one to ask here.
+The cross-install case now loses rows instead of corrupting them, and says so.
+
+**A file should not be able to break an account.** `_python_value` checked
+enums, dates and booleans and passed numbers and strings straight through. Both
+SQLite and PostgreSQL accept a string in an INTEGER column under type affinity,
+so a restored `{"steps": "lots"}` broke `GET /api/daily-log/` permanently — and
+you could not delete the row, because deleting needs the list to load. The enum
+branch right above it already reasoned about exactly this failure for enums.
+Same class as the sync path's `_sanitise_exercise`; the hole was in the third
+writer nobody had lined up beside the other two.
+
+**Watch out**
+- Three write paths reach `daily_logs`: REST, sync-update, sync-create-upsert.
+  A rule added to one belongs in all three. The server-wins check was missing
+  from the third for the same reason the provenance rule was: it looks like a
+  create and is actually an update.
+- `{#each}` over anything containing `<svelte:component>` must be keyed. Three
+  instances found so far (nav, and two in the month card). Assume more.
+- The review found more in the code this session shipped than every gate
+  combined. `svelte-check`, `ruff`, the import check and the migration round
+  trip were all green for every one of these.
+
 ## 2026-09-28 — The steps bug, fourth and final: stop inferring authorship
 
 Reported three times, fixed four. Each fix was correct about the cause it found
