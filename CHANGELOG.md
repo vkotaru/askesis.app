@@ -15,6 +15,30 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Garmin step counts could still freeze, and this time the cause is closed
+  rather than narrowed.** The previous fix marked a field as hand-entered when
+  its value differed from the server's — but a tab left open across a Garmin
+  correction sends the *old* value, which differs in exactly the same way. Same
+  symptom as before: a partial early-morning count stuck permanently, with
+  re-syncing unable to shift it.
+
+  Authorship cannot be inferred from the data, so the app no longer tries. The
+  page already knew which field you edited; it now says so, and nothing else in
+  the request can be claimed. A field an importer owns that you did not edit is
+  left exactly as the importer left it.
+
+  A number you type by hand still beats the importer, and a field you clear on
+  purpose still stays clear — both are checked by
+  `backend/scripts/check_steps_paths.py`, which now exercises all thirteen write
+  paths in one run rather than the single path each previous fix verified.
+
+- **Clearing your last "feeling" no longer fails.** An empty list reached SQLite
+  unjoined and raised; the offline path had always handled it correctly and the
+  REST path had not.
+
+
 ## [2.6.2] - 2026-09-27
 
 Alembic head: `add_app_mode`

@@ -45,7 +45,15 @@ export interface DailyNutrition {
 
 export type DailyNutritionInput = Omit<DailyNutrition, 'id' | 'user_id'>;
 
-export type DailyLogInput = Omit<DailyLog, 'id' | 'sources'>;
+export type DailyLogInput = Omit<DailyLog, 'id' | 'sources'> & {
+  /** Columns the user actually edited in this save — provenance only, never
+   *  written to a column. See the backend's `provenance.claimed_fields`.
+   *
+   *  Omitting it means "nothing here was hand-entered", which leaves any field
+   *  an importer owns alone. That is the safe direction: a wrong guess the
+   *  other way freezes a value permanently and invisibly. */
+  _edited?: string[];
+};
 
 export interface FoodItem {
   id: number;

@@ -31,7 +31,13 @@ from app.models import (
     ActivityType,
     TimeOfDay,
 )
-from app.provenance import mark_manual, user_edited, parse_sources
+from app.provenance import (
+    EDITED_FIELDS_KEY,
+    MANUAL,
+    claimed_fields,
+    mark_manual,
+    parse_sources,
+)
 from app.routers.activities import SET_TYPES, ExerciseCreate
 from app.routers.auth import get_current_user
 from app.routers.exercise_catalog import visible_catalog_ids
@@ -347,6 +353,9 @@ _EXCLUDE_FIELDS = {
     # otherwise come straight back on the next push and let a round-trip
     # relabel Garmin's values as the user's own.
     "sources",
+    # Describes the request, not the row: which fields the user actually edited.
+    # Read by `claimed_fields` from the raw payload before this strip runs.
+    EDITED_FIELDS_KEY,
 }
 
 
@@ -566,10 +575,25 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
         )
         if existing:
             touched = [k for k in data if k != "date" and hasattr(existing, k)]
-            # Claim only what the value shows the user actually changed — see
-            # the note on the update path below.
-            edited = [k for k in touched if user_edited(getattr(existing, k), data[k])]
+            existing_sources = (
+                parse_sources(existing.sources) if model == DailyLog else {}
+            )
+            # Claim only what the client says its user edited — see
+            # provenance.claimed_fields for why this cannot be inferred.
+            edited = (
+                claimed_fields(
+                    change.data or {}, touched, lambda f: existing_sources.get(f)
+                )
+                if model == DailyLog
+                else touched
+            )
             for key in touched:
+                if (
+                    model == DailyLog
+                    and key not in edited
+                    and existing_sources.get(key) not in (None, MANUAL)
+                ):
+                    continue
                 setattr(existing, key, data[key])
             if model == DailyLog and edited:
                 existing.sources = mark_manual(existing.sources, edited)
@@ -703,26 +727,31 @@ def _handle_update(
 
     # An edit made offline earns the same provenance an online one would, or the
     # queue would become a way to launder a hand-entered value into looking like
-    # an importer's.
-    #
-    # But only the fields whose value actually MOVED. A client pushes whole
-    # rows, never diffs, so a payload sent to record a weight also carries that
-    # day's step count exactly as the client received it. Marking everything in
-    # the payload as hand-entered made that weight entry claim the steps — and
-    # `garmin.py` honours a person's claim by never correcting the field again.
-    # A 6am sync writing 43 steps, followed by any daily-log edit that day, froze
-    # the count at 43 permanently: re-syncing could not fix it, because the
-    # importer had been told a human owned that number.
-    #
-    # Computed BEFORE the writes below, because afterwards there is nothing left
-    # to compare against.
+    # an importer's — but only the fields the client says its user actually
+    # edited. See `provenance.claimed_fields`; this cannot be inferred from the
+    # payload, and two attempts to infer it both froze a step count permanently.
+    sources = parse_sources(obj.sources) if model == DailyLog else {}
     edited = (
-        [k for k in touched if k != "date" and user_edited(getattr(obj, k), data[k])]
+        claimed_fields(
+            change.data or {},
+            [k for k in touched if k != "date"],
+            lambda f: sources.get(f),
+        )
         if model == DailyLog
         else []
     )
 
     for key in touched:
+        # An importer's field that the user did not claim keeps the importer's
+        # value. The payload's copy of it is whatever the client was holding,
+        # which may predate the importer's latest reading — writing it would
+        # undo a correction, and the next sync would look like drift.
+        if (
+            model == DailyLog
+            and key not in edited
+            and sources.get(key) not in (None, MANUAL)
+        ):
+            continue
         setattr(obj, key, data[key])
 
     if edited:

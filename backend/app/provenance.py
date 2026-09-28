@@ -23,7 +23,7 @@ reading -- for good.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 MANUAL = "manual"
@@ -63,21 +63,51 @@ def mark(raw: str | None, fields: Iterable[str], owner: str) -> str | None:
     return format_sources(sources)
 
 
-def user_edited(current: Any, incoming: Any) -> bool:
-    """Did this field actually change, or is the client echoing what it holds?
+#: The key a client uses to name the fields its user actually edited.
+#: Stripped before anything reaches a model — it describes the request, not a row.
+EDITED_FIELDS_KEY = "_edited"
 
-    The distinction is the whole difference between "the user typed this" and
-    "the user typed something *else* on the same form". Clients send whole rows,
-    not diffs: the phone logs a weight and posts the entire day back, step count
-    included, because that is what its cached copy says. Treating every field in
-    the payload as hand-entered means one weight entry claims the day's steps,
-    and an importer that respects a person's claim then refuses to correct its
-    own reading ever again.
 
-    Clearing a field is still an edit: 4,000 -> None differs, so it is marked,
-    and the blank is protected exactly as before.
+def claimed_fields(
+    payload: dict[str, Any],
+    touched: Iterable[str],
+    owner_of: Callable[[str], str | None],
+) -> list[str]:
+    """Which fields this write may mark as hand-entered.
+
+    **The client is the only thing that knows.** This looked like it could be
+    inferred from the data and it cannot, which cost four rounds of a bug the
+    user reported three times. The history is worth keeping:
+
+    1. First attempt: mark every field in the payload. Clients push whole rows,
+       so logging a weight claimed that day's step count, and `garmin.py` then
+       refused to correct its own reading ever again. A partial early-morning
+       count froze permanently.
+    2. Second attempt: mark a field only if its value *moved* -- "unchanged
+       means the client echoed it back". That is right whenever the client's
+       copy is current, and a **stale** copy forges the signature exactly. The
+       Daily Log page caches its row and deliberately does not refresh while you
+       type, so a tab left open across an importer's correction sends an old
+       value that differs from the new one, and it freezes all over again.
+
+    The evidence needed is "differs from what the client last *read*", and no
+    amount of looking at the row can recover it. So the client states it:
+    `_edited: ["weight"]` names the fields its user touched, and nothing else in
+    the payload can be claimed.
+
+    Without that key -- an older client, or any caller that does not send it --
+    a field an **importer owns is left alone**, and only unowned fields are
+    claimed. That direction is deliberate. Guessing wrong one way freezes a
+    number forever, invisibly, and no amount of re-syncing shifts it. Guessing
+    wrong the other way lets an importer overwrite something typed by hand,
+    which is visible the next time you look and fixable by typing it again.
+    Between an error you cannot see and an error you can, take the second.
     """
-    return current != incoming
+    supplied = payload.get(EDITED_FIELDS_KEY)
+    if isinstance(supplied, (list, tuple, set)):
+        stated = {str(f) for f in supplied}
+        return [f for f in touched if f in stated]
+    return [f for f in touched if owner_of(f) is None]
 
 
 def mark_manual(raw: str | None, fields: Iterable[str]) -> str | None:

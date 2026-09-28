@@ -180,11 +180,34 @@
     setTimeout(() => { fieldSaved[key] = false; fieldSaved = fieldSaved; }, 1500);
   }
 
+  /** Form field -> the column it writes. The server claims provenance from this
+   *  and nothing else, so a name that does not match a column silently means
+   *  "the user edited nothing", and the importer keeps the field. */
+  const FIELD_COLUMNS: Record<string, string[]> = {
+    weight: ['weight'],
+    sleep: ['sleep_hours'],
+    steps: ['steps'],
+    water: ['water_ml'],
+    feelings: ['feelings'],
+    caffeine: ['caffeine_mg'],
+    ate_outside: ['ate_outside'],
+    notes: ['notes'],
+  };
+
   // Auto-save function - saves current form state
   async function autoSave(fieldName: string) {
     saving = true;
     try {
       await offlineApi.saveDailyLog({
+        // Which field you actually touched. The whole row still travels — the
+        // client has always pushed whole rows — but only this is claimed as
+        // hand-entered, and only this may overwrite a value an importer owns.
+        //
+        // Without it the server has to guess from the data, and it cannot: a
+        // tab opened before Garmin corrected a number sends the old value, which
+        // is indistinguishable from someone typing it. That guess froze a step
+        // count at 43 for days.
+        _edited: FIELD_COLUMNS[fieldName] ?? [],
         date: selectedDate,
         weight: weight ? weightToMetric(weight, $settings.weight_unit) : undefined,
         sleep_hours,

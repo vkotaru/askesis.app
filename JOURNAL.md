@@ -21,6 +21,52 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-28 — The steps bug, fourth and final: stop inferring authorship
+
+Reported three times, fixed four. Each fix was correct about the cause it found
+and wrong that it was the only one. The pattern is the lesson, not the bug.
+
+| # | Cause found | Fix | Why it was not enough |
+|---|---|---|---|
+| 1 | A `partial_day` guard withheld today's count | Removed it | Yesterday was still missing |
+| 2 | The ranged Garmin call silently omits days | Per-day fallback | The number still froze |
+| 3 | Every field in a pushed row was marked `manual` | Mark only fields whose value moved | A stale client forges "moved" exactly |
+| 4 | Authorship cannot be inferred from data at all | The client states it | — |
+
+**The actual problem, which took four rounds to name:** the server had no way to
+know *what the client changed*. Clients push whole rows, two writers own the
+same fields, and there is no version to compare against. Attempt 3 tried to
+recover the missing information from the values — "unchanged means the client
+echoed it back" — which holds only when the client's copy is current. The Daily
+Log page caches its row and deliberately does not refresh while you type
+(`daily-log/+page.svelte`, and `getDailyLog` does not revalidate), so a tab left
+open across an importer's correction sends an old value that *differs* from the
+new one. Indistinguishable from typing.
+
+**What changed:** `provenance.claimed_fields`. The client sends `_edited:
+["weight"]` naming the fields its user touched; nothing else in the payload can
+be claimed, and a field an importer owns that was not claimed is not written at
+all. `autoSave(fieldName)` in the Daily Log page already knew which field it was
+— it had simply been throwing the information away.
+
+**The fallback direction is deliberate.** With no `_edited` (an older client),
+importer-owned fields are left alone rather than claimed. Guessing wrong that way
+lets an importer overwrite something hand-typed: visible, and fixable by typing
+it again. Guessing wrong the other way freezes a number forever, invisibly, and
+no amount of re-syncing shifts it. Between an error you can see and one you
+cannot, take the first.
+
+**Watch out**
+- `scripts/check_steps_paths.py` now runs all thirteen paths at once. Run it after
+  touching `provenance.py`, `garmin.py`, `routers/daily_log.py`, or the DailyLog
+  half of `routers/sync.py`. Cases 3 and 4 — a typed number beats the importer, a
+  cleared field stays clear — are the ones every fix to this bug risks trading
+  away, and three of the four fixes above would have passed a test of only the
+  path they changed.
+- `_edited` names columns, not form fields. `FIELD_COLUMNS` maps between them; a
+  name that matches no column silently means "nothing was edited", which fails
+  safe.
+
 ## 2026-09-27 — `./db.sh new` was generating a drop-the-whole-schema migration
 
 Found by accident, while adding one nullable column.

@@ -5,7 +5,13 @@ from datetime import date
 
 from app.database import get_db
 from app.models import User, DailyLog
-from app.provenance import mark_manual, parse_sources, user_edited
+from app.provenance import (
+    EDITED_FIELDS_KEY,
+    MANUAL,
+    claimed_fields,
+    mark_manual,
+    parse_sources,
+)
 from app.routers.auth import get_current_user, check_view_permission
 
 router = APIRouter()
@@ -25,6 +31,12 @@ class DailyLogCreate(BaseModel):
     caffeine_mg: int | None = Field(None, ge=0, le=2000)
     ate_outside: bool | None = None
     notes: str | None = Field(None, max_length=2000)
+    # Which fields the user actually edited. Provenance only — never written to
+    # a column. Aliased because a leading underscore is private to pydantic.
+    edited: list[str] | None = Field(None, alias="_edited")
+
+    class Config:
+        populate_by_name = True
 
 
 class DailyLogResponse(BaseModel):
@@ -120,7 +132,12 @@ def create_or_update_log(
 ):
     # Only get fields that were actually provided (not default None values)
     data = log_data.model_dump(exclude_unset=True)
-    if data.get("feelings"):
+    # Out of `data` before anything iterates it: this names fields, it is not one.
+    claim = {EDITED_FIELDS_KEY: data.pop("edited", None)}
+    # `is not None`, not truthiness: an empty list means "you deselected your
+    # last feeling", and the truthy test let that list through unjoined to
+    # sqlite, which refuses to bind it. The sync path already got this right.
+    if data.get("feelings") is not None:
         data["feelings"] = ",".join(data["feelings"])
 
     # Check if log exists for this date
@@ -144,8 +161,16 @@ def create_or_update_log(
         # value is the evidence: unchanged means the client echoed it back, not
         # that someone typed it. Claiming it anyway locks the importer out of its
         # own reading for good.
-        edited = [k for k in touched if user_edited(getattr(existing, k), data[k])]
+        sources = parse_sources(existing.sources)
+        edited = claimed_fields(claim, touched, lambda f: sources.get(f))
         for key in touched:
+            # A field an importer owns and the user did not claim is not ours to
+            # overwrite either: the value in the payload is whatever the client
+            # happened to be holding, which may predate the importer's latest
+            # reading. Writing it would undo a correction and then, on the next
+            # sync, look like the importer had drifted.
+            if key not in edited and sources.get(key) not in (None, MANUAL):
+                continue
             setattr(existing, key, data[key])
         if edited:
             existing.sources = mark_manual(existing.sources, edited)
@@ -155,7 +180,8 @@ def create_or_update_log(
 
     # Create new - use full data with defaults for creation
     create_data = log_data.model_dump()
-    if create_data.get("feelings"):
+    create_data.pop("edited", None)  # names fields, is not one
+    if create_data.get("feelings") is not None:
         create_data["feelings"] = ",".join(create_data["feelings"])
     log = DailyLog(
         user_id=current_user.id,
