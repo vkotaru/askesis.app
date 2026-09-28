@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.6.4] - 2026-09-27
+
+Alembic head: `add_app_mode`
+
 ### Fixed
 
 - **Clearing your weight, water, notes or feelings did nothing.** The form sent
@@ -24,7 +28,6 @@ does not roll the database back — that head is what you would need to
   always fine; these four were not. Found by the review, and it quietly
   contradicted the promise made one release earlier that a field you clear on
   purpose stays clear.
-
 
 ## [2.6.3] - 2026-09-27
 
@@ -1269,7 +1272,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.3...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.4...HEAD
+[2.6.4]: https://github.com/vkotaru/askesis.app/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/vkotaru/askesis.app/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/vkotaru/askesis.app/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/vkotaru/askesis.app/compare/v2.6.0...v2.6.1
