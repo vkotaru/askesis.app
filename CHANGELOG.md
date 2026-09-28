@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-09-27
+
+Alembic head: `add_app_mode`
+
 ### Fixed
 
 - **Switching modes can't lock you out.** Settings is reachable in every mode
@@ -28,7 +32,6 @@ does not roll the database back — that head is what you would need to
   is then silently reverted by the next successful load. Tolerable for a font
   size, confusing for the app mode — the whole app changes and then changes back
   with no explanation. It now raises the same toast the sync errors use.
-
 
 ## [2.6.0] - 2026-09-27
 
@@ -1214,7 +1217,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/vkotaru/askesis.app/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/vkotaru/askesis.app/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/vkotaru/askesis.app/compare/v2.4.2...v2.5.0
 [2.4.2]: https://github.com/vkotaru/askesis.app/compare/v2.4.1...v2.4.2
