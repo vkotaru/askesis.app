@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-27
+
+Alembic head: `add_app_mode`
+
 Everything an adversarial review of this release series turned up, cleared.
 
 ### Fixed
@@ -63,7 +67,6 @@ Everything an adversarial review of this release series turned up, cleared.
   it names now consults it, and an unknown key warns in development.
 
 - Removed a sleep-target line that was wired up but never passed a value.
-
 
 ## [2.6.4] - 2026-09-27
 
@@ -1322,7 +1325,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.6.4...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/vkotaru/askesis.app/compare/v2.6.4...v2.7.0
 [2.6.4]: https://github.com/vkotaru/askesis.app/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/vkotaru/askesis.app/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/vkotaru/askesis.app/compare/v2.6.1...v2.6.2
