@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame, Target, LayoutGrid } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame, Target, LayoutGrid, WifiOff } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { MODE_DEFINITIONS, partVisible } from '$lib/appMode';
+  import { isOnline } from '$lib/sync';
   $: shows = (key: string) => partVisible($settings.app_mode, key);
   import GarminCard from '$lib/components/settings/GarminCard.svelte';
   import { DISCIPLINES, parsePlan } from '$lib/utils/disciplines';
@@ -376,20 +377,28 @@
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {#each MODE_DEFINITIONS as mode}
+          {@const active = ($settings.app_mode ?? 'full') === mode.value}
           <button
             type="button"
-            aria-pressed={($settings.app_mode ?? 'full') === mode.value}
+            aria-pressed={active}
+            disabled={!$isOnline && !active}
+            title={!$isOnline && !active
+              ? 'Needs a connection — this one changes the whole app, so it waits'
+              : mode.blurb}
             on:click={() => settings.updateSetting('app_mode', mode.value)}
             class={clsx(
               'text-left p-4 rounded-lg border-2 transition-colors',
-              ($settings.app_mode ?? 'full') === mode.value
+              active
                 ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                : 'border-gray-200 dark:border-gray-700 hover:border-primary-300'
+                : 'border-gray-200 dark:border-gray-700',
+              !$isOnline && !active
+                ? 'opacity-40 cursor-not-allowed'
+                : !active && 'hover:border-primary-300'
             )}
           >
             <div class="flex items-center gap-2">
               <span class="font-medium">{mode.label}</span>
-              {#if ($settings.app_mode ?? 'full') === mode.value}
+              {#if active}
                 <Check size={16} class="text-primary-500" />
               {/if}
             </div>
@@ -398,10 +407,21 @@
         {/each}
       </div>
 
-      <p class="text-xs text-gray-400 mt-3">
-        Only changes what you see. Nothing is deleted — hidden sections keep their
-        data and come back the moment you switch.
-      </p>
+      {#if !$isOnline}
+        <!-- Blocked rather than queued. Settings are not in the offline mutation
+             queue, so a change made now would apply, look right, and then be
+             quietly undone by the next sync — the whole app changing back with
+             no explanation. Refusing is the honest version of that. -->
+        <p class="text-xs text-amber-600 dark:text-amber-500 mt-3 flex items-center gap-1.5">
+          <WifiOff size={13} />
+          You're offline — switching needs a connection so the change actually sticks.
+        </p>
+      {:else}
+        <p class="text-xs text-gray-400 mt-3">
+          Only changes what you see. Nothing is deleted — hidden sections keep their
+          data and come back the moment you switch.
+        </p>
+      {/if}
     </div>
 
     <!-- Theme -->

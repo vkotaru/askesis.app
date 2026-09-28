@@ -27,11 +27,15 @@ Alembic head: `add_app_mode`
   by construction, because a mode that hid Settings would be a one-way door with
   no way back short of editing the database.
 
-- **A settings change that fails to save now says so.** Settings are not in the
-  offline mutation queue, so a write made with no connection applies locally and
-  is then silently reverted by the next successful load. Tolerable for a font
-  size, confusing for the app mode — the whole app changes and then changes back
-  with no explanation. It now raises the same toast the sync errors use.
+- **Switching mode is blocked while offline**, rather than applying and being
+  quietly undone by the next sync. Settings are not in the offline mutation
+  queue, so a change made with no connection would look right and then reverse
+  itself with no explanation — and for this setting that means the whole app
+  changing back. The unselected option is disabled and says why.
+
+- **Any other settings change that fails to save now says so**, instead of
+  logging to a console nobody has open. Same revert applies to a font size or a
+  unit; it just matters less.
 
 ## [2.6.0] - 2026-09-27
 
