@@ -15,6 +15,32 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Each account chooses what the app is.** At the top of Settings: *Everything*
+  (as before) or *Strength only* — a gym logger with workouts, routines, the
+  exercise library and body weight, and nothing else. Two people share this
+  install and use it for different things; rather than build a second app, an
+  account picks a mode and the shell shows only what that mode is about.
+
+  Body weight stays in strength mode because it is standard in lifting apps and
+  it is what the weight trend feeds on — and Garmin fills the sleep and step
+  fields on the same row without anyone typing. Measurements, progress photos
+  and the calendar are hidden; the dashboard's five-week grid already answers
+  what the calendar did.
+
+  Nothing is deleted or stopped. A hidden section's rows stay in the database,
+  keep syncing, and reappear untouched when the mode changes back. The setting
+  is per account, so one person switching does not affect the other.
+
+### Fixed
+
+- **Sidebar icons could belong to the wrong item.** An unkeyed `{#each}` updates
+  by index and `<svelte:component>` then keeps the instance it already had, so
+  filtering the nav relabelled the rows while leaving the previous icons in
+  place — "Daily Log" rendered with the Shared icon. Keyed by route now.
+
+
 ## [2.5.0] - 2026-09-27
 
 Alembic head: `add_step_target`

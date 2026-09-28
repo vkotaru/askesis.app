@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame, Target } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Type, Maximize2, Settings2, Users, Share2, Trash2, Plus, Check, Palette, Ruler, Download, Database, HardDriveDownload, Upload, Link, Copy, RotateCw, Flame, Target, LayoutGrid } from 'lucide-svelte';
   import { clsx } from 'clsx';
+  import { MODE_DEFINITIONS, partVisible } from '$lib/appMode';
+  $: shows = (key: string) => partVisible($settings.app_mode, key);
   import GarminCard from '$lib/components/settings/GarminCard.svelte';
   import { DISCIPLINES, parsePlan } from '$lib/utils/disciplines';
   import { distanceToMetric, distanceFromMetric, getDistanceLabel } from '$lib/utils/units';
@@ -359,6 +361,49 @@
   </div>
 
   <div class="space-y-6">
+    <!-- What the app is. First, because it decides what the rest of this page
+         is even about: in a restricted mode the sections for hidden features
+         are still listed below, and it would be strange to meet them before
+         being told why they are there. -->
+    <div class="card p-6">
+      <div class="flex items-center gap-2 mb-1">
+        <LayoutGrid size={20} class="text-primary-500" />
+        <h2 class="text-lg font-semibold">What this app is</h2>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">
+        Yours alone — the other account on this install keeps its own.
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {#each MODE_DEFINITIONS as mode}
+          <button
+            type="button"
+            aria-pressed={($settings.app_mode ?? 'full') === mode.value}
+            on:click={() => settings.updateSetting('app_mode', mode.value)}
+            class={clsx(
+              'text-left p-4 rounded-lg border-2 transition-colors',
+              ($settings.app_mode ?? 'full') === mode.value
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                : 'border-gray-200 dark:border-gray-700 hover:border-primary-300'
+            )}
+          >
+            <div class="flex items-center gap-2">
+              <span class="font-medium">{mode.label}</span>
+              {#if ($settings.app_mode ?? 'full') === mode.value}
+                <Check size={16} class="text-primary-500" />
+              {/if}
+            </div>
+            <p class="text-xs text-gray-500 mt-1">{mode.blurb}</p>
+          </button>
+        {/each}
+      </div>
+
+      <p class="text-xs text-gray-400 mt-3">
+        Only changes what you see. Nothing is deleted — hidden sections keep their
+        data and come back the moment you switch.
+      </p>
+    </div>
+
     <!-- Theme -->
     <div class="card p-6">
       <div class="flex items-center gap-2 mb-4">
@@ -478,6 +523,7 @@
         <h2 class="text-lg font-semibold">Daily Targets</h2>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+        {#if shows('nutritionTargets')}
         <div>
           <label for="calorie-target" class="label">Daily Calorie Target</label>
           <input
@@ -510,6 +556,7 @@
             }}
           />
         </div>
+        {/if}
         <div>
           <label for="step-target" class="label">Daily Step Target</label>
           <input
@@ -533,6 +580,7 @@
     </div>
 
     <!-- Weekly Training Plan -->
+    {#if shows('weeklyPlan')}
     <div class="card p-6">
       <div class="flex items-center gap-2 mb-4">
         <Target size={20} class="text-primary-500" />
@@ -602,6 +650,7 @@
         </div>
       </div>
     </div>
+    {/if}
 
     <!-- Typography -->
     <div class="card p-6">

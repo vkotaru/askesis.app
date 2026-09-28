@@ -4,6 +4,7 @@
   import { clsx } from 'clsx';
   import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
+  import { routeAllowed } from '$lib/appMode';
   import { user as userStore } from '$lib/stores/user';
   import { clearLocalSession, prepareSignOut } from '$lib/stores/data';
   import { deployedVersion, formatVersionLabel, formatVersionTitle } from '$lib/version';
@@ -11,7 +12,9 @@
 
   export let user: User;
 
-  // All nav items
+  // Every section the app has. What an account actually sees is this list
+  // filtered by its mode — see lib/appMode.ts, which is where the decision
+  // lives so the sidebar, the route guard and the dashboard cannot disagree.
   const navItems = [
     { href: '/', icon: Home, label: 'Dashboard', color: 'text-primary-500' },
     { href: '/shared', icon: Users, label: 'Shared', color: 'text-accent-500' },
@@ -27,6 +30,12 @@
     { href: '/nutrition/foods', icon: Apple, label: 'Foods', color: 'text-nutrition-500' },
     { href: '/settings', icon: Settings, label: 'Settings', color: 'text-gray-500' },
   ];
+
+  // Keyed by href where it is rendered, and that is load-bearing: an unkeyed
+  // {#each} updates by index, and <svelte:component> then keeps the instance it
+  // already had. Filtering this list relabelled the rows while leaving the
+  // previous icons in place, so "Daily Log" appeared with the Shared icon.
+  $: visibleNav = navItems.filter((item) => routeAllowed($settings.app_mode, item.href));
 
   // Sign-out has to erase this account's offline cache: the browser is shared
   // (household app), and anything left in IndexedDB is readable by whoever
@@ -157,7 +166,7 @@
           </div>
         </div>
         <nav class="flex-1 min-h-0 overflow-y-auto p-3">
-          {#each navItems as { href, icon: Icon, label, color }}
+          {#each visibleNav as { href, icon: Icon, label, color } (href)}
             {@const isActive = currentPath === href}
             <a
               {href}
@@ -209,7 +218,7 @@
     </div>
 
     <nav class="flex-1 px-3 overflow-y-auto">
-      {#each navItems as { href, icon: Icon, label, color }}
+      {#each visibleNav as { href, icon: Icon, label, color } (href)}
         {@const isActive = currentPath === href}
         <a
           {href}
@@ -286,7 +295,7 @@
     class="md:hidden fixed left-0 top-14 bottom-0 z-40 w-12 flex flex-col items-center gap-1 overflow-y-auto scrollbar-hide bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 py-2 pb-safe"
     aria-label="Primary"
   >
-    {#each navItems as { href, icon: Icon, label, color }}
+    {#each visibleNav as { href, icon: Icon, label, color } (href)}
       {@const isActive = currentPath === href}
       <a
         {href}

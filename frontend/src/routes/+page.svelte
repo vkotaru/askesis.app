@@ -5,6 +5,7 @@
   import { api, type DailyLog, type Activity as ActivityType, type Meal, type DailyNutrition, type TrainingPlan } from '$lib/api/client';
   import { offlineApi, dataVersion } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
+  import { partVisible } from '$lib/appMode';
   import { distanceFromMetric, weightToMetric } from '$lib/utils/units';
   import { classify } from '$lib/utils/disciplines';
   import { ridesToSteps } from '$lib/utils/stepEquivalent';
@@ -36,6 +37,10 @@
   let loading = true;
   let weekLoading = false;
   let selectedDay: string | null = null;
+
+  // Which cards this account's mode shows — lib/appMode.ts decides, so the
+  // sidebar and this page cannot disagree about what the app is.
+  $: shows = (key: string) => partVisible($settings.app_mode, key);
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const sixtyDaysAgo = format(subDays(new Date(), 60), 'yyyy-MM-dd');
@@ -292,6 +297,7 @@
          figure. The week total used to sit in the calories slot beside three
          macro averages, so the four numbers were not the same kind of thing and
          the row could not be read across. -->
+    {#if shows('weekNutrition')}
     <div class="mb-4">
       <TodayNutritionCard
         title="Week average per day logged{caloriesDaysLogged > 0
@@ -303,6 +309,7 @@
         fat_g={weekFatAvg}
       />
     </div>
+    {/if}
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 relative">
       {#if weekLoading}
@@ -311,21 +318,25 @@
         </div>
       {/if}
 
-      <WeeklyTargetsCard
-        activities={weekActivities}
-        runKm={$settings.weekly_run_km ?? null}
-        bikeKm={$settings.weekly_bike_km ?? null}
-        disciplines={$settings.weekly_disciplines ?? null}
-        distanceUnit={$settings.distance_unit}
-      />
+      {#if shows('weeklyTargets')}
+        <WeeklyTargetsCard
+          activities={weekActivities}
+          runKm={$settings.weekly_run_km ?? null}
+          bikeKm={$settings.weekly_bike_km ?? null}
+          disciplines={$settings.weekly_disciplines ?? null}
+          distanceUnit={$settings.distance_unit}
+        />
+      {/if}
 
-      <NutritionChartCard
-        data={nutritionChartData}
-        subtitle="Click a day for details"
-        calorieTarget={$settings.calorie_target}
-        proteinTarget={$settings.protein_target}
-        on:dayClick={openDay}
-      />
+      {#if shows('nutritionChart')}
+        <NutritionChartCard
+          data={nutritionChartData}
+          subtitle="Click a day for details"
+          calorieTarget={$settings.calorie_target}
+          proteinTarget={$settings.protein_target}
+          on:dayClick={openDay}
+        />
+      {/if}
 
       <!-- id + scroll-margin: the snapshot tiles scroll here, and without the
            margin a sticky header would land on top of the card title. -->
@@ -357,7 +368,7 @@
         distanceUnit={$settings.distance_unit}
       />
 
-      {#if activePlanData}
+      {#if activePlanData && shows('racePlan')}
         <RaceCountdownCard plan={activePlanData} />
       {/if}
 

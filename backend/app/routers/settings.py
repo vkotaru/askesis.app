@@ -31,6 +31,8 @@ class UserSettingsSchema(BaseModel):
     measurement_unit: str = "cm"
     weight_unit: str = "kg"
     water_unit: str = "ml"
+    # "full" | "strength" — which parts of the app this account sees.
+    app_mode: str = "full"
     # Nutrition targets
     calorie_target: int | None = None
     protein_target: int | None = None
@@ -55,6 +57,7 @@ class UserSettingsUpdate(BaseModel):
     measurement_unit: str | None = None
     weight_unit: str | None = None
     water_unit: str | None = None
+    app_mode: str | None = None
     calorie_target: int | None = None
     protein_target: int | None = None
     step_target: int | None = None
@@ -137,6 +140,12 @@ def update_settings(
         settings.weight_unit = settings_data.weight_unit
     if settings_data.water_unit is not None:
         settings.water_unit = settings_data.water_unit
+    if settings_data.app_mode is not None:
+        if settings_data.app_mode not in APP_MODES:
+            raise HTTPException(
+                status_code=422, detail=f"app_mode must be one of {APP_MODES}"
+            )
+        settings.app_mode = settings_data.app_mode
     # Targets use exclude_unset rather than a None check, because clearing one
     # has to be possible: None means "no target", which the charts render as no
     # line at all. A `is not None` guard makes a target permanent once set --
@@ -191,6 +200,11 @@ def update_settings(
 # thrown away; the statement is built from the `Table` object, and every value
 # is a bound parameter. A name containing a double quote simply fails the
 # allow-list check.
+
+#: Not an enum column: modes are a presentation choice and adding one should not
+#: need a migration. Validated here so a typo cannot land a value the client has
+#: no rendering for -- which would show a blank app rather than fail loudly.
+APP_MODES = ("full", "strength")
 
 BACKUP_FORMAT_VERSION = 2
 

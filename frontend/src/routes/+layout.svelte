@@ -2,9 +2,11 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import { api } from '$lib/api/client';
   import { user, userLoading, loadCachedUser, cacheUser, clearCachedUser } from '$lib/stores/user';
   import { settings } from '$lib/stores/settings';
+  import { routeAllowed } from '$lib/appMode';
   import Layout from '$lib/components/Layout.svelte';
   import Login from '$lib/components/Login.svelte';
   import SWUpdatePrompt from '$lib/components/SWUpdatePrompt.svelte';
@@ -15,6 +17,24 @@
 
   // Public routes bypass auth
   $: isPublicRoute = $page.url.pathname.startsWith('/report/');
+
+  /**
+   * Send a hidden section home.
+   *
+   * The sidebar already omits these in a restricted mode, but a bookmark, a
+   * back button or a stale service-worker cache can still land on one — and a
+   * page you were told does not exist, rendering anyway, reads as a bug rather
+   * than as a setting.
+   *
+   * Not a security boundary and not pretending to be one: the data is the same
+   * account's either way, and the API is unchanged. This is about the app being
+   * coherent, so it waits for `$settings` to actually load (`app_mode` defaults
+   * to 'full', so nothing is redirected while settings are in flight) and it
+   * never touches a public route.
+   */
+  $: if (!isPublicRoute && $user && !routeAllowed($settings.app_mode, $page.url.pathname)) {
+    goto('/', { replaceState: true });
+  }
 
   onMount(async () => {
     if (isPublicRoute) {

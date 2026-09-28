@@ -136,6 +136,11 @@ class UserSettings(Base):
     protein_target: Mapped[int | None] = mapped_column(
         Integer
     )  # Daily protein goal in grams
+    # What the app is, for this account. "full" is everything; "strength" is a
+    # gym logger and nothing else -- see app_mode.ts on the client for the one
+    # definition of what each mode shows. Per account by design: two people
+    # share this install and use it for different things.
+    app_mode: Mapped[str] = mapped_column(String(20), default="full")
     # Daily step goal. A count, so no unit conversion: a step is a step.
     step_target: Mapped[int | None] = mapped_column(Integer)
     # Weekly training plan. Distances are canonical metric (km) like everything

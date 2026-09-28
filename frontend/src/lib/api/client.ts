@@ -361,6 +361,8 @@ export interface UserSettings {
   measurement_unit: MeasurementUnit;
   weight_unit: WeightUnit;
   water_unit: WaterUnit;
+  /** Which parts of the app this account sees — see lib/appMode.ts. */
+  app_mode?: 'full' | 'strength';
   calorie_target?: number | null;
   protein_target?: number | null;
   /** Daily step goal. A count, so no unit conversion. */

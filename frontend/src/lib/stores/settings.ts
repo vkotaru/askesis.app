@@ -13,6 +13,10 @@ const DEFAULT_SETTINGS: UserSettings = {
   measurement_unit: 'cm',
   weight_unit: 'kg',
   water_unit: 'ml',
+  // Defaulting to 'full' matters on a cold start: the shell renders before the
+  // server's settings arrive, and defaulting the other way would flash a
+  // stripped-down app at someone who does not use it.
+  app_mode: 'full',
 };
 
 const FONT_MAP: Record<string, string> = {
