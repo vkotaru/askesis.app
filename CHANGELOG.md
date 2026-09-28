@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-09-27
+
+Alembic head: `seed_exercise_library`
+
 ### Added
 
 - **The exercise library comes with 97 exercises.** It used to start empty, so
@@ -32,7 +36,6 @@ does not roll the database back — that head is what you would need to
   Shared with the whole install, like the rest of the library. Anything you had
   already added is kept — matching is case-insensitive, so an existing "bench
   press" is not joined by a second "Bench Press".
-
 
 ## [2.8.0] - 2026-09-27
 
@@ -1384,7 +1387,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/vkotaru/askesis.app/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/vkotaru/askesis.app/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/vkotaru/askesis.app/compare/v2.6.4...v2.7.0
 [2.6.4]: https://github.com/vkotaru/askesis.app/compare/v2.6.3...v2.6.4
