@@ -2,6 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { api, type UserSettings, type ColorScheme } from '$lib/api/client';
 import { db } from '$lib/db';
+import { syncErrors } from '$lib/sync';
 
 const DEFAULT_SETTINGS: UserSettings = {
   theme: 'system',
@@ -156,11 +157,25 @@ function createSettingsStore() {
       const current = get({ subscribe });
       db.settings.put({ key: 'userSettings', value: current }).catch(() => {});
 
-      // Persist to server
+      // Persist to server.
+      //
+      // Settings are not in the offline mutation queue — they are a handful of
+      // preferences, not records — so a write that fails here is applied
+      // locally and cached, and then silently reverted by the next successful
+      // `load()`, which overwrites from the server. That is tolerable for a
+      // font size and confusing for `app_mode`, where the whole app changes and
+      // then changes back with no explanation. So say so rather than logging to
+      // a console nobody has open.
       try {
         await api.updateSettings({ [key]: value });
       } catch (err) {
         console.error('Failed to save settings:', err);
+        syncErrors.update((e) => [
+          ...e,
+          navigator.onLine
+            ? `Could not save your ${String(key).replace(/_/g, ' ')} — it will revert.`
+            : `Offline: your ${String(key).replace(/_/g, ' ')} change is not saved yet.`,
+        ]);
       }
     },
   };

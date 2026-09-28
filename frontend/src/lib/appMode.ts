@@ -79,6 +79,13 @@ export function modeDefinition(mode: AppMode | string | null | undefined): ModeD
  * it would match every path and the restriction would silently do nothing.
  */
 export function routeAllowed(mode: AppMode | string | null | undefined, path: string): boolean {
+  // Settings is reachable in every mode, no matter what a mode's list says.
+  // The mode is *chosen* in Settings, so a mode that hid it would be a one-way
+  // door: no nav item, no route, and the only way back would be editing the
+  // database. Today's lists happen to include it; this makes that a property of
+  // the app rather than something the next person has to remember.
+  if (path === '/settings' || path.startsWith('/settings/')) return true;
+
   const { routes } = modeDefinition(mode);
   if (routes === null) return true;
   return routes.some((r) => (r === '/' ? path === '/' : path === r || path.startsWith(`${r}/`)));
@@ -113,6 +120,9 @@ const STRENGTH_PARTS = [
 ];
 
 export function partVisible(mode: AppMode | string | null | undefined, key: string): boolean {
+  // The control that sets the mode is never hidden by the mode, for the same
+  // reason /settings is always routable.
+  if (key === 'modePicker') return true;
   if (modeDefinition(mode).value !== 'strength') return true;
   return STRENGTH_PARTS.includes(key);
 }

@@ -15,6 +15,21 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Switching modes can't lock you out.** Settings is reachable in every mode
+  regardless of what that mode's route list says, and the mode picker is never
+  hidden by the mode it sets. Both were already true by hand; they are now true
+  by construction, because a mode that hid Settings would be a one-way door with
+  no way back short of editing the database.
+
+- **A settings change that fails to save now says so.** Settings are not in the
+  offline mutation queue, so a write made with no connection applies locally and
+  is then silently reverted by the next successful load. Tolerable for a font
+  size, confusing for the app mode — the whole app changes and then changes back
+  with no explanation. It now raises the same toast the sync errors use.
+
+
 ## [2.6.0] - 2026-09-27
 
 Alembic head: `add_app_mode`
