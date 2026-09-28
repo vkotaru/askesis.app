@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-09-27
+
+Alembic head: `add_app_mode`
+
 ### Added
 
 - **A live workout screen.** Strength mode is no longer the same app with things
@@ -50,7 +54,6 @@ does not roll the database back — that head is what you would need to
 - **"What did I lift last time" did not work in a gym.** It went straight to the
   network with no cache, so the one feature that makes this faster than a notes
   app was blank in exactly the place it was written for.
-
 
 ## [2.7.0] - 2026-09-27
 
@@ -1362,7 +1365,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/vkotaru/askesis.app/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/vkotaru/askesis.app/compare/v2.6.4...v2.7.0
 [2.6.4]: https://github.com/vkotaru/askesis.app/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/vkotaru/askesis.app/compare/v2.6.2...v2.6.3
