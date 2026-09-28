@@ -6,6 +6,7 @@
   import { offlineApi, dataVersion } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
   import { partVisible } from '$lib/appMode';
+  import StartWorkoutCard from '$lib/components/StartWorkoutCard.svelte';
   import { distanceFromMetric, weightToMetric } from '$lib/utils/units';
   import { classify } from '$lib/utils/disciplines';
   import { ridesToSteps } from '$lib/utils/stepEquivalent';
@@ -289,6 +290,15 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
     </div>
   {:else}
+    <!-- First in strength mode, because it is the reason the app is open.
+         Hidden in full mode, where the dashboard is a health overview and a
+         "Start workout" button at the top would be an odd thing to meet. -->
+    {#if shows('startWorkout')}
+      <div class="mb-4">
+        <StartWorkoutCard />
+      </div>
+    {/if}
+
     {#if shows('snapshot')}
       <div class="mb-4">
         <MetricSnapshotCard {logs} on:jump={jumpToTrend} />

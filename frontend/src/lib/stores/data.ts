@@ -66,6 +66,8 @@ import {
   type ProgressPhoto,
   type PhotoView,
   type CatalogEntry,
+  type LastSession,
+  type Routine,
   type CatalogInput,
 } from '$lib/api/client';
 import {
@@ -722,6 +724,12 @@ export interface SignOutPreflight {
   /** Mutations belonging to the signing-out account that never reached the
    *  server. Their only copy is this device. */
   pending: number;
+  /** Sets logged into a workout that is still running and has therefore never
+   *  been saved as an activity. `clearLocalUserData` wipes every table, so
+   *  signing out would destroy them — and unlike the queue they cannot be
+   *  parked, because a half-finished session is not a mutation to replay. The
+   *  only safe thing is to say so before erasing them. */
+  liveSets: number;
 }
 
 /**
@@ -742,9 +750,17 @@ export async function prepareSignOut(): Promise<SignOutPreflight> {
 
   try {
     const entries = await db.pendingSync.toArray();
-    return { pending: entries.filter((e) => isQueueEntryOwnedBy(e, uid)).length };
+    const drafts = uid ? await db.liveSession.where('userId').equals(uid).toArray() : [];
+    return {
+      pending: entries.filter((e) => isQueueEntryOwnedBy(e, uid)).length,
+      liveSets: drafts.reduce(
+        (n, d) =>
+          n + d.exercises.reduce((m, e) => m + e.sets.filter((x) => x.state === 'logged').length, 0),
+        0
+      ),
+    };
   } catch {
-    return { pending: 0 };
+    return { pending: 0, liveSets: 0 };
   }
 }
 
@@ -1002,6 +1018,130 @@ export const offlineApi = {
    * out exactly the shared entries this feature exists to share. That is why
    * `exerciseCatalog` is in SYNCED_TABLES but not USER_OWNED_TABLES.
    */
+  /**
+   * What you lifted last time, from the cache first.
+   *
+   * This went straight to `api.getLastSession` and nowhere else, so the single
+   * feature that makes logging faster than a notes app — last session's numbers
+   * sitting under each input — did not work in a gym. The request failed, the
+   * `catch` swallowed it, and the placeholders were simply blank, in exactly the
+   * physical situation the app exists for.
+   *
+   * Keyed on `${userId}:${catalogId}`: the exercise library is shared across the
+   * household and the history behind it is not. The server enforces the same
+   * boundary by joining through Activity; this must not undo it by caching one
+   * account's sets under a key the other account reads.
+   */
+  async getLastSession(catalogId: number): Promise<LastSession> {
+    const uid = currentUserId();
+    if (!uid) return { date: null, activity_id: null, sets: [] };
+    const key = `${uid}:${catalogId}`;
+
+    const cached = await db.exerciseHistory.get(key);
+
+    // Revalidate in the background; the cached answer is returned immediately.
+    revalidate(`lastSession:${key}`, async () => {
+      const fresh = await api.getLastSession(catalogId);
+      await db.exerciseHistory.put({
+        key,
+        date: fresh.date,
+        activityId: fresh.activity_id,
+        sets: fresh.sets,
+        fetchedAt: now(),
+      });
+      return true;
+    });
+
+    if (cached) {
+      return { date: cached.date, activity_id: cached.activityId, sets: cached.sets };
+    }
+    try {
+      const fresh = await api.getLastSession(catalogId);
+      await db.exerciseHistory.put({
+        key,
+        date: fresh.date,
+        activityId: fresh.activity_id,
+        sets: fresh.sets,
+        fetchedAt: now(),
+      });
+      return fresh;
+    } catch {
+      // Offline with nothing cached for this movement. Blank placeholders are
+      // the honest answer; they are not a claim about what you lifted.
+      return { date: null, activity_id: null, sets: [] };
+    }
+  },
+
+  /**
+   * Warm the history cache for a whole session at once.
+   *
+   * Called when a workout starts, because that is when there is still signal —
+   * in the car park, not in the squat rack. Fetching lazily as each card renders
+   * is too late by definition.
+   */
+  async prefetchHistory(catalogIds: number[]): Promise<void> {
+    const uid = currentUserId();
+    if (!uid) return;
+    await Promise.allSettled(
+      [...new Set(catalogIds)].filter(Boolean).map(async (id) => {
+        const fresh = await api.getLastSession(id);
+        await db.exerciseHistory.put({
+          key: `${uid}:${id}`,
+          date: fresh.date,
+          activityId: fresh.activity_id,
+          sets: fresh.sets,
+          fetchedAt: now(),
+        });
+      })
+    );
+  },
+
+  /**
+   * Routines, cached read-only.
+   *
+   * The page used to say "Routines need a connection", and starting a workout
+   * from one is the main path into the gym flow. Writes stay online-only, like
+   * catalogue entries and for the same reason: a routine references catalogue
+   * rows by server id, and an offline-created one would have none.
+   */
+  async getRoutines(): Promise<Routine[]> {
+    const uid = currentUserId();
+    if (!uid) return [];
+
+    revalidate('routines', async () => {
+      const server = await api.getRoutines();
+      await db.transaction('rw', db.routines, async () => {
+        await db.routines.where('userId').equals(uid).delete();
+        await db.routines.bulkPut(
+          server.map((r) => ({
+            serverId: r.id,
+            userId: uid,
+            name: r.name,
+            default_duration_mins: r.default_duration_mins ?? null,
+            exercises: r.exercises ?? [],
+            fetchedAt: now(),
+          }))
+        );
+      });
+      return true;
+    });
+
+    const rows = await db.routines.where('userId').equals(uid).toArray();
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        id: r.serverId,
+        name: r.name,
+        default_duration_mins: r.default_duration_mins,
+        exercises: r.exercises,
+      })) as Routine[];
+    }
+    try {
+      return await api.getRoutines();
+    } catch {
+      return [];
+    }
+  },
+
   async getCatalog(q?: string): Promise<CatalogEntry[]> {
     revalidate(`exerciseCatalog:${q ?? ''}`, async () =>
       // Under the lock, like every other merge path. Without it, the cold-start

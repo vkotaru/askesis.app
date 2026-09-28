@@ -45,6 +45,7 @@ export interface ModeDefinition {
  */
 const STRENGTH_ROUTES = [
   '/',
+  '/workout',
   '/daily-log',
   '/activities',
   '/routines',
@@ -105,6 +106,9 @@ export function routeAllowed(mode: AppMode | string | null | undefined, path: st
  * the other way round is a nutrition tracker quietly reappearing.
  */
 const STRENGTH_PARTS = [
+  // Strength mode only: in full mode the dashboard is a health overview, and a
+  // "Start workout" button above the weight tile would read as a mode error.
+  'startWorkout',
   'snapshot',
   'steps',
   'weight',
@@ -120,6 +124,7 @@ const STRENGTH_PARTS = [
 // caught by the check below instead of shipping visible in every mode.
 const KNOWN_PARTS = [
   ...STRENGTH_PARTS,
+  'workout',
   'weekNutrition',
   'weeklyTargets',
   'nutritionChart',

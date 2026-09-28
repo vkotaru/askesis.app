@@ -19,7 +19,99 @@
 
 import Dexie, { type Table } from 'dexie';
 
+// Shapes the caches below mirror exactly; imported rather than restated so a
+// server-side change cannot leave the cache describing something else.
+import type { LastSession, Routine } from '$lib/api/client';
+
 // ── Local record types (mirrors server types + local sync fields) ────────────
+
+/**
+ * A workout in progress: the editing buffer between walking into the gym and
+ * there being a row in `activities`.
+ *
+ * **Deliberately not a synced table.** It has an owner but never a `serverId`,
+ * it is absent from SYNCED_TABLES and USER_OWNED_TABLES, and nothing ever
+ * queues it into `pendingSync`. The reasoning, since the alternative looks
+ * obvious: creating the Activity row at "Start" and updating it per set means
+ * `_replace_exercises` tearing down and reinserting every set row on each
+ * update, ~30 whole-session replaces queued offline (collapseQueue folds
+ * create-then-delete, not update-then-update), an abandoned session sitting in
+ * history, and a network attempt between every set in the one place there is no
+ * network. A live session is a buffer; the record is the Activity it becomes.
+ *
+ * Because no merge path touches it, it needs no `serializeMerge`. If a future
+ * version ever mirrors drafts to the server, that merge takes the lock like
+ * every other one — see lib/merge-lock.ts.
+ */
+export interface LiveSessionDraft {
+  localId?: number;
+  /** Shared household browser: one account's draft is never served to another. */
+  userId: number;
+  /** ISO instant. THE clock — elapsed time is always derived, never stored. */
+  startedAt: string;
+  lastTouchedAt: string;
+  name: string;
+  /** The routine this came from, so "next up" can tell what was trained. */
+  routineId?: number | null;
+  restSecondsDefault: number;
+  /** ISO instant the current rest ends. Absent means not resting. */
+  restEndsAt?: string | null;
+  exercises: DraftExercise[];
+}
+
+export interface DraftExercise {
+  /** Stable identity: the array index is not, and rows get reordered. */
+  draftId: string;
+  catalogId: number | null;
+  name: string;
+  notes?: string | null;
+  restSeconds?: number | null;
+  sets: DraftSet[];
+}
+
+export interface DraftSet {
+  draftId: string;
+  /**
+   * `planned` carries no claim and is never written to history. `logged` is the
+   * user saying "I did this" — the tick. The distinction is what makes
+   * prefilling safe: the form model had no moment of confirmation, so a
+   * prefilled number would have been a lie; a session has one.
+   */
+  state: 'planned' | 'logged';
+  /** Canonical kilograms, always. Display units convert at the input. */
+  weightKg: number | null;
+  reps: number | null;
+  setType: 'warmup' | 'working' | 'failure';
+  rpe?: number | null;
+  /** ISO instant the set was ticked. Drives duration and the rest timer. */
+  loggedAt?: string | null;
+}
+
+/**
+ * One movement's last session, cached so the gym works.
+ *
+ * Keyed by `${userId}:${catalogId}` because the exercise library is shared
+ * across the household and the training history is not — the same boundary the
+ * server enforces by joining through Activity.
+ */
+export interface LocalExerciseHistory {
+  key: string;
+  date: string | null;
+  activityId: number | null;
+  /** As the API returns them — not restated here, so the two cannot drift. */
+  sets: LastSession['sets'];
+  fetchedAt: string;
+}
+
+/** A routine, cached read-only so starting a session works with no signal. */
+export interface LocalRoutine {
+  serverId: number;
+  userId: number;
+  name: string;
+  default_duration_mins: number | null;
+  exercises: Routine['exercises'];
+  fetchedAt: string;
+}
 
 export interface LocalDailyLog {
   localId?: number;
@@ -413,6 +505,10 @@ class AskesisDB extends Dexie {
   meals!: Table<LocalMeal, number>;
   foods!: Table<LocalFood, number>;
   exerciseCatalog!: Table<LocalExerciseCatalog, number>;
+  // v7. Device-local, never synced — see LiveSessionDraft.
+  liveSession!: Table<LiveSessionDraft, number>;
+  exerciseHistory!: Table<LocalExerciseHistory, string>;
+  routines!: Table<LocalRoutine, number>;
   measurements!: Table<LocalMeasurement, number>;
   photos!: Table<LocalPhoto, number>;
   dailyNutrition!: Table<LocalDailyNutrition, number>;
@@ -577,6 +673,20 @@ class AskesisDB extends Dexie {
     // existing store forward, and nothing in v1-v5 is touched.
     this.version(6).stores({
       exerciseCatalog: '++localId, serverId, name, updatedAt',
+    });
+
+    // v7 adds the gym: a workout in progress, plus two read-through caches that
+    // exist so the gym works without signal. Additive only, no `.upgrade()` —
+    // nothing in v1-v6 is touched, which is also why a service-worker update
+    // mid-session cannot lose a draft.
+    //
+    // None of the three is synced. `liveSession` is device-local by design (see
+    // its interface); the other two are caches of server truth, refilled on
+    // demand and safe to lose.
+    this.version(7).stores({
+      liveSession: '++localId, userId, startedAt',
+      exerciseHistory: 'key',
+      routines: 'serverId, userId',
     });
 
     // ── Future versions go here ────────────────────────────────────────────

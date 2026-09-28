@@ -15,6 +15,43 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A live workout screen.** Strength mode is no longer the same app with things
+  hidden. From the dashboard: **Start workout**, or tap a routine to start from
+  it. The session runs with a timer, you log each set as you finish it, and at
+  the end it becomes one activity. Two taps from opening the app to a running
+  session; one tap per set when you are repeating last week's numbers.
+
+  - **Last session's numbers are a column**, not a placeholder that vanishes the
+    moment you type. Matched by set type and its position within that type, so a
+    warm-up is never offered as a working weight.
+  - **A rest timer** starts when you tick a set, with −15/+15 and skip. It docks
+    above the content rather than covering it, because you correct the set you
+    just logged while it runs. When it has already run out it says how long ago,
+    rather than counting up from zero.
+  - **A set is "planned" until you tick it.** Numbers can be prefilled from last
+    time because the tick is the moment you confirm them; nothing reaches your
+    history that you did not claim.
+  - **It survives.** The session is written to the device on every change and
+    flushed when the screen locks, so locking your phone, switching apps or
+    reloading does not lose it. Timers derive from the start instant rather than
+    counting seconds, so a backgrounded tab comes back with the right time.
+  - **It works with no signal.** Your routines, the exercise library and each
+    movement's last session are cached to the device, and the history for a whole
+    workout is fetched the moment you start — while you still have signal.
+  - Leaving the screen minimises rather than closes; a bar across the top of
+    every page shows the session is still running.
+  - Signing out with a workout open now warns you, naming how many sets would be
+    lost. The update prompt waits until the workout is finished.
+
+### Fixed
+
+- **"What did I lift last time" did not work in a gym.** It went straight to the
+  network with no cache, so the one feature that makes this faster than a notes
+  app was blank in exactly the place it was written for.
+
+
 ## [2.7.0] - 2026-09-27
 
 Alembic head: `add_app_mode`

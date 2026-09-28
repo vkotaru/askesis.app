@@ -21,6 +21,57 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-28 — The live workout: a session, not a form
+
+Strength mode shipped as a filter — the same app with nav items and cards
+hidden — and the verdict was that this is not a redesign. Correct. Logging a
+workout meant Activities -> New -> a nine-field form with the set logger near
+the bottom, which is record-keeping done afterwards.
+
+**What changed:** `/workout`, a live session. `lib/stores/workout.ts` holds the
+draft; `db.ts` v7 adds `liveSession`, `exerciseHistory` and `routines`.
+
+**Decisions worth not relitigating**
+- **The draft is one Dexie row, never synced.** Creating the Activity at "Start"
+  and updating per set is the obvious alternative and is wrong four ways: both
+  server writers delete and reinsert every set row on each update; offline that
+  queues one whole-session replace per set, and `collapseQueue` folds
+  create-then-delete, not update-then-update; an abandoned session would be real
+  history the other account can see; and `updateActivity` attempts the network
+  between every set, in the one place there is none.
+- **Timers derive from stored instants, never accumulating counters.**
+  `setInterval` is throttled in a backgrounded tab, so a session timed by
+  incrementing seconds returns wrong after a screen lock.
+- **Duration is `lastLoggedAt - startedAt`, not `now - startedAt`.** A session
+  forgotten until morning must not record fourteen hours.
+- **A set is `planned` until ticked.** The old form could only ever show last
+  session's numbers as hints because it had no moment of confirmation. A session
+  has one, which is what makes prefilling honest rather than a claim.
+
+**What didn't work**
+- `/workout` redirected home on every reload. `liveSession` is null both when
+  nothing is running and before the draft has been read, and the guard treated
+  those alike — it bounced out of a live workout with the draft sitting in
+  Dexie. Needed `liveSessionLoaded` as a separate fact.
+- The "last time" column rendered "—" forever. `lastFor()` read the history map
+  from closure, so the template never saw it as a dependency and never
+  re-rendered when the cache resolved — while the card header two lines above
+  showed the same data correctly. Pass it as an argument.
+- Three test runs described code that was no longer on disk: `backend/static`
+  was a stale copy of the build, and `registerType: 'prompt'` means the service
+  worker never self-updates. Rebuild, re-copy, AND unregister the worker before
+  believing an offline result.
+
+**Watch out**
+- **Unverified:** reloading the page *while offline* mid-session. It restores
+  correctly on the dev server and on the built app online, but in the built app
+  offline it lands on `/`. `navigateFallback: '/'` is the likely cause and it is
+  the "phone locked and the tab was evicted" case, so it is worth settling on a
+  real device before trusting it.
+- The dev server registers no service worker, so offline *navigation* can never
+  be tested there. Only the built app served from `backend/static` is
+  representative.
+
 ## 2026-09-28 — What the adversarial review was worth
 
 Ten findings, all fixed. Two were the kind that only a reviewer looking for them

@@ -9,6 +9,7 @@
   import { clearLocalSession, prepareSignOut } from '$lib/stores/data';
   import { deployedVersion, formatVersionLabel, formatVersionTitle } from '$lib/version';
   import SyncStatus from './SyncStatus.svelte';
+  import LiveSessionBar from './LiveSessionBar.svelte';
 
   export let user: User;
 
@@ -44,6 +45,10 @@
   // unsent after a flush attempt, the user is asked instead of guessed at.
   let signOutBusy = false;
   let unsentCount = 0;
+  /** Sets in a workout still running. Destroyed by sign-out, and unlike the
+   *  queue they cannot be parked — a half-finished session is not a mutation to
+   *  replay. So they are named separately and the wording differs. */
+  let liveSetCount = 0;
 
   async function handleSignout(e: MouseEvent) {
     // Always handled in-page. A bare <a href="/auth/logout"> gets intercepted by
@@ -56,9 +61,10 @@
 
     signOutBusy = true;
     try {
-      const { pending } = await prepareSignOut();
-      if (pending > 0) {
+      const { pending, liveSets } = await prepareSignOut();
+      if (pending > 0 || liveSets > 0) {
         unsentCount = pending;
+        liveSetCount = liveSets;
         return;
       }
       await completeSignout(true);
@@ -79,6 +85,7 @@
 
   async function signOutKeepingUnsent() {
     unsentCount = 0;
+    liveSetCount = 0;
     signOutBusy = true;
     try {
       await completeSignout(true);
@@ -89,6 +96,7 @@
 
   async function signOutDiscardingUnsent() {
     unsentCount = 0;
+    liveSetCount = 0;
     signOutBusy = true;
     try {
       await completeSignout(false);
@@ -277,6 +285,10 @@
   <!-- pl-14 clears the mobile icon rail below; the rail is fixed, so it takes
        no flow space of its own. -->
   <main class="flex-1 overflow-auto pt-14 pl-12 md:pt-0 md:pl-0">
+    <!-- Above the content, inside the scroll container: a running workout has
+         to be visible from wherever you have wandered to, without covering the
+         page you went there for. -->
+    <LiveSessionBar />
     <div class={clsx('mx-auto transition-all duration-300 px-3 py-4 md:p-8 content-area', widthClass)}>
       <slot />
     </div>
@@ -325,7 +337,7 @@
   <!-- Unsent-changes prompt. Signing out wipes this device's copy of the
        account's data, and unsent mutations have no other copy, so the choice
        is the user's to make explicitly. -->
-  {#if unsentCount > 0}
+  {#if unsentCount > 0 || liveSetCount > 0}
     <div
       class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
@@ -334,13 +346,30 @@
     >
       <div class="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 p-5 shadow-xl">
         <h2 id="signout-unsent-title" class="text-base font-semibold text-gray-900 dark:text-white">
-          {unsentCount} change{unsentCount === 1 ? '' : 's'} not yet saved to the server
+          {#if liveSetCount > 0 && unsentCount > 0}
+            A workout is still running, and {unsentCount} change{unsentCount === 1 ? '' : 's'} are unsaved
+          {:else if liveSetCount > 0}
+            A workout is still running
+          {:else}
+            {unsentCount} change{unsentCount === 1 ? '' : 's'} not yet saved to the server
+          {/if}
         </h2>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Signing out clears this device's copy of your data. These changes only exist
-          here. Keeping them parks them on this device — they upload the next time you
-          sign in, and no other account can see or send them.
-        </p>
+        {#if liveSetCount > 0}
+          <!-- Stated separately and first: an unsent mutation can be parked and
+               replayed, a live session cannot. Signing out ends it. -->
+          <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            {liveSetCount} logged set{liveSetCount === 1 ? '' : 's'} exist only in that
+            workout, which has not been saved as an activity yet. Signing out will lose
+            them — finish the workout first if you want to keep them.
+          </p>
+        {/if}
+        {#if unsentCount > 0}
+          <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            Signing out clears this device's copy of your data. These changes only exist
+            here. Keeping them parks them on this device — they upload the next time you
+            sign in, and no other account can see or send them.
+          </p>
+        {/if}
         <div class="mt-5 flex flex-col gap-2">
           <button
             type="button"

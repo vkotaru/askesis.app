@@ -1,6 +1,7 @@
 <script lang="ts">
   import { useRegisterSW } from 'virtual:pwa-register/svelte';
   import { RefreshCw, X } from 'lucide-svelte';
+  import { hasLiveSession } from '$lib/stores/workout';
 
   const { needRefresh, updateServiceWorker } = useRegisterSW({
     onRegisteredSW(swUrl: string, registration: ServiceWorkerRegistration | undefined) {
@@ -15,7 +16,18 @@
 
   let dismissed = false;
 
-  $: show = $needRefresh && !dismissed;
+  /**
+   * Never mid-workout.
+   *
+   * The prompt is deliberately kept — CLAUDE.md is emphatic that it is what
+   * guarantees new JS lands before Dexie opens, so migrations run. But accepting
+   * it reloads the page, and while a set is being typed that costs the scroll
+   * position, the open keyboard and the user's attention. The draft itself
+   * survives (Dexie v7 is additive and nothing upgrades it), so this only
+   * defers the offer until the session is finished — the service worker still
+   * installs in the background exactly as before.
+   */
+  $: show = $needRefresh && !dismissed && !$hasLiveSession;
 
   function handleUpdate() {
     updateServiceWorker(true);

@@ -14,6 +14,7 @@
   import MigrateLocalDataBanner from '$lib/components/MigrateLocalDataBanner.svelte';
   import { clearLocalSession, hydrateFromServer } from '$lib/stores/data';
   import { sync } from '$lib/sync';
+  import { loadLiveSession } from '$lib/stores/workout';
 
   // Public routes bypass auth
   $: isPublicRoute = $page.url.pathname.startsWith('/report/');
@@ -49,6 +50,10 @@
       user.set(cached);
       userLoading.set(false);
       settings.load().catch(() => {});
+      // Here as well as after revalidation: this path paints the app, and a
+      // reload mid-workout must not show "no workout" while /auth/me is in
+      // flight over a tailnet.
+      void loadLiveSession();
     }
 
     // …then revalidate in the background.
@@ -67,6 +72,10 @@
       user.set(userData);
       await cacheUser(userData);
       await settings.load();
+      // After the identity is known, because a draft is scoped to its account
+      // and this is a shared browser. Never auto-finishes or auto-discards —
+      // LiveSessionBar offers a stale one and a person decides.
+      void loadLiveSession();
       // Hydrate Dexie from server (only if tables are empty)
       hydrateFromServer(userData.id).catch(() => {});
       // Sync any pending offline mutations
