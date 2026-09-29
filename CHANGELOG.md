@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-09-28
+
+Alembic head: `seed_exercise_library`
+
 ### Added
 
 - **Claude can now plan for you, not just read.** The MCP connector gains six
@@ -53,7 +57,6 @@ Three defects the extraction surfaced, all of which affected the web app too:
 - **A routine movement could be named entirely of spaces.**
 - **A calorie, protein or step target could be set to anything at all** —
   negative, or a billion. None of the six target fields had any bounds.
-
 
 ## [2.9.0] - 2026-09-27
 
@@ -1427,7 +1430,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/vkotaru/askesis.app/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/vkotaru/askesis.app/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/vkotaru/askesis.app/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/vkotaru/askesis.app/compare/v2.6.4...v2.7.0
