@@ -372,6 +372,19 @@ class ExerciseCatalog(Base):
     muscle_group: Mapped[str | None] = mapped_column(String(50))
     video_url: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[str | None] = mapped_column(Text)  # how to perform it
+    #: What a *set* of this movement is made of, and therefore which fields the
+    #: logger shows: weight_reps | reps | time | distance_time. A plain String
+    #: for the same reason `set_type` is one — a SQLAlchemy Enum persists the
+    #: member name rather than its value, which has already caused a silent bug
+    #: here. Allowed values live in app/planning.py, which both the API and the
+    #: MCP connector go through.
+    #:
+    #: `weight_reps` stays the default, including for pull-ups and dips: a
+    #: blank weight already renders as bodyweight, and those are movements
+    #: people load. `reps` is for the ones nobody puts a plate on.
+    tracking_type: Mapped[str] = mapped_column(
+        String(16), default="weight_reps", server_default="weight_reps"
+    )
     is_shared: Mapped[bool] = mapped_column(Boolean, default=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -464,10 +477,17 @@ class ExerciseSet(Base):
     set_number: Mapped[int] = mapped_column(Integer, default=1)
     weight_kg: Mapped[float | None] = mapped_column(Float)
     reps: Mapped[int | None] = mapped_column(Integer)
-    # warmup | working | failure. Only `working` counts toward volume.
+    # warmup | working | drop | failure | cooldown. Only the ones that are
+    # the work itself count toward volume: warm-ups and cool-downs do not.
     set_type: Mapped[str] = mapped_column(String(10), default="working")
     rpe: Mapped[float | None] = mapped_column(Float)  # 1-10, or RIR if you prefer
     notes: Mapped[str | None] = mapped_column(String(255))
+    #: A held or paced set — a plank, a stretch, a rowing interval. Seconds
+    #: rather than minutes because that is what gets typed at the machine, and
+    #: because a float minute would round badly on the way back out.
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    #: Metres, canonical like every other distance in this app (app/units.py).
+    distance_m: Mapped[float | None] = mapped_column(Float)
 
     exercise: Mapped["Exercise"] = relationship(back_populates="sets_detail")
 

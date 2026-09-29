@@ -11,6 +11,7 @@
 
   import { settings } from '$lib/stores/settings';
   import { formatDistance, distanceToMetric, getDistanceLabel, formatWeight, getWeightLabel } from '$lib/utils/units';
+  import { describeSet } from '$lib/utils/sets';
   import { ACTIVITY_ICONS, getActivityIcon } from '$lib/utils/activityIcons';
 
   let recentActivities: ActivityType[] = [];
@@ -548,7 +549,7 @@
                       <div class="space-y-3">
                         {#each [...activity.exercises].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) as exercise}
                           {@const sets = exercise.sets_detail ?? []}
-                          {@const work = sets.filter((s) => s.set_type !== 'warmup')}
+                          {@const work = sets.filter((s) => s.set_type !== 'warmup' && s.set_type !== 'cooldown')}
                           <div>
                             <div class="flex items-baseline gap-2">
                               <span class="font-medium">{exercise.name}</span>
@@ -567,11 +568,17 @@
                                       'px-2 py-0.5 rounded text-xs tabular-nums',
                                       set.set_type === 'warmup' && 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
                                       set.set_type === 'working' && 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
-                                      set.set_type === 'failure' && 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300'
+                                      set.set_type === 'drop' && 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+                                      set.set_type === 'failure' && 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300',
+                                      set.set_type === 'cooldown' && 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
                                     )}
                                     title={set.set_type}
                                   >
-                                    {set.weight_kg != null ? formatWeight(set.weight_kg, $settings.weight_unit) : 'BW'}{#if set.reps != null}&nbsp;&times;&nbsp;{set.reps}{/if}{#if set.rpe != null}<span class="text-gray-400">&nbsp;@{set.rpe}</span>{/if}
+                                    <!-- Through the shared formatter, so a plank
+                                         reads as its duration here too. Building
+                                         this from weight and reps alone is what
+                                         made every timed set render as "BW". -->
+                                    {describeSet(set, { weight: $settings.weight_unit, distance: $settings.distance_unit })}{#if set.rpe != null}<span class="text-gray-400">&nbsp;@{set.rpe}</span>{/if}
                                   </span>
                                 {/each}
                               </div>

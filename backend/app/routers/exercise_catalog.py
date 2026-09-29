@@ -35,6 +35,11 @@ class CatalogCreate(BaseModel):
     muscle_group: str | None = Field(None, max_length=50)
     video_url: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=2000)
+    #: weight_reps | reps | time | distance_time. Optional on the wire so an
+    #: older client — or a curl someone has in their shell history — keeps
+    #: working; planning.update_catalog_entry deliberately does not clear it on
+    #: a PUT that omits it.
+    tracking_type: str | None = Field(None, max_length=16)
 
     # No validators here any more: `name` stripping/blank-rejection and the
     # video_url scheme check live in app/planning.py, so the MCP connector —
@@ -108,6 +113,7 @@ def create_catalog_entry(
             muscle_group=data.muscle_group,
             video_url=data.video_url,
             notes=data.notes,
+            tracking_type=data.tracking_type,
         )
     except planning.PlanningError as exc:
         raise _http(exc) from None
@@ -136,7 +142,57 @@ def update_catalog_entry(
             muscle_group=data.muscle_group,
             video_url=data.video_url,
             notes=data.notes,
+            tracking_type=data.tracking_type,
             replace=True,
+        )
+    except planning.PlanningError as exc:
+        raise _http(exc) from None
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+class CatalogPatch(BaseModel):
+    """A partial edit: only the fields named are changed.
+
+    Separate from `CatalogCreate` because PUT and PATCH mean different things
+    here and conflating them cost a real bug. The workout screen changes one
+    field — how a movement is measured — and sent that one field to the PUT,
+    whose contract is "this is the whole object". The server did what it was
+    told and cleared the muscle group, the video link and the form notes, for
+    everyone on the install, from a screen that said nothing about them.
+
+    `planning.update_catalog_entry(replace=False)` is the semantic that was
+    wanted, and the MCP connector has used it from the start.
+    """
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    muscle_group: str | None = Field(None, max_length=50)
+    video_url: str | None = Field(None, max_length=500)
+    notes: str | None = Field(None, max_length=2000)
+    tracking_type: str | None = Field(None, max_length=16)
+
+
+@router.patch("/{entry_id}", response_model=CatalogResponse)
+def patch_catalog_entry(
+    entry_id: int,
+    data: CatalogPatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change some of a movement, leaving the rest alone."""
+    entry = _entry_or_404(db, current_user, entry_id)
+    try:
+        planning.update_catalog_entry(
+            db,
+            entry,
+            current_user.id,
+            name=data.name,
+            muscle_group=data.muscle_group,
+            video_url=data.video_url,
+            notes=data.notes,
+            tracking_type=data.tracking_type,
+            replace=False,
         )
     except planning.PlanningError as exc:
         raise _http(exc) from None
@@ -164,6 +220,10 @@ class LastSetResponse(BaseModel):
     reps: int | None
     set_type: str
     rpe: float | None
+    # The "last time" column is the whole reason this endpoint exists, so it has
+    # to be able to say 45s or 2.0 km — not only a weight and a rep count.
+    duration_seconds: int | None = None
+    distance_m: float | None = None
 
 
 class LastSessionResponse(BaseModel):
@@ -212,6 +272,8 @@ def last_session(
                 reps=s.reps,
                 set_type=s.set_type,
                 rpe=s.rpe,
+                duration_seconds=s.duration_seconds,
+                distance_m=s.distance_m,
             )
             for s in sorted(row.sets_detail, key=lambda s: s.set_number)
         ],

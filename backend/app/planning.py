@@ -222,6 +222,34 @@ def search_catalog(
     return query.order_by(ExerciseCatalog.name).limit(limit).all()
 
 
+#: What a set of a movement is made of, and therefore which fields the logger
+#: shows. Ordered by how common they are, which is also the order the UI offers.
+#:
+#: `weight_reps` is the default and stays the default for loadable bodyweight
+#: movements — a blank weight already means bodyweight. `reps` is for the ones
+#: nobody puts a plate on.
+TRACKING_TYPES = ("weight_reps", "reps", "time", "distance_time")
+
+
+def clean_tracking_type(value: str | None) -> str | None:
+    """Validate a movement's kind, or return None when it was not supplied.
+
+    Rejected rather than coerced: silently storing an unknown kind would make
+    the logger fall back to weight and reps, which is exactly the wrong-looking
+    screen this field exists to fix, and it would look like the write worked.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PlanningError(f"tracking_type must be text, got {type(value).__name__}")
+    cleaned = value.strip().lower()
+    if not cleaned:
+        return None
+    if cleaned not in TRACKING_TYPES:
+        raise PlanningError(f"tracking_type must be one of {', '.join(TRACKING_TYPES)}")
+    return cleaned
+
+
 def create_catalog_entry(
     db: Session,
     user_id: int,
@@ -230,6 +258,7 @@ def create_catalog_entry(
     muscle_group: str | None = None,
     video_url: str | None = None,
     notes: str | None = None,
+    tracking_type: str | None = None,
 ) -> tuple[ExerciseCatalog, bool]:
     """Add a movement to the shared library. Returns (entry, revived).
 
@@ -248,6 +277,7 @@ def create_catalog_entry(
     video_url = clean_video_url(video_url)
     muscle_group = clean_text(muscle_group, MAX_MUSCLE_GROUP, field="muscle_group")
     notes = clean_text(notes, MAX_CATALOG_NOTES, field="notes")
+    tracking_type = clean_tracking_type(tracking_type)
 
     existing = catalog_by_name(db, user_id, name)
     if existing is not None:
@@ -263,6 +293,7 @@ def create_catalog_entry(
         muscle_group=muscle_group,
         video_url=video_url,
         notes=notes,
+        tracking_type=tracking_type or "weight_reps",
     )
     db.add(entry)
     try:
@@ -286,6 +317,7 @@ def update_catalog_entry(
     muscle_group: str | None = None,
     video_url: str | None = None,
     notes: str | None = None,
+    tracking_type: str | None = None,
     replace: bool = False,
 ) -> ExerciseCatalog:
     """Edit a movement. Note this changes it for everyone, by design.
@@ -312,6 +344,12 @@ def update_catalog_entry(
         )
     if notes is not None or replace:
         entry.notes = clean_text(notes, MAX_CATALOG_NOTES, field="notes")
+    # Not cleared by a PUT that omits it. Every other field here is free text
+    # that can meaningfully be blank; this one has no empty value, and falling
+    # back to the default would silently turn a timed movement back into a
+    # weight-and-reps one on any save that did not mention it.
+    if tracking_type is not None:
+        entry.tracking_type = clean_tracking_type(tracking_type) or entry.tracking_type
 
     try:
         db.flush()

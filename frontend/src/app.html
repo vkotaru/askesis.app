@@ -2,7 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `interactive-widget=resizes-content` is what stops the on-screen
+         keyboard covering things. By default Android resizes only the *visual*
+         viewport, so a `position: fixed` sheet keeps its full height and its
+         list is drawn underneath the keyboard — which is exactly what happened
+         to the exercise search: type two letters and the results you were
+         choosing from were gone. With this, the keyboard shrinks the layout
+         viewport, so `fixed`, `100dvh` and `max-h-[..dvh]` all describe the
+         space actually visible. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#16a34a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

@@ -608,6 +608,7 @@ function toLocalCatalogEntry(entry: CatalogEntry): UpdateSpec {
     muscle_group: entry.muscle_group,
     video_url: entry.video_url,
     notes: entry.notes,
+    tracking_type: entry.tracking_type,
     is_shared: entry.is_shared,
     is_archived: entry.is_archived,
     // Carried through as-is. NULL means the row belongs to the install, and
@@ -625,6 +626,9 @@ function fromLocalCatalogEntry(local: LocalExerciseCatalog): CatalogEntry {
     muscle_group: local.muscle_group ?? null,
     video_url: local.video_url ?? null,
     notes: local.notes ?? null,
+    // A row cached before this field existed was a weight-and-reps movement,
+    // because that is all the logger could record then.
+    tracking_type: local.tracking_type ?? 'weight_reps',
     is_shared: local.is_shared ?? true,
     is_archived: local.is_archived ?? false,
     user_id: local.userId ?? null,
@@ -1202,6 +1206,36 @@ export const offlineApi = {
     await db.exerciseCatalog.add(
       toLocalCatalogEntry(entry) as unknown as LocalExerciseCatalog
     );
+    return entry;
+  },
+
+  /**
+   * Edit a movement. Online only, for the same reason creating one is: this
+   * writes to a row the whole household shares, and there is no per-row sync
+   * protocol for the catalogue to replay a queued edit through.
+   *
+   * The caller is expected to survive a rejection — the logger applies the
+   * change to the running draft either way, so a session that starts offline
+   * still logs the right kind of set even though the library keeps the old one.
+   */
+  async updateCatalogEntry(id: number, data: CatalogInput): Promise<CatalogEntry> {
+    return this._writeCatalog(id, () => api.updateCatalogEntry(id, data));
+  },
+
+  /** Change one thing about a movement. See `api.patchCatalogEntry`. */
+  async patchCatalogEntry(id: number, data: Partial<CatalogInput>): Promise<CatalogEntry> {
+    return this._writeCatalog(id, () => api.patchCatalogEntry(id, data));
+  },
+
+  async _writeCatalog(
+    id: number,
+    write: () => Promise<CatalogEntry>
+  ): Promise<CatalogEntry> {
+    const entry = await write();
+    const local = await db.exerciseCatalog.where('serverId').equals(id).first();
+    if (local?.localId) {
+      await db.exerciseCatalog.update(local.localId, toLocalCatalogEntry(entry));
+    }
     return entry;
   },
 

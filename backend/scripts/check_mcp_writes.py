@@ -116,6 +116,54 @@ def main() -> int:
     )
 
     print()
+    print("── how a movement is measured ──")
+    r = T.create_exercise(db, a, "Wall Sit", muscle_group="Legs", tracking_type="time")
+    db.commit()
+    check("create with tracking_type", r["tracking_type"], "time")
+    refuses(
+        "an unknown kind is refused",
+        T.create_exercise,
+        db,
+        a,
+        "Nonsense Hold",
+        tracking_type="minutes",
+    )
+    refuses(
+        "  and so is a non-string",
+        T.create_exercise,
+        db,
+        a,
+        "Nonsense Hold 2",
+        tracking_type=3,
+    )
+    check(
+        "a new movement defaults to weight and reps",
+        T.create_exercise(db, a, "Landmine Press")["tracking_type"],
+        "weight_reps",
+    )
+    db.commit()
+
+    # The exact shape of a bug this repo shipped once: the workout screen
+    # changed only how a movement is measured and wiped its muscle group, video
+    # link and form notes for both accounts, because it sent that one field to
+    # an endpoint whose contract is "this is the whole object". The service
+    # layer's replace=False is what both the connector and the app's PATCH now
+    # rely on, so it is asserted here rather than trusted.
+    T.update_exercise(
+        db, a, "Wall Sit", video_url="https://youtu.be/x", notes="knees at 90"
+    )
+    db.commit()
+    r = T.update_exercise(db, a, "Wall Sit", tracking_type="reps")
+    db.commit()
+    check("changing the kind keeps muscle_group", r["muscle_group"], "Legs")
+    check("  keeps the video link", r["video_url"], "https://youtu.be/x")
+    check("  keeps the form notes", r["notes"], "knees at 90")
+    check("  and did change the kind", r["tracking_type"], "reps")
+    r = T.update_exercise(db, a, "Wall Sit", notes="hold it")
+    db.commit()
+    check("an edit that omits the kind leaves it alone", r["tracking_type"], "reps")
+
+    print()
     print("── archive and revive ──")
     T.archive_exercise(db, a, "Zercher Squat")
     db.commit()
@@ -394,6 +442,21 @@ def main() -> int:
         and any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
     )
     check("no mutating tool is missing from WRITE_TOOLS", undeclared, [])
+
+    # `sync.py::_write_exercises` builds an ExerciseSet from every field of
+    # `ExerciseSetCreate`, which is what stops a new set field being accepted by
+    # the REST path and silently dropped by the offline one -- the path every
+    # set logged in the gym actually takes. That only holds while the schema and
+    # the table agree, so assert it rather than assume it.
+    from app.models import ExerciseSet as _Set
+    from app.routers.activities import ExerciseSetCreate as _SetIn
+
+    columns = {c.name for c in _Set.__table__.columns}
+    check(
+        "every set field the API accepts is a real column",
+        sorted(f for f in _SetIn.model_fields if f not in columns),
+        [],
+    )
 
     db.close()
     print()

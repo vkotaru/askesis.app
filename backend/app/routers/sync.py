@@ -38,7 +38,7 @@ from app.provenance import (
     mark_manual,
     parse_sources,
 )
-from app.routers.activities import SET_TYPES, ExerciseCreate
+from app.routers.activities import SET_TYPES, ExerciseCreate, ExerciseSetCreate
 from app.routers.auth import get_current_user
 from app.routers.exercise_catalog import visible_catalog_ids
 
@@ -366,7 +366,17 @@ _SET_BOUNDS = {
     "weight_kg": (0.0, 1000.0),
     "reps": (0, 1000),
     "rpe": (0.0, 10.0),
+    "duration_seconds": (0, 86400),
+    "distance_m": (0.0, 100000.0),
 }
+
+#: Every field `ExerciseSetCreate` accepts, minus the one this path assigns
+#: itself. Derived from the schema rather than written out, because the column
+#: list below used to be written out and that is precisely how a field gets
+#: added to the REST path and silently dropped on the offline one -- which is
+#: the path the workout screen actually uses, so it would be dropped for every
+#: set logged in the gym and land only for sets typed on a desktop.
+_SET_FIELDS = tuple(f for f in ExerciseSetCreate.model_fields if f != "set_number")
 
 
 def _sanitise_exercise(ex_data: dict) -> dict | None:
@@ -458,17 +468,9 @@ def _write_exercises(
         db.add(ex)
         db.flush()
         for number, st in enumerate(ex_data.get("sets_detail") or [], start=1):
-            db.add(
-                ExerciseSet(
-                    exercise_id=ex.id,
-                    set_number=number,
-                    weight_kg=st.get("weight_kg"),
-                    reps=st.get("reps"),
-                    set_type=st.get("set_type") or "working",
-                    rpe=st.get("rpe"),
-                    notes=st.get("notes"),
-                )
-            )
+            fields = {f: st.get(f) for f in _SET_FIELDS if f in st}
+            fields["set_type"] = fields.get("set_type") or "working"
+            db.add(ExerciseSet(exercise_id=ex.id, set_number=number, **fields))
 
 
 def _replace_exercises(

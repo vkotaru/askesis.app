@@ -18,7 +18,7 @@
   import { onMount } from 'svelte';
   import { Search, Pencil, Archive, ArchiveRestore, ExternalLink, Dumbbell, X } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type CatalogEntry } from '$lib/api/client';
+  import { api, type CatalogEntry, type TrackingType } from '$lib/api/client';
 
   let entries: CatalogEntry[] = [];
   let loading = true;
@@ -31,6 +31,7 @@
   let formMuscle = '';
   let formVideo = '';
   let formNotes = '';
+  let formTracking: TrackingType = 'weight_reps';
   let saving = false;
 
   onMount(load);
@@ -49,12 +50,21 @@
     }
   }
 
+  const TRACKING_ORDER: TrackingType[] = ['weight_reps', 'reps', 'time', 'distance_time'];
+  const TRACKING_LABELS: Record<TrackingType, string> = {
+    weight_reps: 'Weight & reps',
+    reps: 'Reps only',
+    time: 'Time',
+    distance_time: 'Distance & time',
+  };
+
   function openEdit(entry: CatalogEntry) {
     editing = entry;
     formName = entry.name;
     formMuscle = entry.muscle_group ?? '';
     formVideo = entry.video_url ?? '';
     formNotes = entry.notes ?? '';
+    formTracking = entry.tracking_type ?? 'weight_reps';
     error = '';
   }
 
@@ -67,6 +77,7 @@
         muscle_group: formMuscle.trim() || null,
         video_url: formVideo.trim() || null,
         notes: formNotes.trim() || null,
+        tracking_type: formTracking,
       });
       editing = null;
       await load();
@@ -168,8 +179,14 @@
                 <span class="text-[10px] uppercase tracking-wide text-gray-400">archived</span>
               {/if}
             </div>
-            {#if entry.muscle_group}
-              <p class="text-xs text-gray-400">{entry.muscle_group}</p>
+            {#if entry.muscle_group || entry.tracking_type !== 'weight_reps'}
+              <p class="text-xs text-gray-400">
+                {[entry.muscle_group, entry.tracking_type !== 'weight_reps'
+                  ? TRACKING_LABELS[entry.tracking_type]
+                  : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
             {/if}
             {#if entry.notes}
               <p class="text-xs text-gray-500 mt-1 line-clamp-2">{entry.notes}</p>
@@ -251,6 +268,28 @@
           Muscle group <span class="text-gray-400 font-normal">(optional)</span>
         </label>
         <input id="ex-muscle" bind:value={formMuscle} placeholder="Chest" class="input" />
+      </div>
+      <div>
+        <span class="label">How a set is measured</span>
+        <!-- The same four kinds the logger offers mid-session. Both places
+             write the one field, because a movement is timed or it is not —
+             it is not a per-session choice. -->
+        <div class="grid grid-cols-2 gap-1.5">
+          {#each TRACKING_ORDER as option (option)}
+            <button
+              type="button"
+              on:click={() => (formTracking = option)}
+              class={clsx(
+                'px-3 py-2 rounded-lg text-left border text-sm',
+                formTracking === option
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 font-medium'
+                  : 'border-gray-200 dark:border-gray-600'
+              )}
+            >
+              {TRACKING_LABELS[option]}
+            </button>
+          {/each}
+        </div>
       </div>
       <div>
         <label for="ex-video" class="label">

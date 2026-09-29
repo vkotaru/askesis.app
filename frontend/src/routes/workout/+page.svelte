@@ -14,6 +14,20 @@
    * - **A row is `planned` until ticked.** Numbers can be prefilled from last
    *   session because there is now a moment of confirmation; the old form had
    *   none, which is why it could only ever show them as hints.
+   *
+   * Two things this screen got wrong on a real phone, fixed here and worth not
+   * reintroducing:
+   *
+   * - **The row must be able to shrink.** Every column was `1fr` and every
+   *   input carried the app-wide `.input` padding, so a set row's *minimum*
+   *   width exceeded a 360px screen. The page then scrolled sideways, which on
+   *   a phone pans the visual viewport — so the fixed header and the nav rail
+   *   appeared to slide off the edge, and the whole app read as broken. Columns
+   *   are `minmax(0,1fr)` and the fields are `min-w-0` with compact padding.
+   * - **Not every movement is weight and reps.** A plank asked for kilograms.
+   *   Which fields a row shows now comes from the movement's `trackingType`,
+   *   and it is fixable from inside the session, because that is where anyone
+   *   notices it is wrong.
    */
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -26,12 +40,23 @@
     StickyNote,
     Trash2,
     Timer,
+    Minus,
+    SlidersHorizontal,
   } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
   import { offlineApi } from '$lib/stores/data';
-  import { weightFromMetric, weightToMetric, getWeightLabel } from '$lib/utils/units';
-  import type { CatalogEntry, LastSession } from '$lib/api/client';
+  import {
+    weightFromMetric,
+    weightToMetric,
+    getWeightLabel,
+    distanceFromMetric,
+    distanceToMetric,
+    getDistanceLabel,
+  } from '$lib/utils/units';
+  import { formatDuration, parseDuration } from '$lib/utils/duration';
+  import { describeSet } from '$lib/utils/sets';
+  import type { CatalogEntry, LastSession, SetType, TrackingType } from '$lib/api/client';
   import type { DraftSet } from '$lib/db';
   import {
     liveSession,
@@ -43,7 +68,9 @@
     removeExercise,
     removeSet,
     updateSet,
-    cycleSetType,
+    setSetType,
+    setTrackingType,
+    SET_TYPES,
     toggleLogged,
     setExerciseNotes,
     adjustRest,
@@ -66,7 +93,18 @@
 
   /** Which exercise has its row-sheet open, and for which set. */
   let sheet: { exerciseId: string; setId: string } | null = null;
+  /** Which exercise has its own sheet open — the kind of set it takes. */
+  let exerciseSheet: string | null = null;
   let noteFor: string | null = null;
+
+  /**
+   * The duration field is the only one whose display is not a function of the
+   * stored value: "1:" parses to 60, and reformatting that to "1:00" mid-word
+   * would move the caret and eat the next keystroke. So while a duration input
+   * has focus its text is whatever was typed, and the model is written from it.
+   */
+  let durationFocus: string | null = null;
+  let durationText = '';
 
   /** Last session per catalogue id. Read from the cache, so it works offline. */
   let history: Record<number, LastSession> = {};
@@ -74,6 +112,8 @@
 
   $: unit = $settings.weight_unit;
   $: weightLabel = getWeightLabel(unit);
+  $: distanceUnit = $settings.distance_unit;
+  $: distanceLabel = getDistanceLabel(distanceUnit);
   $: totals = sessionTotals($liveSession);
 
   // Redirect only once we KNOW there is no session. `liveSession` is null both
@@ -146,6 +186,102 @@
   function onReps(exId: string, setId: string, raw: string) {
     const v = parseInt(raw);
     updateSet(exId, setId, { reps: isFinite(v) ? v : null });
+  }
+
+  function onDuration(exId: string, setId: string, raw: string) {
+    durationText = raw;
+    updateSet(exId, setId, { durationSeconds: parseDuration(raw) });
+  }
+
+  function durationValue(set: DraftSet): string {
+    return durationFocus === set.draftId ? durationText : formatDuration(set.durationSeconds);
+  }
+
+  const distanceDisplay = (metres: number | null | undefined) =>
+    metres == null
+      ? ''
+      : String(Math.round(distanceFromMetric(metres / 1000, distanceUnit) * 100) / 100);
+
+  function onDistance(exId: string, setId: string, raw: string) {
+    const v = parseFloat(raw);
+    updateSet(exId, setId, {
+      distanceM: isFinite(v) ? Math.round(distanceToMetric(v, distanceUnit) * 1000) : null,
+    });
+  }
+
+  /** Missing on a draft older than the field, and on a movement not in the library. */
+  const kindOf = (ex: { trackingType?: TrackingType | null }): TrackingType =>
+    ex.trackingType ?? 'weight_reps';
+
+  /**
+   * The row's columns, per kind. `minmax(0, 1fr)` and not `1fr`: a bare `1fr`
+   * refuses to shrink below its content's minimum width, which is what made
+   * this screen wider than the phone it runs on.
+   */
+  const COLUMNS: Record<TrackingType, string> = {
+    weight_reps: 'grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_2.75rem]',
+    reps: 'grid-cols-[2.5rem_minmax(0,1fr)_3.25rem_2.75rem]',
+    time: 'grid-cols-[2.5rem_minmax(0,1fr)_3.25rem_2.75rem]',
+    distance_time: 'grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_2.75rem]',
+  };
+
+  const TRACKING_ORDER: TrackingType[] = ['weight_reps', 'reps', 'time', 'distance_time'];
+
+  const TRACKING_LABELS: Record<TrackingType, string> = {
+    weight_reps: 'Weight & reps',
+    reps: 'Reps only',
+    time: 'Time',
+    distance_time: 'Distance & time',
+  };
+
+  const TRACKING_HINTS: Record<TrackingType, string> = {
+    weight_reps: 'Leave the weight blank for bodyweight',
+    reps: 'For movements nobody loads',
+    time: 'Planks, stretches, skipping',
+    distance_time: 'A machine, a run, a swim',
+  };
+
+  /**
+   * Field styling, written out rather than reusing `.input`.
+   *
+   * `.input` carries `px-4`, which on a five-column row is 2rem of padding per
+   * field before a digit is drawn — enough on its own to push the row wider
+   * than a phone. `min-w-0` is the other half: without it a grid item refuses
+   * to shrink below its content's minimum width no matter what the track says.
+   */
+  const cellClass =
+    'w-full min-w-0 px-2 py-1.5 text-sm tabular-nums text-center rounded-lg border ' +
+    'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 ' +
+    'focus:border-primary-500 dark:focus:border-primary-400 focus:outline-none ' +
+    'focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-800';
+  const loggedClass = 'bg-primary-50 dark:bg-primary-900/20';
+
+  /** The letter on the set chip. Working sets get none — they are the default. */
+  const TYPE_PREFIX: Record<SetType, string> = {
+    warmup: 'W',
+    working: '',
+    drop: 'D',
+    failure: 'F',
+    cooldown: 'C',
+  };
+
+  const TYPE_CHIP: Record<SetType, string> = {
+    warmup: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    working: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300',
+    drop: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+    failure: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300',
+    cooldown: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  };
+
+  /**
+   * What "last time" reads as. Shared with the activity history and the
+   * activity editor — three screens showing the same set must not each invent
+   * their own sentence, which is how a plank came to read as "BW" in two of
+   * them.
+   */
+  function lastLabel(kind: TrackingType, previous: LastSession['sets'][number] | undefined) {
+    if (!previous) return '—';
+    return describeSet(previous, { weight: unit, distance: distanceUnit }, kind);
   }
 
   async function openPicker() {
@@ -225,7 +361,7 @@
   <div class="pb-28">
     <!-- Header: elapsed time and the only way out that keeps the session. -->
     <div
-      class="sticky top-0 z-30 -mx-4 px-4 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 flex items-center gap-3"
+      class="sticky top-0 z-30 -mx-3 px-3 md:-mx-8 md:px-8 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 flex items-center gap-3"
     >
       <button
         type="button"
@@ -256,16 +392,26 @@
     <div class="space-y-3 mt-3">
       {#each $liveSession.exercises as exercise (exercise.draftId)}
         {@const last = exercise.catalogId ? history[exercise.catalogId] : undefined}
+        {@const kind = kindOf(exercise)}
         <div class="card p-3 space-y-2">
           <div class="flex items-center gap-2">
             <div class="min-w-0 flex-1">
               <p class="font-medium text-sm truncate">{exercise.name}</p>
-              {#if last?.date}
-                <p class="text-[10px] text-gray-400">
-                  last {last.date} · {last.sets.length} sets
-                </p>
-              {/if}
+              <p class="text-[10px] text-gray-400 truncate">
+                {TRACKING_LABELS[kindOf(exercise)]}{#if last?.date}&nbsp;· last {last.date}{/if}
+              </p>
             </div>
+            <!-- The fix for "this plank is asking me for kilograms", put where
+                 that gets noticed: in the session, not in a settings page two
+                 taps away that nobody opens with a bar in their hands. -->
+            <button
+              type="button"
+              aria-label="How {exercise.name} is measured"
+              class="p-2 text-gray-400 hover:text-primary-500"
+              on:click={() => (exerciseSheet = exercise.draftId)}
+            >
+              <SlidersHorizontal size={16} />
+            </button>
             <button
               type="button"
               aria-label="Note for this session"
@@ -300,11 +446,18 @@
             />
           {/if}
 
-          <!-- set# | weight | reps | last time | tick -->
-          <div
-            class="grid grid-cols-[2.25rem_1fr_1fr_4rem_2.75rem] gap-1 text-[10px] text-gray-400 px-0.5"
-          >
-            <span></span><span>{weightLabel}</span><span>reps</span>
+          <!-- set# | (the fields this kind of movement has) | last time | tick -->
+          <div class={clsx('grid gap-1 text-[10px] text-gray-400 px-0.5', COLUMNS[kind])}>
+            <span>set</span>
+            {#if kind === 'weight_reps'}
+              <span>{weightLabel}</span><span>reps</span>
+            {:else if kind === 'reps'}
+              <span>reps</span>
+            {:else if kind === 'time'}
+              <span>time</span>
+            {:else}
+              <span>{distanceLabel}</span><span>time</span>
+            {/if}
             <span class="text-center">last</span><span></span>
           </div>
 
@@ -313,65 +466,120 @@
             {@const working = exercise.sets
               .slice(0, i + 1)
               .filter((s) => s.setType === set.setType).length}
-            <div class="grid grid-cols-[2.25rem_1fr_1fr_4rem_2.75rem] gap-1 items-center">
-              <!-- Set type stays visible here even though its control moved to
-                   the sheet: W1 for a warm-up, plain numbers for working sets,
-                   each counted within its own kind. -->
+            {@const logged = set.state === 'logged'}
+            <div class={clsx('grid gap-1 items-center', COLUMNS[kind])}>
+              <!-- Set type stays visible here even though its control lives in
+                   the sheet: W1 for a warm-up, D1 for a drop set, plain numbers
+                   for working sets, each counted within its own kind. The
+                   chevron is the whole discoverability of the sheet — without
+                   it this reads as a label, and "there is no way to delete a
+                   set" is what people concluded. -->
               <button
                 type="button"
-                aria-label="Set {working}, {set.setType}. Tap for options."
+                aria-label="Set {working}, {set.setType}. Tap to change its type or remove it."
                 on:click={() => (sheet = { exerciseId: exercise.draftId, setId: set.draftId })}
                 class={clsx(
                   'h-9 rounded text-[11px] font-semibold tabular-nums',
-                  set.setType === 'warmup' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/40',
-                  set.setType === 'working' && 'bg-gray-100 text-gray-500 dark:bg-gray-700',
-                  set.setType === 'failure' && 'bg-red-100 text-red-600 dark:bg-red-900/40'
+                  'flex items-center justify-center gap-px',
+                  TYPE_CHIP[set.setType]
                 )}
               >
-                {set.setType === 'warmup' ? 'W' : set.setType === 'failure' ? 'F' : ''}{working}
+                {TYPE_PREFIX[set.setType]}{working}<ChevronDown size={9} class="opacity-60" />
               </button>
 
-              <input
-                type="number"
-                step="any"
-                inputmode="decimal"
-                enterkeyhint="next"
-                aria-label="Set {working} weight in {weightLabel}"
-                value={toDisplay(set.weightKg)}
-                on:input={(e) => onWeight(exercise.draftId, set.draftId, e.currentTarget.value)}
-                placeholder={previous?.weight_kg != null ? toDisplay(previous.weight_kg) : '—'}
-                class={clsx('input py-1.5 text-sm tabular-nums', set.state === 'logged' && 'bg-primary-50 dark:bg-primary-900/20')}
-              />
-              <input
-                type="number"
-                inputmode="numeric"
-                enterkeyhint="done"
-                aria-label="Set {working} reps"
-                value={set.reps ?? ''}
-                on:input={(e) => onReps(exercise.draftId, set.draftId, e.currentTarget.value)}
-                placeholder={previous?.reps != null ? String(previous.reps) : '—'}
-                class={clsx('input py-1.5 text-sm tabular-nums', set.state === 'logged' && 'bg-primary-50 dark:bg-primary-900/20')}
-              />
+              {#if kind === 'weight_reps'}
+                <input
+                  type="number"
+                  step="any"
+                  inputmode="decimal"
+                  enterkeyhint="next"
+                  aria-label="Set {working} weight in {weightLabel}"
+                  value={toDisplay(set.weightKg)}
+                  on:input={(e) => onWeight(exercise.draftId, set.draftId, e.currentTarget.value)}
+                  placeholder={previous?.weight_kg != null ? toDisplay(previous.weight_kg) : '—'}
+                  class={clsx(cellClass, logged && loggedClass)}
+                />
+                <input
+                  type="number"
+                  inputmode="numeric"
+                  enterkeyhint="done"
+                  aria-label="Set {working} reps"
+                  value={set.reps ?? ''}
+                  on:input={(e) => onReps(exercise.draftId, set.draftId, e.currentTarget.value)}
+                  placeholder={previous?.reps != null ? String(previous.reps) : '—'}
+                  class={clsx(cellClass, logged && loggedClass)}
+                />
+              {:else if kind === 'reps'}
+                <input
+                  type="number"
+                  inputmode="numeric"
+                  enterkeyhint="done"
+                  aria-label="Set {working} reps"
+                  value={set.reps ?? ''}
+                  on:input={(e) => onReps(exercise.draftId, set.draftId, e.currentTarget.value)}
+                  placeholder={previous?.reps != null ? String(previous.reps) : '—'}
+                  class={clsx(cellClass, logged && loggedClass)}
+                />
+              {:else if kind === 'time'}
+                <!-- text, not number: "1:30" is the natural way to type ninety
+                     seconds and a number input will not accept the colon. -->
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  enterkeyhint="done"
+                  aria-label="Set {working} duration, seconds or m:ss"
+                  value={durationValue(set)}
+                  on:focus={() => {
+                    durationFocus = set.draftId;
+                    durationText = formatDuration(set.durationSeconds);
+                  }}
+                  on:blur={() => (durationFocus = null)}
+                  on:input={(e) => onDuration(exercise.draftId, set.draftId, e.currentTarget.value)}
+                  placeholder={formatDuration(previous?.duration_seconds) || 'm:ss'}
+                  class={clsx(cellClass, logged && loggedClass)}
+                />
+              {:else}
+                <input
+                  type="number"
+                  step="any"
+                  inputmode="decimal"
+                  enterkeyhint="next"
+                  aria-label="Set {working} distance in {distanceLabel}"
+                  value={distanceDisplay(set.distanceM)}
+                  on:input={(e) => onDistance(exercise.draftId, set.draftId, e.currentTarget.value)}
+                  placeholder={distanceDisplay(previous?.distance_m) || '—'}
+                  class={clsx(cellClass, logged && loggedClass)}
+                />
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  enterkeyhint="done"
+                  aria-label="Set {working} duration, seconds or m:ss"
+                  value={durationValue(set)}
+                  on:focus={() => {
+                    durationFocus = set.draftId;
+                    durationText = formatDuration(set.durationSeconds);
+                  }}
+                  on:blur={() => (durationFocus = null)}
+                  on:input={(e) => onDuration(exercise.draftId, set.draftId, e.currentTarget.value)}
+                  placeholder={formatDuration(previous?.duration_seconds) || 'm:ss'}
+                  class={clsx(cellClass, logged && loggedClass)}
+                />
+              {/if}
 
               <!-- A column, not a placeholder: you compare against it while
                    typing, which is exactly when a placeholder disappears. -->
-              <span class="text-[10px] text-gray-400 text-center tabular-nums leading-tight">
-                {#if previous}
-                  {previous.weight_kg != null ? toDisplay(previous.weight_kg) : 'BW'}×{previous.reps ?? '—'}
-                {:else}
-                  —
-                {/if}
+              <span class="text-[10px] text-gray-400 text-center tabular-nums leading-tight break-words">
+                {lastLabel(kind, previous)}
               </span>
 
               <button
                 type="button"
-                aria-label={set.state === 'logged'
-                  ? `Set ${working} logged. Tap to undo.`
-                  : `Log set ${working}`}
+                aria-label={logged ? `Set ${working} logged. Tap to undo.` : `Log set ${working}`}
                 on:click={() => toggleLogged(exercise.draftId, set.draftId)}
                 class={clsx(
                   'h-11 rounded-lg flex items-center justify-center transition-colors',
-                  set.state === 'logged'
+                  logged
                     ? 'bg-primary-500 text-white'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-gray-200'
                 )}
@@ -381,13 +589,32 @@
             </div>
           {/each}
 
-          <button
-            type="button"
-            on:click={() => addSet(exercise.draftId)}
-            class="w-full py-2 text-xs text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded"
-          >
-            + Add set
-          </button>
+          <!-- Removing the last set needs to be one obvious tap. The per-set
+               sheet can remove any row, but it is behind the set chip, and a
+               control you have to find is a control that does not exist. -->
+          <div class="flex gap-1">
+            <button
+              type="button"
+              on:click={() => addSet(exercise.draftId)}
+              class="flex-1 py-2 text-xs text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded"
+            >
+              + Add set
+            </button>
+            {#if exercise.sets.length > 1}
+              <button
+                type="button"
+                aria-label="Remove the last set of {exercise.name}"
+                on:click={() =>
+                  removeSet(
+                    exercise.draftId,
+                    exercise.sets[exercise.sets.length - 1].draftId
+                  )}
+                class="w-10 py-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded flex items-center justify-center"
+              >
+                <Minus size={14} />
+              </button>
+            {/if}
+          </div>
         </div>
       {/each}
 
@@ -467,13 +694,28 @@
 
         <div>
           <span class="label">Set type</span>
-          <button
-            type="button"
-            class="btn-secondary w-full mt-1 capitalize"
-            on:click={() => cycleSetType(ex.draftId, st.draftId)}
-          >
-            {st.setType === 'warmup' ? 'Warm-up — not counted in volume' : st.setType}
-          </button>
+          <!-- All five at once, not a cycle button. Cycling was tolerable at
+               three kinds; at five, reaching "cool-down" costs four taps and
+               passes through two states that each mean something. -->
+          <div class="grid grid-cols-2 gap-1.5">
+            {#each SET_TYPES as option (option.value)}
+              <button
+                type="button"
+                on:click={() => setSetType(ex.draftId, st.draftId, option.value)}
+                class={clsx(
+                  'px-3 py-2.5 rounded-lg text-sm text-left border',
+                  st.setType === option.value
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 font-medium'
+                    : 'border-gray-200 dark:border-gray-600'
+                )}
+              >
+                {option.label}
+              </button>
+            {/each}
+          </div>
+          <p class="text-[11px] text-gray-400 mt-1.5">
+            {SET_TYPES.find((o) => o.value === st.setType)?.hint}
+          </p>
         </div>
 
         <div>
@@ -511,6 +753,66 @@
   {/if}
 {/if}
 
+<!-- Per-exercise sheet: what kind of set this movement takes. -->
+{#if exerciseSheet && $liveSession}
+  {@const ex = $liveSession.exercises.find((e) => e.draftId === exerciseSheet)}
+  {#if ex}
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div
+      class="fixed inset-0 z-[80] bg-black/50 flex items-end sm:items-center justify-center"
+      on:click={() => (exerciseSheet = null)}
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+      <div
+        class="bg-white dark:bg-gray-800 w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-4 space-y-4"
+        on:click|stopPropagation
+        style="padding-bottom: calc(1rem + env(safe-area-inset-bottom));"
+      >
+        <div class="flex items-center gap-2">
+          <h2 class="font-semibold flex-1 min-w-0 truncate">{ex.name}</h2>
+          <button type="button" class="p-1 text-gray-400" on:click={() => (exerciseSheet = null)}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div>
+          <span class="label">How it's measured</span>
+          <div class="space-y-1.5">
+            {#each TRACKING_ORDER as option (option)}
+              <button
+                type="button"
+                on:click={() => setTrackingType(ex.draftId, option)}
+                class={clsx(
+                  'w-full px-3 py-2.5 rounded-lg text-left border',
+                  kindOf(ex) === option
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-600'
+                )}
+              >
+                <span class="text-sm font-medium">{TRACKING_LABELS[option]}</span>
+                <span class="block text-[11px] text-gray-400">{TRACKING_HINTS[option]}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Said out loud, because it is the surprising half: this is a
+             property of the movement, and the movement belongs to everyone on
+             this install. Numbers already typed are kept either way. -->
+        <p class="text-[11px] text-gray-400">
+          {#if ex.catalogId}
+            Saved for {ex.name} everywhere, not just today. Anything you have already
+            typed stays on the row.
+          {:else}
+            This movement isn't in the shared list, so the change applies to today's
+            session only.
+          {/if}
+        </p>
+      </div>
+    </div>
+  {/if}
+{/if}
+
 <!-- Exercise picker -->
 {#if showPicker}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
@@ -520,7 +822,7 @@
   >
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div
-      class="bg-white dark:bg-gray-800 w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-4 space-y-3 max-h-[80vh] flex flex-col"
+      class="bg-white dark:bg-gray-800 w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-4 space-y-3 max-h-[80dvh] flex flex-col"
       on:click|stopPropagation
       style="padding-bottom: calc(1rem + env(safe-area-inset-bottom));"
     >

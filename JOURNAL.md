@@ -21,6 +21,64 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-29 — One page's overflow is every page's overflow
+
+Five complaints from the first real gym session, four of them one bug each and
+the third one worth writing down properly.
+
+**"Parts moving all around."** The set row was
+`grid-cols-[2.25rem_1fr_1fr_4rem_2.75rem]` with `.input` (which carries `px-4`)
+in the two `1fr` cells. A `1fr` track will not shrink below its content's
+min-content width, and a number input with 2rem of padding has a large one, so
+the row's *minimum* width was about 400px — wider than a 360px phone. That alone
+would be a contained bug. It was not contained, because `<main class="flex-1">`
+had no `min-w-0`, and a flex item's `min-width: auto` means it will not shrink
+below its content either. So `main` grew past the viewport, the **document**
+scrolled sideways, and on a phone that pans the visual viewport — which drags
+`position: fixed` elements with it. The user's screenshots show the fixed header
+and the fixed nav rail at four different horizontal offsets across five
+screenshots, which is exactly what that looks like and reads as "the app is
+broken", not "this one screen is too wide".
+
+Fixed in both places, and the second is the one that matters: `main` now has
+`min-w-0 overflow-x-hidden`, so a too-wide page is that page's problem.
+
+**Every field of a set that no screen shows is a field that will be dropped.**
+Adding `duration_seconds`/`distance_m` meant touching six writers and renderers.
+`sync.py::_write_exercises` — the path every set logged in the gym takes, since
+the client queues and pushes — built its `ExerciseSet` from a hand-written
+column list, so it would have accepted both fields at the REST boundary and
+silently dropped them on the offline path. It now builds from
+`ExerciseSetCreate.model_fields`, and `check_mcp_writes.py` asserts every one of
+those is a real column.
+
+**And a bug I shipped mid-session and caught in the browser.** The new "how is
+this measured" sheet sent `{name, tracking_type}` to
+`PUT /api/exercise-catalog/{id}`, whose contract is *this is the whole object*.
+The server did as told and cleared the movement's muscle group, video link and
+form notes — for both accounts, from a sheet that mentioned none of them.
+Verified by reading the row back: `muscle_group` went from `"Core"` to `null`.
+
+`planning.update_catalog_entry` has had `replace=False` since the MCP work; the
+web app simply had no endpoint that used it. There is now a `PATCH`, and
+`check_mcp_writes.py` asserts the merge semantic directly, because this is the
+second time a caller has reached for the replace-everything write to change one
+thing.
+
+**Watch out**
+- `interactive-widget=resizes-content` on the viewport meta is what stops the
+  Android keyboard covering a `fixed` sheet. Without it the *layout* viewport
+  keeps its full height and a bottom sheet is simply drawn underneath the
+  keyboard; `dvh` does not help on its own, because it measures the same
+  unchanged viewport. Cannot be verified headless — it needs a real soft
+  keyboard.
+- The duration field holds its own text while focused. `"1:"` parses to 60, and
+  writing `"1:00"` back into the input mid-word would move the caret and eat the
+  next keystroke.
+- `formatDuration` (for inputs) and `formatDurationLabel` (for display) differ by
+  one character: a bare `45` beside a rep-only movement's `12` is ambiguous, so
+  the read-only one says `45s`.
+
 ## 2026-09-28 — Extracting *some* of the rules is worse than extracting none
 
 The review of the MCP write surface found nine things. The one that mattered is

@@ -21,15 +21,27 @@ DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
 
 
-#: Only `working` counts toward volume; a warm-up should not inflate a total.
-SET_TYPES = ("warmup", "working", "failure")
+#: What kind of set this was. Only the ones that are the work itself count
+#: toward volume — a warm-up or a cool-down should not inflate a total.
+#:
+#: `drop` and `cooldown` were added after the first gym sessions with the live
+#: logger: a drop set is a distinct thing from a failure set, and a cool-down
+#: movement had nowhere to go but "working", where it inflated the session's
+#: numbers. Kept within String(10) in the model, which all five fit.
+SET_TYPES = ("warmup", "working", "drop", "failure", "cooldown")
 
 
 class ExerciseSetCreate(BaseModel):
     set_number: int = Field(1, ge=1, le=100)
-    # Both nullable: a bodyweight movement has no weight, a timed hold no reps.
+    # All four nullable, because a set is only ever some of them: a bodyweight
+    # movement has no weight, a timed hold no reps, a plank neither.
     weight_kg: float | None = Field(None, ge=0, le=1000)
     reps: int | None = Field(None, ge=0, le=1000)
+    # 24h. Long enough for anything anybody holds, short enough that a stray
+    # keystroke cannot store a week.
+    duration_seconds: int | None = Field(None, ge=0, le=86400)
+    # Metres, canonical. 100 km covers an ultra and nothing sillier.
+    distance_m: float | None = Field(None, ge=0, le=100000)
     set_type: str = Field("working")
     rpe: float | None = Field(None, ge=0, le=10)
     notes: str | None = Field(None, max_length=255)

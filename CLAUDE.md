@@ -188,6 +188,24 @@ Key modules:
 - `app/food_search.py` — falls back to USDA FoodData Central + Open Food Facts when the local
   `foods` table has few hits. `USDA_API_KEY` is optional (Open Food Facts needs no key); with
   it unset that half is simply skipped.
+- **Not every set is a weight and a rep count.** `exercise_catalog.tracking_type`
+  (`weight_reps` | `reps` | `time` | `distance_time`) says what a set of a
+  movement *is*, and `exercise_sets` carries `duration_seconds` and `distance_m`
+  alongside `weight_kg`/`reps`. The kind lives on the movement, not the set — a
+  plank is timed whoever is doing it — and it is editable from inside a running
+  session, because that is where a wrong one gets noticed. `weight_reps` stays
+  the default for pull-ups and dips: a blank weight already reads as bodyweight.
+  Four screens render a set (the live logger's "last" column, the activity
+  history, the activity editor, the MCP read tools) and the first three go
+  through `lib/utils/sets.ts::describeSet`; a fourth private copy is how a plank
+  came to read as "BW".
+- **`PUT /api/exercise-catalog/{id}` replaces; `PATCH` merges.** The PUT's body
+  is the whole entry and an omitted field is *cleared*. Changing one thing —
+  the workout screen's "how is this measured" sheet — must use PATCH, which maps
+  to `planning.update_catalog_entry(replace=False)`, the same semantic the MCP
+  connector uses. Sending a partial body to the PUT wiped a movement's muscle
+  group, video link and form notes for both accounts; `check_mcp_writes.py`
+  asserts the merge semantic now.
 - `app/routers/training.py` — race-plan generation (`RACE_DISTANCES` bounds each distance's
   plan length); `TrainingPlan`/`PlannedWorkout` rows, matched against logged `Activity` rows.
 - `app/routers/nutrition.py` — meal CRUD plus optional Gemini meal-photo analysis

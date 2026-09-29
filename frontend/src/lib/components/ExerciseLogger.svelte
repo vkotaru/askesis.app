@@ -21,7 +21,16 @@
   import { clsx } from 'clsx';
   import { offlineApi } from '$lib/stores/data';
   import { settings } from '$lib/stores/settings';
-  import { weightFromMetric, weightToMetric, getWeightLabel } from '$lib/utils/units';
+  import {
+    weightFromMetric,
+    weightToMetric,
+    getWeightLabel,
+    distanceFromMetric,
+    distanceToMetric,
+    getDistanceLabel,
+  } from '$lib/utils/units';
+  import { formatDuration, parseDuration } from '$lib/utils/duration';
+  import { inferKind } from '$lib/utils/sets';
   import {
     ApiError,
     api,
@@ -29,6 +38,7 @@
     type ExerciseSet,
     type CatalogEntry,
     type LastSession,
+    type TrackingType,
     type SetType,
     type Routine,
   } from '$lib/api/client';
@@ -83,12 +93,31 @@
    */
   let noteOpen: boolean[] = [];
 
-  const SET_TYPES: SetType[] = ['warmup', 'working', 'failure'];
-  const TYPE_LABEL: Record<SetType, string> = { warmup: 'W', working: '·', failure: 'F' };
+  // Every kind the live logger can produce. Editing an activity afterwards must
+  // be able to round-trip what the session recorded; a shorter list here would
+  // quietly rewrite a drop set into whichever type the cycle landed on next.
+  const SET_TYPES: SetType[] = ['warmup', 'working', 'drop', 'failure', 'cooldown'];
+  // `.input` carries px-4, which on a six-column row is 2rem of padding per
+  // field before a digit is drawn. Same fix as the live logger.
+  const cellClass =
+    'w-full min-w-0 px-2 py-1 text-sm tabular-nums text-center rounded-lg border ' +
+    'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 ' +
+    'focus:border-primary-500 dark:focus:border-primary-400 focus:outline-none ' +
+    'focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-800';
+
+  const TYPE_LABEL: Record<SetType, string> = {
+    warmup: 'W',
+    working: '·',
+    drop: 'D',
+    failure: 'F',
+    cooldown: 'C',
+  };
   const TYPE_TITLE: Record<SetType, string> = {
     warmup: 'Warm-up — not counted in volume',
     working: 'Working set',
+    drop: 'Drop set',
     failure: 'Taken to failure',
+    cooldown: 'Cool-down — not counted in volume',
   };
 
   async function loadCatalog() {
@@ -195,6 +224,41 @@
     emit();
   }
 
+  /**
+   * Which fields this exercise's rows show.
+   *
+   * From the library when the movement is linked, inferred from the sets when
+   * it is not. Both matter: a session logged in the gym must stay editable
+   * here without its durations becoming invisible — which is what happened
+   * while this editor only knew about weight and reps, since every write path
+   * spreads the set object and would have carried an unshown duration forward
+   * silently while the screen said the set was empty.
+   */
+  function kindFor(exercise: Exercise): TrackingType {
+    const entry = exercise.catalog_id
+      ? catalog.find((c) => c.id === exercise.catalog_id)
+      : undefined;
+    if (entry) return entry.tracking_type;
+    const sets = exercise.sets_detail ?? [];
+    return sets.length ? inferKind(sets[0]) : 'weight_reps';
+  }
+
+  const distanceDisplay = (metres: number | null | undefined) =>
+    metres == null
+      ? ''
+      : String(
+          Math.round(distanceFromMetric(metres / 1000, $settings.distance_unit) * 100) / 100
+        );
+
+  /** Patch one set, through the copy-on-write the rest of this file uses. */
+  function patchSet(exerciseIndex: number, setIndex: number, patch: Partial<ExerciseSet>) {
+    const sets = [...(exercises[exerciseIndex].sets_detail ?? [])];
+    sets[setIndex] = { ...sets[setIndex], ...patch };
+    exercises[exerciseIndex] = { ...exercises[exerciseIndex], sets_detail: sets };
+    exercises = exercises;
+    emit();
+  }
+
   function addSet(index: number) {
     const sets = exercises[index].sets_detail ?? [];
     const previous = sets[sets.length - 1];
@@ -204,6 +268,8 @@
       // weight usually holds, so "same again" is the common case.
       weight_kg: previous?.weight_kg ?? null,
       reps: previous?.reps ?? null,
+      duration_seconds: previous?.duration_seconds ?? null,
+      distance_m: previous?.distance_m ?? null,
       set_type: previous?.set_type ?? 'working',
     };
     exercises[index] = { ...exercises[index], sets_detail: [...sets, next] };
@@ -327,12 +393,16 @@
     (sum, e) =>
       sum +
       (e.sets_detail ?? [])
-        .filter((s) => s.set_type !== 'warmup')
+        .filter((s) => s.set_type !== 'warmup' && s.set_type !== 'cooldown')
         .reduce((v, s) => v + (s.weight_kg ?? 0) * (s.reps ?? 0), 0),
     0
   );
   $: totalSets = exercises.reduce(
-    (n, e) => n + (e.sets_detail ?? []).filter((s) => s.set_type !== 'warmup').length,
+    (n, e) =>
+      n +
+      (e.sets_detail ?? []).filter(
+        (s) => s.set_type !== 'warmup' && s.set_type !== 'cooldown'
+      ).length,
     0
   );
 
@@ -342,6 +412,11 @@
 
 <div class="space-y-3">
   {#each exercises as exercise, i (i)}
+    {@const kind = kindFor(exercise)}
+    {@const twoFields = kind === 'weight_reps' || kind === 'distance_time'}
+    {@const cols = twoFields
+      ? 'grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,1fr)_2rem_2.5rem_1.25rem]'
+      : 'grid-cols-[1.25rem_minmax(0,1fr)_2rem_2.5rem_1.25rem]'}
     {@const entry = catalogEntry(exercise)}
     <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
       <div class="flex items-center gap-2">
@@ -388,40 +463,101 @@
         />
       {/if}
 
-      <!-- Header row, so the three number columns are not guesswork -->
-      <div
-        class="grid grid-cols-[1.25rem_1fr_1fr_2rem_2.5rem_1.25rem] gap-1 text-[10px] text-gray-400 px-0.5"
-      >
-        <span>#</span><span>{weightLabel}</span><span>reps</span><span class="text-center"
-          >type</span
-        ><span class="text-center">RPE</span><span></span>
+      <!-- Header row, so the number columns are not guesswork. `minmax(0,1fr)`
+           rather than `1fr`: a bare `1fr` will not shrink below its content's
+           minimum width, which on a six-column row of padded inputs is wider
+           than a phone. -->
+      <div class={clsx('grid gap-1 text-[10px] text-gray-400 px-0.5', cols)}>
+        <span>#</span>
+        {#if kind === 'weight_reps'}
+          <span>{weightLabel}</span><span>reps</span>
+        {:else if kind === 'reps'}
+          <span>reps</span>
+        {:else if kind === 'time'}
+          <span>time</span>
+        {:else}
+          <span>{getDistanceLabel($settings.distance_unit)}</span><span>time</span>
+        {/if}
+        <span class="text-center">type</span><span class="text-center">RPE</span><span></span>
       </div>
 
       {#each exercise.sets_detail ?? [] as set, j}
         {@const previous = lastSet(exercise, j)}
-        <div class="grid grid-cols-[1.25rem_1fr_1fr_2rem_2.5rem_1.25rem] gap-1 items-center">
+        <div class={clsx('grid gap-1 items-center', cols)}>
           <span class="text-xs text-gray-400 tabular-nums">{set.set_number}</span>
-          <input
-            type="number"
-            step="any"
-            inputmode="decimal"
-            aria-label="Set {set.set_number} weight in {weightLabel}"
-            value={toDisplay(set.weight_kg)}
-            on:focus={() => acceptLast(i, j, 'weight_kg')}
-            on:input={(e) => setWeight(i, j, e.currentTarget.value)}
-            placeholder={previous?.weight_kg != null ? toDisplay(previous.weight_kg) : '—'}
-            class="input py-1 text-sm tabular-nums"
-          />
-          <input
-            type="number"
-            inputmode="numeric"
-            aria-label="Set {set.set_number} reps"
-            bind:value={set.reps}
-            on:focus={() => acceptLast(i, j, 'reps')}
-            on:change={emit}
-            placeholder={previous?.reps != null ? String(previous.reps) : '—'}
-            class="input py-1 text-sm tabular-nums"
-          />
+          {#if kind === 'weight_reps'}
+            <input
+              type="number"
+              step="any"
+              inputmode="decimal"
+              aria-label="Set {set.set_number} weight in {weightLabel}"
+              value={toDisplay(set.weight_kg)}
+              on:focus={() => acceptLast(i, j, 'weight_kg')}
+              on:input={(e) => setWeight(i, j, e.currentTarget.value)}
+              placeholder={previous?.weight_kg != null ? toDisplay(previous.weight_kg) : '—'}
+              class={cellClass}
+            />
+            <input
+              type="number"
+              inputmode="numeric"
+              aria-label="Set {set.set_number} reps"
+              bind:value={set.reps}
+              on:focus={() => acceptLast(i, j, 'reps')}
+              on:change={emit}
+              placeholder={previous?.reps != null ? String(previous.reps) : '—'}
+              class={cellClass}
+            />
+          {:else if kind === 'reps'}
+            <input
+              type="number"
+              inputmode="numeric"
+              aria-label="Set {set.set_number} reps"
+              bind:value={set.reps}
+              on:focus={() => acceptLast(i, j, 'reps')}
+              on:change={emit}
+              placeholder={previous?.reps != null ? String(previous.reps) : '—'}
+              class={cellClass}
+            />
+          {:else if kind === 'time'}
+            <input
+              type="text"
+              inputmode="numeric"
+              aria-label="Set {set.set_number} duration, seconds or m:ss"
+              value={formatDuration(set.duration_seconds)}
+              on:change={(e) =>
+                patchSet(i, j, { duration_seconds: parseDuration(e.currentTarget.value) })}
+              placeholder={formatDuration(previous?.duration_seconds) || 'm:ss'}
+              class={cellClass}
+            />
+          {:else}
+            <input
+              type="number"
+              step="any"
+              inputmode="decimal"
+              aria-label="Set {set.set_number} distance in {getDistanceLabel($settings.distance_unit)}"
+              value={distanceDisplay(set.distance_m)}
+              on:change={(e) => {
+                const v = parseFloat(e.currentTarget.value);
+                patchSet(i, j, {
+                  distance_m: isFinite(v)
+                    ? Math.round(distanceToMetric(v, $settings.distance_unit) * 1000)
+                    : null,
+                });
+              }}
+              placeholder={distanceDisplay(previous?.distance_m) || '—'}
+              class={cellClass}
+            />
+            <input
+              type="text"
+              inputmode="numeric"
+              aria-label="Set {set.set_number} duration, seconds or m:ss"
+              value={formatDuration(set.duration_seconds)}
+              on:change={(e) =>
+                patchSet(i, j, { duration_seconds: parseDuration(e.currentTarget.value) })}
+              placeholder={formatDuration(previous?.duration_seconds) || 'm:ss'}
+              class={cellClass}
+            />
+          {/if}
           <button
             type="button"
             title={TYPE_TITLE[set.set_type]}
@@ -431,7 +567,9 @@
               'h-7 rounded text-xs font-semibold',
               set.set_type === 'warmup' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/40',
               set.set_type === 'working' && 'bg-gray-100 text-gray-500 dark:bg-gray-700',
-              set.set_type === 'failure' && 'bg-red-100 text-red-600 dark:bg-red-900/40'
+              set.set_type === 'drop' && 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40',
+              set.set_type === 'failure' && 'bg-red-100 text-red-600 dark:bg-red-900/40',
+              set.set_type === 'cooldown' && 'bg-sky-100 text-sky-700 dark:bg-sky-900/40'
             )}
           >
             {TYPE_LABEL[set.set_type]}

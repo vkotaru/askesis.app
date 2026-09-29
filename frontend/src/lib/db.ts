@@ -21,7 +21,7 @@ import Dexie, { type Table } from 'dexie';
 
 // Shapes the caches below mirror exactly; imported rather than restated so a
 // server-side change cannot leave the cache describing something else.
-import type { LastSession, Routine } from '$lib/api/client';
+import type { LastSession, Routine, SetType, TrackingType } from '$lib/api/client';
 
 // ── Local record types (mirrors server types + local sync fields) ────────────
 
@@ -64,6 +64,16 @@ export interface DraftExercise {
   draftId: string;
   catalogId: number | null;
   name: string;
+  /**
+   * Copied from the catalogue when the movement is added, not read through
+   * `catalogId` at render time. The draft has to keep working offline and
+   * after the entry is edited or archived, and a session should log the way it
+   * looked when it started.
+   *
+   * Optional because drafts written before this existed have no value; the
+   * logger treats a missing one as `weight_reps`, which is what they were.
+   */
+  trackingType?: TrackingType | null;
   notes?: string | null;
   restSeconds?: number | null;
   sets: DraftSet[];
@@ -81,7 +91,17 @@ export interface DraftSet {
   /** Canonical kilograms, always. Display units convert at the input. */
   weightKg: number | null;
   reps: number | null;
-  setType: 'warmup' | 'working' | 'failure';
+  /**
+   * The other two things a set can be. Added alongside weight and reps rather
+   * than instead of them, because which pair applies is a property of the
+   * movement (`DraftExercise.trackingType`) and that can be corrected mid
+   * session — switching a plank from reps to time must not throw away what was
+   * already typed.
+   */
+  durationSeconds?: number | null;
+  /** Canonical metres, like every other distance in the app. */
+  distanceM?: number | null;
+  setType: SetType;
   rpe?: number | null;
   /** ISO instant the set was ticked. Drives duration and the rest timer. */
   loggedAt?: string | null;
@@ -195,6 +215,8 @@ export interface LocalExerciseCatalog {
   muscle_group?: string | null;
   video_url?: string | null;
   notes?: string | null;
+  /** Absent on rows cached before the field existed — read as `weight_reps`. */
+  tracking_type?: TrackingType | null;
   is_shared?: boolean;
   is_archived?: boolean;
   userId?: number | null;

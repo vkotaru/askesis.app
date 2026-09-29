@@ -283,8 +283,17 @@
 
   <!-- Main content -->
   <!-- pl-14 clears the mobile icon rail below; the rail is fixed, so it takes
-       no flow space of its own. -->
-  <main class="flex-1 overflow-auto pt-14 pl-12 md:pt-0 md:pl-0">
+       no flow space of its own.
+
+       `min-w-0` is load-bearing. A flex item's `min-width` defaults to `auto`,
+       which means it refuses to shrink below its content's minimum width — so
+       one page that was too wide (the workout screen's set rows) made <main>
+       itself wider than the viewport, and the *document* scrolled sideways.
+       On a phone that pans the visual viewport, which drags the fixed header
+       and the fixed nav rail off the edge with it: the screenshots of "parts
+       moving all around" are this one missing class. Overflow inside a page is
+       now that page's problem, not the whole app's. -->
+  <main class="flex-1 min-w-0 overflow-x-hidden overflow-y-auto pt-14 pl-12 md:pt-0 md:pl-0">
     <!-- Above the content, inside the scroll container: a running workout has
          to be visible from wherever you have wandered to, without covering the
          page you went there for. -->

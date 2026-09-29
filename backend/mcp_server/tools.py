@@ -568,8 +568,20 @@ def get_activity(db: Session, user_id: int, activity_id: int) -> dict[str, Any]:
                         "set_number": st.set_number,
                         "weight_kg": st.weight_kg,
                         "reps": st.reps,
-                        # warmup | working | failure. Only `working` and
-                        # `failure` are the work; a warm-up is not.
+                        # Not every set is weight and reps: a plank is a
+                        # duration, a treadmill interval is a distance and a
+                        # duration. Omitting these read as an empty set.
+                        "duration_seconds": st.duration_seconds,
+                        # Metres in the column, kilometres on the wire, per the
+                        # unit rule at the top of this file.
+                        "distance_km": (
+                            None
+                            if st.distance_m is None
+                            else round(st.distance_m / 1000, 3)
+                        ),
+                        # warmup | working | drop | failure | cooldown. Only the
+                        # middle three are the work; a warm-up and a cool-down
+                        # are not.
                         "set_type": st.set_type,
                         "rpe": st.rpe,
                     }
@@ -621,6 +633,23 @@ def get_exercise_history(
             "note": "No exercise in the library matches that name.",
         }
 
+    # Top set and estimated 1RM are weight-and-reps arithmetic. For a plank or a
+    # treadmill interval they are not merely absent, they are meaningless — and
+    # an empty `sessions` list with no explanation reads as "you have never done
+    # this", which is a different and wrong answer. Say which it is.
+    if entry.tracking_type != "weight_reps":
+        return {
+            "exercise": entry.name,
+            "found": True,
+            "tracking_type": entry.tracking_type,
+            "sessions": [],
+            "note": (
+                f"{entry.name} is logged as {entry.tracking_type}, not weight and "
+                "reps, so there is no top set or estimated 1RM to track. Use "
+                "get_workouts to see what was logged."
+            ),
+        }
+
     rows = (
         owned(db, Activity, user_id)
         .join(Exercise, Exercise.activity_id == Activity.id)
@@ -639,7 +668,9 @@ def get_exercise_history(
             work = [
                 st
                 for st in ex.sets_detail
-                if st.set_type != "warmup" and st.weight_kg and st.reps
+                if st.set_type not in ("warmup", "cooldown")
+                and st.weight_kg
+                and st.reps
             ]
             if not work:
                 continue
@@ -898,6 +929,7 @@ def _catalog_dict(entry: ExerciseCatalog) -> dict[str, Any]:
         "muscle_group": entry.muscle_group,
         "video_url": entry.video_url,
         "notes": entry.notes,
+        "tracking_type": entry.tracking_type,
         "archived": entry.is_archived,
         "shared_with_household": entry.user_id is None,
     }
@@ -920,6 +952,7 @@ def create_exercise(
     muscle_group: str | None = None,
     video_url: str | None = None,
     notes: str | None = None,
+    tracking_type: str | None = None,
 ) -> dict[str, Any]:
     """Add a movement to the exercise library.
 
@@ -928,6 +961,17 @@ def create_exercise(
     rather than a second copy; if it was archived, this brings it back.
 
     `notes` is how to perform the movement, not how a session went.
+
+    `tracking_type` decides what the logger asks for, and getting it right is
+    the difference between a plank logged as a duration and a plank logged as
+    "0 kg x 10":
+
+    * `weight_reps` (the default) -- weight and reps. Keep this for pull-ups,
+      dips and push-ups too: a blank weight already reads as bodyweight, and
+      people load those.
+    * `reps` -- reps only, for movements nobody puts a plate on.
+    * `time` -- a held or paced set: planks, stretches, skipping.
+    * `distance_time` -- a machine or a swim: how far and how long.
     """
     try:
         entry, revived = planning.create_catalog_entry(
@@ -937,6 +981,7 @@ def create_exercise(
             muscle_group=muscle_group,
             video_url=video_url,
             notes=notes,
+            tracking_type=tracking_type,
         )
     except planning.PlanningError as exc:
         raise ToolError(str(exc)) from None
@@ -955,6 +1000,7 @@ def update_exercise(
     muscle_group: str | None = None,
     video_url: str | None = None,
     notes: str | None = None,
+    tracking_type: str | None = None,
 ) -> dict[str, Any]:
     """Change a movement in the shared library, found by its current name.
 
@@ -973,6 +1019,7 @@ def update_exercise(
             muscle_group=muscle_group,
             video_url=video_url,
             notes=notes,
+            tracking_type=tracking_type,
         )
     except planning.PlanningError as exc:
         raise ToolError(str(exc)) from None

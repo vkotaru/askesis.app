@@ -43,7 +43,14 @@ import { browser } from '$app/environment';
 import { db, type DraftExercise, type DraftSet, type LiveSessionDraft } from '$lib/db';
 import { offlineApi } from '$lib/stores/data';
 import { currentUserId } from '$lib/stores/user';
-import type { ActivityInput, CatalogEntry, Exercise, Routine } from '$lib/api/client';
+import type {
+  ActivityInput,
+  CatalogEntry,
+  Exercise,
+  Routine,
+  SetType,
+  TrackingType,
+} from '$lib/api/client';
 
 /** A session untouched for this long is offered up rather than silently resumed. */
 const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -178,6 +185,7 @@ export async function loadLiveSession(): Promise<LiveSessionDraft | null> {
     startClock();
     void acquireWakeLock();
     void navigator.storage?.persist?.().catch(() => {});
+    void resolveTrackingTypes();
   }
   return draft;
 }
@@ -189,15 +197,23 @@ export function isStale(draft: LiveSessionDraft): boolean {
 export async function startSession(options: {
   name?: string;
   routine?: Routine | null;
-  exercises?: { name: string; catalogId: number | null; plannedSets?: number }[];
+  exercises?: {
+    name: string;
+    catalogId: number | null;
+    plannedSets?: number;
+    trackingType?: TrackingType | null;
+  }[];
 } = {}): Promise<void> {
   const uid = currentUserId();
   if (!uid) throw new Error('Not signed in');
 
+  // A routine stores which movements, not what kind of set each one takes —
+  // `resolveTrackingTypes` fills that in from the library once the draft exists.
   const fromRoutine = (options.routine?.exercises ?? []).map((r) => ({
     name: r.name,
     catalogId: r.catalog_id ?? null,
     plannedSets: r.target_sets ?? 1,
+    trackingType: null as TrackingType | null,
   }));
   const seed = options.exercises ?? fromRoutine;
 
@@ -213,6 +229,7 @@ export async function startSession(options: {
       draftId: uuid(),
       catalogId: e.catalogId,
       name: e.name,
+      trackingType: e.trackingType ?? null,
       sets: Array.from({ length: Math.max(1, e.plannedSets ?? 1) }, () => blankSet()),
     })),
   };
@@ -228,17 +245,60 @@ export async function startSession(options: {
   // history is what makes logging fast, and it will not be fetchable later.
   const ids = draft.exercises.map((e) => e.catalogId).filter((id): id is number => !!id);
   if (ids.length) void offlineApi.prefetchHistory(ids);
+  // A routine names movements but not what kind of set each one takes.
+  void resolveTrackingTypes();
 }
 
-function blankSet(setType: DraftSet['setType'] = 'working'): DraftSet {
+function blankSet(setType: SetType = 'working'): DraftSet {
   return {
     draftId: uuid(),
     state: 'planned',
     weightKg: null,
     reps: null,
+    durationSeconds: null,
+    distanceM: null,
     setType,
     rpe: null,
   };
+}
+
+/**
+ * Fill in any exercise whose kind we do not know yet, from the cached library.
+ *
+ * Runs on start *and* on load, and the second is the point: a draft written
+ * before movements had a kind — or one seeded from a routine while the picker
+ * had not been opened — would otherwise ask for weight and reps forever, and
+ * the session it belongs to is exactly the one you cannot restart.
+ *
+ * Offline-safe: `getCatalog` serves from Dexie, and an exercise that stays
+ * unresolved simply keeps the old behaviour.
+ */
+async function resolveTrackingTypes(): Promise<void> {
+  const draft = get(liveSession);
+  if (!draft) return;
+  const unknown = draft.exercises.filter((e) => e.catalogId && !e.trackingType);
+  if (!unknown.length) return;
+  let catalog: CatalogEntry[];
+  try {
+    catalog = await offlineApi.getCatalog();
+  } catch {
+    return;
+  }
+  const byId = new Map(catalog.map((c) => [c.id, c.tracking_type]));
+  // Decided before touching the draft, so an exercise the library has never
+  // heard of does not cost a write on every load.
+  const resolved = new Map(
+    unknown
+      .map((e) => [e.draftId, byId.get(e.catalogId as number)] as const)
+      .filter((pair): pair is readonly [string, TrackingType] => !!pair[1])
+  );
+  if (!resolved.size) return;
+  touch((d) => {
+    for (const ex of d.exercises) {
+      const kind = resolved.get(ex.draftId);
+      if (kind) ex.trackingType = kind;
+    }
+  });
 }
 
 export async function discardSession(): Promise<void> {
@@ -252,14 +312,60 @@ export async function discardSession(): Promise<void> {
 
 // ── Editing ──────────────────────────────────────────────────────────────────
 
-export function addExercise(entry: Pick<CatalogEntry, 'id' | 'name'> | { id: null; name: string }) {
+export function addExercise(
+  entry:
+    | Pick<CatalogEntry, 'id' | 'name' | 'tracking_type'>
+    | { id: null; name: string; tracking_type?: TrackingType }
+) {
   touch((d) => {
     d.exercises = [
       ...d.exercises,
-      { draftId: uuid(), catalogId: entry.id, name: entry.name, sets: [blankSet()] },
+      {
+        draftId: uuid(),
+        catalogId: entry.id,
+        name: entry.name,
+        // Copied, not looked up at render time: the draft has to keep working
+        // offline and after the library entry is edited or archived.
+        trackingType: entry.tracking_type ?? 'weight_reps',
+        sets: [blankSet()],
+      },
     ];
   });
   if (entry.id) void offlineApi.prefetchHistory([entry.id]);
+}
+
+/**
+ * Correct what kind of set a movement takes, mid-session.
+ *
+ * Applied to the draft immediately and pushed to the shared library in the
+ * background, in that order. A plank that asks for kilograms is wrong *now*,
+ * on a screen someone is standing in front of, and making the fix wait on the
+ * network would mean it could not be made at all in the one place it is most
+ * likely to be noticed. The library edit is best-effort for the same reason:
+ * offline, this session logs correctly and the library catches up next time.
+ *
+ * Nothing already typed is discarded — `weightKg` and `reps` stay on the row,
+ * so switching back restores them. Only which fields are *shown* changes.
+ */
+export function setTrackingType(exerciseId: string, kind: TrackingType) {
+  let catalogId: number | null = null;
+  touch((d) => {
+    const ex = d.exercises.find((e) => e.draftId === exerciseId);
+    if (!ex) return;
+    ex.trackingType = kind;
+    catalogId = ex.catalogId;
+  });
+  if (catalogId) {
+    // PATCH, not PUT. The catalogue's PUT takes the whole entry and clears what
+    // it does not carry, so sending {name, tracking_type} here wiped the muscle
+    // group, the video link and the form notes — for both accounts, from a
+    // sheet that only mentioned how the movement is measured.
+    void offlineApi
+      .patchCatalogEntry(catalogId, { tracking_type: kind })
+      .catch(() => {
+        // Offline, or someone archived it. The session is already right.
+      });
+  }
 }
 
 export function removeExercise(draftId: string) {
@@ -314,11 +420,27 @@ export function setExerciseNotes(exerciseId: string, notes: string) {
   }, false);
 }
 
-export function cycleSetType(exerciseId: string, setId: string) {
-  const order: DraftSet['setType'][] = ['warmup', 'working', 'failure'];
+/**
+ * Every kind of set, in the order they appear in a session.
+ *
+ * A cycle button was fine at three and is wrong at five — reaching "cooldown"
+ * would take four taps and pass through two states that mean something. The
+ * sheet offers all five at once instead.
+ */
+export const SET_TYPES: { value: SetType; label: string; hint: string }[] = [
+  { value: 'warmup', label: 'Warm-up', hint: 'Not counted in volume' },
+  { value: 'working', label: 'Working', hint: 'The work' },
+  { value: 'drop', label: 'Drop', hint: 'Straight on from the last set, lighter' },
+  { value: 'failure', label: 'Failure', hint: 'Taken to the last rep you had' },
+  { value: 'cooldown', label: 'Cool-down', hint: 'Not counted in volume' },
+];
+
+export function setSetType(exerciseId: string, setId: string, setType: SetType) {
   touch((d) => {
-    const set = d.exercises.find((e) => e.draftId === exerciseId)?.sets.find((s) => s.draftId === setId);
-    if (set) set.setType = order[(order.indexOf(set.setType) + 1) % order.length];
+    const set = d.exercises
+      .find((e) => e.draftId === exerciseId)
+      ?.sets.find((s) => s.draftId === setId);
+    if (set) set.setType = setType;
   });
 }
 
@@ -370,10 +492,15 @@ export function skipRest() {
  * neither.
  */
 export function isMeaningful(set: DraftSet): boolean {
-  return set.weightKg != null || set.reps != null;
+  return (
+    set.weightKg != null ||
+    set.reps != null ||
+    set.durationSeconds != null ||
+    set.distanceM != null
+  );
 }
 
-/** Only logged, non-warm-up sets. A warm-up is not the work. */
+/** Only logged sets that were the work. A warm-up or a cool-down is not. */
 export function sessionTotals(draft: LiveSessionDraft | null) {
   if (!draft) return { sets: 0, volumeKg: 0, plannedRemaining: 0, emptyLogged: 0 };
   let sets = 0;
@@ -390,7 +517,7 @@ export function sessionTotals(draft: LiveSessionDraft | null) {
         emptyLogged += 1;
         continue;
       }
-      if (s.setType === 'warmup') continue;
+      if (s.setType === 'warmup' || s.setType === 'cooldown') continue;
       sets += 1;
       volumeKg += (s.weightKg ?? 0) * (s.reps ?? 0);
     }
@@ -444,6 +571,8 @@ export async function finishSession(name: string, notes?: string): Promise<void>
           set_number: i + 1,
           weight_kg: s.weightKg,
           reps: s.reps,
+          duration_seconds: s.durationSeconds ?? null,
+          distance_m: s.distanceM ?? null,
           set_type: s.setType,
           rpe: s.rpe ?? null,
         })),

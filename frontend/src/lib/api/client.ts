@@ -151,7 +151,18 @@ export interface FoodAnalysis {
   };
 }
 
-export type SetType = 'warmup' | 'working' | 'failure';
+export type SetType = 'warmup' | 'working' | 'drop' | 'failure' | 'cooldown';
+
+/**
+ * What a set of a movement is made of, and therefore which fields the logger
+ * shows. Lives on the catalogue entry, not the set: a plank is timed whoever
+ * is doing it.
+ *
+ * `weight_reps` stays the default for pull-ups, dips and push-ups — a blank
+ * weight already reads as bodyweight, and those get loaded. `reps` is for the
+ * movements nobody puts a plate on.
+ */
+export type TrackingType = 'weight_reps' | 'reps' | 'time' | 'distance_time';
 
 export interface ExerciseSet {
   id?: number;
@@ -160,6 +171,10 @@ export interface ExerciseSet {
   weight_kg?: number | null;
   /** Null for a timed hold. */
   reps?: number | null;
+  /** A held or paced set: a plank, a stretch, a rowing interval. */
+  duration_seconds?: number | null;
+  /** Metres, canonical — display units convert at the input, as weight does. */
+  distance_m?: number | null;
   set_type: SetType;
   /** 1-10. Only `working` sets count toward volume. */
   rpe?: number | null;
@@ -189,6 +204,7 @@ export interface CatalogEntry {
   muscle_group?: string | null;
   video_url?: string | null;
   notes?: string | null;
+  tracking_type: TrackingType;
   is_shared: boolean;
   is_archived: boolean;
   /** NULL means it belongs to the household rather than one account. */
@@ -200,6 +216,7 @@ export interface CatalogInput {
   muscle_group?: string | null;
   video_url?: string | null;
   notes?: string | null;
+  tracking_type?: TrackingType | null;
 }
 
 /**
@@ -786,9 +803,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /** PUT: the body is the whole entry, and an omitted field is cleared. */
   updateCatalogEntry: (id: number, data: CatalogInput) =>
     fetchJSON<CatalogEntry>(`/api/exercise-catalog/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  /**
+   * PATCH: only the fields present change.
+   *
+   * Use this whenever the caller is changing *one thing*. Sending a partial
+   * body to `updateCatalogEntry` above silently wipes everything it omits —
+   * which it did, once, from the workout screen: a movement lost its muscle
+   * group, video link and form notes for both accounts because a sheet that
+   * only offered "how is this measured" sent only that.
+   */
+  patchCatalogEntry: (id: number, data: Partial<CatalogInput>) =>
+    fetchJSON<CatalogEntry>(`/api/exercise-catalog/${id}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     }),
   /** Archives rather than deletes — other people's sessions reference it. */

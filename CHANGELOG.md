@@ -15,6 +15,59 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+The gym logger, after actually using it in a gym.
+
+### Added
+
+- **A movement now knows what a set of it is.** A plank asked for kilograms and
+  reps, and there was no way to tell it otherwise. Every exercise is one of
+  four kinds — weight & reps, reps only, time, or distance & time — and the
+  logger shows the fields that kind has and nothing else. A plank takes a
+  duration ("45" or "1:30"), a treadmill run takes a distance and a time, a
+  dead bug takes reps.
+
+  The whole seeded library is set up already: the planks and stretches are
+  timed, the machines take distance and time, the mobility work takes reps.
+  Pull-ups, dips and push-ups stay on weight & reps, because a blank weight
+  already means bodyweight and those are movements people load.
+
+- **You can fix it from inside a workout.** Tap the sliders icon on an exercise
+  and pick how it's measured. It saves for that movement everywhere, not just
+  today, and nothing you have already typed is thrown away. That is deliberate:
+  the place you notice a plank asking for kilograms is standing in front of it,
+  not in a settings screen. The exercise library has the same control.
+
+- **Drop sets and cool-down sets.** Set types were warm-up, working and
+  failure; a drop set had to be logged as one of those and a cool-down movement
+  inflated the session total. Warm-ups and cool-downs are not counted in
+  volume; drop and failure sets are.
+
+- **A one-tap way to remove a set.** There is a minus button beside "Add set".
+  Any set can still be removed from its sheet — which is also now findable: the
+  set number is a button, and it finally looks like one.
+
+### Fixed
+
+- **The app no longer slides around on a phone.** One screen's rows were wider
+  than the screen, and that made the *whole page* scroll sideways — which on a
+  phone drags the header and the nav rail off the edge with it, so every screen
+  looked broken rather than the one that was. The set rows fit properly now,
+  and no single page can do this to the rest of the app again.
+
+- **The keyboard no longer covers the exercise search.** Typing two letters hid
+  the results you were choosing from behind the keyboard.
+
+- **A plank read as "BW" in your history.** The activity list and the activity
+  editor built each set's line out of weight and reps alone, so a timed or
+  distance set showed as bodyweight-and-nothing. Both now read the way the
+  logger does — "45s", "3 km · 18:30" — and the editor lets you correct those
+  numbers instead of only weight and reps.
+
+- Asking the assistant how a timed movement is progressing returned an empty
+  answer that read as "you have never done this". It now says why there is no
+  top set to track.
+
+
 ## [2.10.1] - 2026-09-28
 
 Alembic head: `seed_exercise_library`

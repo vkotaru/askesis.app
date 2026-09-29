@@ -508,7 +508,10 @@
           </select>
         </div>
         <div>
-          <label class="label">Body Weight</label>
+          <!-- Governs bodyweight AND every weight lifted in a workout — the
+               logger's column header reads from this, and a set is stored in
+               canonical kilograms either way. -->
+          <label class="label">Weight (body and lifting)</label>
           <select
             class="input"
             value={$settings.weight_unit}
