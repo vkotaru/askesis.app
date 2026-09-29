@@ -15,6 +15,21 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Finishing a workout can save it as a routine.** Naming a session on the
+  finish screen named the *activity* — it went to Activities and the calendar,
+  and nothing in the app had ever created a routine, which is not what a name
+  box on a finish screen looks like. There is now a checkbox that does what you
+  expected, and a line under the name saying where the workout is going either
+  way. The routine keeps the movements and the number of sets, not the weights:
+  those are the thing that is supposed to move.
+
+- **Routines can be started from the Routines page.** It described itself as
+  "saved workouts you repeat" and had no way to repeat one — you had to go back
+  to the dashboard. Each routine now has a Start button, and it refuses to
+  replace a session already running rather than discarding those sets.
+
 ## [2.11.0] - 2026-09-29
 
 Alembic head: `add_exercise_tracking`

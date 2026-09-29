@@ -21,6 +21,45 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-29 — "I saved a session with a name but don't see it in Routines"
+
+Not a bug in the sense of a broken code path: `finishSession` writes one
+Activity and has never touched `workout_templates`. A bug in the sense that
+matters — the screen asked for a name, gave no indication where the named thing
+went, and the app has a page called Routines full of named workouts.
+
+Three changes, and only the first is really the fix:
+
+1. The finish sheet now says **"Saved to Activities for Tue, Sep 29."** under the
+   name box. One line of copy; the rest is what you would want once you know.
+2. An "Also save as a routine" checkbox, off by default — most sessions are not
+   templates, and a Routines list that grows every time you train stops being a
+   list of routines. Offered only when the session did *not* come from a
+   routine, since you already have that one.
+3. The Routines page had no way to **start** a routine. It calls itself "saved
+   workouts you repeat" and you had to go back to the dashboard to repeat one.
+
+What crosses into the derived routine: every movement (including ones added and
+never logged — they were part of the plan) and the set counts, plus the modal
+rep count for movements that have reps at all. What does not: the weight. A
+routine is the intention, and pinning today's load into it makes "did I hit my
+targets" a comparison of a number with itself. That rule was already written
+down in `ExerciseLogger.applyRoutine`, going the other way.
+
+**Watch out**
+- Routine creation is online-only, like catalogue entries and for the same
+  reason: a routine references catalogue rows by *server* id. A workout finished
+  offline with the box ticked therefore saves the workout and not the routine,
+  and says so through the sync toast rather than failing the save — the activity
+  is the irreplaceable half and is never held hostage to the convenience half.
+- `startSession` from the Routines page refuses when a draft is live instead of
+  replacing it. A live draft is the only copy of those sets.
+- I wrote this entry and the changelog notes into a heredoc that asserted on
+  `## [Unreleased]` *after* `release.sh` had already emptied that section, so the
+  edit silently no-op'd and the code committed without them. Second time this
+  session. If a docs edit is in the same command as the commit, read the file
+  back before trusting it.
+
 ## 2026-09-29 — One page's overflow is every page's overflow
 
 Five complaints from the first real gym session, four of them one bug each and
