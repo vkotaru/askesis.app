@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-09-29
+
+Alembic head: `add_exercise_tracking`
+
 ### Added
 
 - **Finishing a workout can save it as a routine.** Naming a session on the
@@ -1547,7 +1551,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/vkotaru/askesis.app/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/vkotaru/askesis.app/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/vkotaru/askesis.app/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/vkotaru/askesis.app/compare/v2.9.0...v2.10.0
