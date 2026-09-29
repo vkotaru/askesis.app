@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-09-28
+
+Alembic head: `seed_exercise_library`
+
 Everything an adversarial review of the MCP write surface turned up.
 
 ### Fixed
@@ -56,7 +60,6 @@ Everything an adversarial review of the MCP write surface turned up.
 - **The permission check that separates a read-only connection from a writing
   one is now covered by the test script.** It previously lived in a module
   nothing in the repo could load, so it was verified by reading it.
-
 
 ## [2.10.0] - 2026-09-28
 
@@ -1473,7 +1476,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.10.1...HEAD
+[2.10.1]: https://github.com/vkotaru/askesis.app/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/vkotaru/askesis.app/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/vkotaru/askesis.app/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/vkotaru/askesis.app/compare/v2.7.0...v2.8.0
