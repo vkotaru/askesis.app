@@ -87,6 +87,17 @@ class SlidingWindow:
 login_failures = SlidingWindow(LOGIN_MAX_FAILURES, LOGIN_WINDOW_SECONDS)
 oauth_requests = SlidingWindow(OAUTH_MAX_REQUESTS, OAUTH_WINDOW_SECONDS)
 
+#: Write tool calls. There is no limit on reads -- every read tool is a bounded,
+#: indexed query -- but a write tool called in a loop creates rows, and a model
+#: retrying a failure is the normal way that happens.
+#:
+#: Keyed on the GRANT, not the IP: the note above about Tailscale Funnel and
+#: client addresses applies here too, and an IP key that collapses to one bucket
+#: would throttle the household rather than the runaway caller.
+WRITE_MAX_CALLS = 60
+WRITE_WINDOW_SECONDS = 300
+mcp_writes = SlidingWindow(WRITE_MAX_CALLS, WRITE_WINDOW_SECONDS)
+
 
 def client_ip(request) -> str:
     """The caller's address.

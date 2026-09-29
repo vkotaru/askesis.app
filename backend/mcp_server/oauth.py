@@ -122,7 +122,7 @@ def authorization_server_metadata(config: MCPConfig):
                 "token_endpoint_auth_methods_supported": ["none"],
                 # `offline_access` must appear or no refresh token is requested,
                 # and the connector silently stops working after an hour.
-                "scopes_supported": [config.scope, "offline_access"],
+                "scopes_supported": [*config.supported_scopes, "offline_access"],
                 "authorization_response_iss_parameter_supported": True,
             }
         )
@@ -154,7 +154,7 @@ def protected_resource_metadata(config: MCPConfig):
                 # Exactly config.public_origin: no trailing slash, byte-identical
                 # to the `issuer` in authorization_server_metadata above.
                 "authorization_servers": [config.public_origin],
-                "scopes_supported": [config.scope],
+                "scopes_supported": list(config.supported_scopes),
                 "bearer_methods_supported": ["header"],
             }
         )
@@ -224,7 +224,9 @@ def register(config: MCPConfig):
                     client_id=client_id,
                     client_name=str(body.get("client_name") or "Unnamed client")[:255],
                     redirect_uris=json.dumps(uris),
-                    scope=config.scope,
+                    # What this client may ask for. What it actually gets is
+                    # decided per-authorization from the `scope` parameter.
+                    scope=" ".join(config.supported_scopes),
                 )
             )
             db.commit()
@@ -243,7 +245,7 @@ def register(config: MCPConfig):
                     "response_types": ["code"],
                     # Public client: no secret is issued, so none can leak.
                     "token_endpoint_auth_method": "none",
-                    "scope": config.scope,
+                    "scope": " ".join(config.supported_scopes),
                 },
                 201,
             )
@@ -314,10 +316,29 @@ def _validate_authorize(
             f"This server only issues tokens for {config.resource_url}",
             config,
         )
+
+    # The requested scope, which this used to ignore completely -- a client
+    # asking for anything at all got `config.scope` stamped on its grant with no
+    # error. Now it decides what the token can do, so it has to be read.
+    #
+    # Read is always included: every tool needs it, `required_scopes` demands
+    # it, and a token without it could call nothing. Anything unrecognised is
+    # dropped rather than rejected, which is what RFC 6749 s3.3 allows and what
+    # keeps a client that asks for `offline_access` working.
+    requested = set((params.get("scope") or "").split())
+    granted = [config.read_scope]
+    if config.write_scope in requested:
+        granted.append(config.write_scope)
+
     return (
         client,
         redirect_uri,
-        {"challenge": challenge, "method": method, "resource": resource},
+        {
+            "challenge": challenge,
+            "method": method,
+            "resource": resource,
+            "scope": " ".join(granted),
+        },
     )
 
 
@@ -367,6 +388,7 @@ def authorize(config: MCPConfig):
                         redirect_uri=redirect_uri,
                         account_label="your Askesis account",
                         hidden=hidden,
+                        can_write=config.write_scope in pkce["scope"].split(),
                     ),
                     media_type="text/html",
                 )
@@ -384,6 +406,7 @@ def authorize(config: MCPConfig):
                         account_label="your Askesis account",
                         error=f"Too many attempts. Try again in {retry // 60 + 1} minutes.",
                         hidden=hidden,
+                        can_write=config.write_scope in pkce["scope"].split(),
                     ),
                     status_code=429,
                     media_type="text/html",
@@ -407,6 +430,7 @@ def authorize(config: MCPConfig):
                         account_label="your Askesis account",
                         error="Incorrect username or password.",
                         hidden=hidden,
+                        can_write=config.write_scope in pkce["scope"].split(),
                     ),
                     status_code=401,
                     media_type="text/html",
@@ -434,7 +458,11 @@ def authorize(config: MCPConfig):
                     redirect_uri=redirect_uri,
                     code_challenge=pkce["challenge"],
                     code_challenge_method=pkce["method"],
-                    scope=config.scope,
+                    # What the client actually asked for and this server agreed
+                    # to, not a constant. It travels code -> grant -> JWT from
+                    # here; `_refresh` reuses `grant.scope` verbatim, so a
+                    # refresh can never widen an old grant.
+                    scope=pkce["scope"],
                     resource=pkce["resource"],
                     expires_at=datetime.utcnow() + AUTH_CODE_TTL,
                 )

@@ -46,6 +46,7 @@ from app.database import SessionLocal
 from mcp_server import oauth
 from mcp_server import tools as T
 from mcp_server.config import MCPConfig
+from mcp_server.ratelimit import mcp_writes
 
 logger = logging.getLogger("askesis.mcp")
 
@@ -76,8 +77,25 @@ def _current_user_id() -> int:
 # ── The request boundary ─────────────────────────────────────────────────────
 
 
+def _grant_id() -> str:
+    """The grant this request's token was minted from, for rate-limit keying.
+
+    Falls back to the subject: a token that somehow reached a tool without a
+    `gid` is still attributable to an account, and one bucket per account is a
+    better failure than one bucket for everybody.
+    """
+    token = get_access_token()
+    claims = getattr(token, "claims", None) or {}
+    return str(claims.get("gid") or getattr(token, "subject", "unknown"))
+
+
 def _register(
-    mcp: MCPServer, fn: Callable[..., dict[str, Any]], description: str
+    mcp: MCPServer,
+    fn: Callable[..., dict[str, Any]],
+    description: str,
+    *,
+    writes: bool = False,
+    write_scope: str = "",
 ) -> None:
     """Expose one `tools.py` function as an MCP tool.
 
@@ -97,10 +115,41 @@ def _register(
     async def handler(**kwargs: Any) -> dict[str, Any]:
         user_id = _current_user_id()
 
+        if writes:
+            # The scope gate. `required_scopes` on the server cannot express
+            # this: the SDK reads that list as "must carry ALL of these", so
+            # naming the write scope there would lock read-only tokens out of
+            # the read tools. There is no per-tool hook, so the check lives here.
+            token = get_access_token()
+            if write_scope not in (getattr(token, "scopes", None) or []):
+                raise SDKToolError(
+                    "This connection is read-only. Reconnect the Askesis "
+                    "connector in your settings and allow it to make changes."
+                )
+            allowed, retry_after = mcp_writes.check(_grant_id())
+            if not allowed:
+                raise SDKToolError(
+                    f"Too many changes at once. Try again in {retry_after} seconds."
+                )
+
         def run() -> dict[str, Any]:
             db = SessionLocal()
             try:
-                return fn(db, user_id, **kwargs)
+                result = fn(db, user_id, **kwargs)
+                # Commit here rather than in each tool, and inside the worker
+                # thread. SessionLocal is autocommit=False, so a tool that
+                # forgot would lose its write SILENTLY when close() returns the
+                # connection to the pool -- no error, no log. And the outer
+                # `except` blocks below run after this function's `finally`, so
+                # a rollback attempted there would be on an already-closed
+                # session.
+                if writes:
+                    db.commit()
+                return result
+            except BaseException:
+                if writes:
+                    db.rollback()
+                raise
             finally:
                 db.close()
 
@@ -128,7 +177,15 @@ def _register(
                 sorted(kwargs),  # keys only — values can be free text
             )
             raise
-        logger.info("tool %s ok for subject %s", fn.__name__, user_id)
+        if writes:
+            mcp_writes.record(_grant_id())
+            # Field names, never values -- the audit trail should record what
+            # was touched without copying free text into the log.
+            logger.info(
+                "WRITE %s by subject %s (args=%s)", fn.__name__, user_id, sorted(kwargs)
+            )
+        else:
+            logger.info("tool %s ok for subject %s", fn.__name__, user_id)
         return result
 
     handler.__name__ = fn.__name__
@@ -150,6 +207,13 @@ def _register(
 #: One sentence per tool telling the model the unit rule, because a tool
 #: description is the only place it will read it.
 _UNITS = "All numbers are metric and every field names its unit (weight_kg, distance_km, waist_cm)."
+
+#: Said on every tool that touches the exercise library, because the library is
+#: household-wide and a model would otherwise reasonably assume it is personal.
+_WRITE_SHARED = (
+    "The library is shared with everyone on this install, so this changes what "
+    "they see too."
+)
 
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_profile": (
@@ -197,6 +261,59 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "The active race training plan: race date and distance, planned versus "
         f"completed workouts per week, and the next 7 days. {_UNITS}"
     ),
+    "list_exercises": (
+        "The exercise library: every movement available to log, with its muscle "
+        "group, video link and form notes. The library is shared by everyone on "
+        "this install. Call this before saving a routine, so the movement names "
+        "match what exists."
+    ),
+    "list_routines": (
+        "This account's saved workouts, with the movements in each and their "
+        "target sets, reps and weight. Routines are per-account, unlike the "
+        "exercise library. Read this before changing one -- saving a routine "
+        "with a movement list replaces the whole list."
+    ),
+    # ── Write tools ──
+    #
+    # Each says plainly what it changes and who else sees it, because a model
+    # reading only the description is the normal case. `WRITE_SHARED` is
+    # repeated rather than implied: the exercise library is household-wide, so
+    # an edit is not a private act.
+    "create_exercise": (
+        "Add a movement to the exercise library so it can be logged or put in a "
+        "routine. " + _WRITE_SHARED + " Adding a name that already exists is an "
+        "error, not a second copy; if it was archived it comes back."
+    ),
+    "update_exercise": (
+        "Change a movement in the exercise library -- its name, muscle group, "
+        "video link or form notes. Only the fields you pass change. "
+        + _WRITE_SHARED
+        + " Past workouts keep the name they were logged with, so renaming does "
+        "not rewrite history."
+    ),
+    "archive_exercise": (
+        "Hide a movement from the exercise picker. Nothing is deleted: past "
+        "workouts that used it are untouched, and adding it again brings it "
+        "back. " + _WRITE_SHARED
+    ),
+    "save_routine": (
+        "Create a saved workout, or update the one with this name. Omit "
+        "`exercises` to leave the movements alone and change only the name or "
+        "length; pass a list to replace every movement, so include the ones you "
+        "are keeping. Routines are yours alone. Targets in a routine are "
+        "intentions and are never written into a logged set."
+    ),
+    "set_targets": (
+        "Set the daily step, calorie or protein targets shown on the dashboard. "
+        "Only the ones you pass change. To remove a target, name it in `clear` "
+        "-- passing null does nothing, because an omitted argument and a null "
+        f"one are indistinguishable here. {_UNITS}"
+    ),
+    "set_weekly_plan": (
+        "Set the weekly training plan: run and bike distance goals and which "
+        "disciplines you intend to touch this week. Only what you pass changes; "
+        f"name a field in `clear` to remove it. {_UNITS}"
+    ),
 }
 
 
@@ -205,7 +322,12 @@ def build_server(config: MCPConfig, verifier: TokenVerifier) -> MCPServer:
     mcp = MCPServer(
         name="askesis",
         title="Askesis",
-        description="Personal health and training history: daily logs, nutrition, activities, measurements and training plans. Read-only.",
+        description=(
+            "Personal health and training history: daily logs, nutrition, "
+            "activities, measurements and training plans. Reads everything; "
+            "writes only plans — the shared exercise library, routines, and "
+            "daily/weekly targets. Logged workouts and daily logs are read-only."
+        ),
         version="0.1.0",
         token_verifier=verifier,
         auth=AuthSettings(
@@ -215,7 +337,13 @@ def build_server(config: MCPConfig, verifier: TokenVerifier) -> MCPServer:
         ),
     )
     for name, fn in T.TOOLS.items():
-        _register(mcp, fn, TOOL_DESCRIPTIONS[name])
+        _register(
+            mcp,
+            fn,
+            TOOL_DESCRIPTIONS[name],
+            writes=name in T.WRITE_TOOLS,
+            write_scope=config.write_scope,
+        )
     return mcp
 
 

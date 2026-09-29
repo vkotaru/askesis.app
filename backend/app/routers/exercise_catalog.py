@@ -13,13 +13,13 @@ is the whole point of the module:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_
-from sqlalchemy.exc import IntegrityError
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models import Activity, Exercise, ExerciseCatalog, ExerciseSet, User
+from app import planning
+from app.planning import visible_catalog_ids  # noqa: F401 (re-export)
 from app.routers.auth import get_current_user
 
 router = APIRouter()
@@ -36,25 +36,10 @@ class CatalogCreate(BaseModel):
     video_url: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=2000)
 
-    @field_validator("name")
-    @classmethod
-    def _check_name(cls, v: str) -> str:
-        # min_length counts characters, so "   " passes it and then lands as an
-        # unselectable blank row in a library both accounts see.
-        v = v.strip()
-        if not v:
-            raise ValueError("name cannot be blank")
-        return v
-
-    @field_validator("video_url")
-    @classmethod
-    def _check_url(cls, v: str | None) -> str | None:
-        if v is None or not v.strip():
-            return None
-        v = v.strip()
-        if not v.startswith(_ALLOWED_URL_SCHEMES):
-            raise ValueError("video_url must start with http:// or https://")
-        return v
+    # No validators here any more: `name` stripping/blank-rejection and the
+    # video_url scheme check live in app/planning.py, so the MCP connector —
+    # which cannot import this module — applies exactly the same rules.
+    # Field(...) above still gives FastAPI a 422 for the obvious shape errors.
 
 
 class CatalogResponse(CatalogCreate):
@@ -69,54 +54,25 @@ class CatalogResponse(CatalogCreate):
         from_attributes = True
 
 
-def _visible(db: Session, user: User):
-    """Rows this account may see: the shared library plus anything of its own."""
-    return db.query(ExerciseCatalog).filter(
-        ExerciseCatalog.deleted_at.is_(None),
-        or_(
-            ExerciseCatalog.user_id.is_(None),
-            ExerciseCatalog.user_id == user.id,
-        ),
-    )
-
-
-def visible_catalog_ids(db: Session, user_id: int, ids) -> set[int]:
-    """Which of `ids` this account is allowed to point an exercise at.
-
-    Both activity write paths take `catalog_id` from the client and neither
-    checked it. Two ways that bites: an id that does not exist raises a foreign
-    key violation and 500s the save, and an id belonging to the *other* account's
-    private entries would link your session to a row you cannot see -- so the
-    name on your own exercise would be one you have no way to read or edit.
-    Callers null out anything this does not return.
-    """
-    wanted = {int(i) for i in ids if i is not None}
-    if not wanted:
-        return set()
-    rows = db.query(ExerciseCatalog.id).filter(
-        ExerciseCatalog.id.in_(wanted),
-        ExerciseCatalog.deleted_at.is_(None),
-        or_(ExerciseCatalog.user_id.is_(None), ExerciseCatalog.user_id == user_id),
-    )
-    return {row.id for row in rows}
-
-
-def _by_name(db: Session, user: User, name: str):
-    """The visible entry with this name, matched the way the index dedupes.
-
-    ``func.lower(name) ==`` rather than ``ilike``: ilike treats % and _ in the
-    argument as wildcards, so an exercise called "100%% effort" would match rows
-    it is not. Ordering puts a shared row ahead of a personal one, and this
-    takes the first rather than ``one_or_none`` -- pre-index duplicates can
-    exist in an install that upgraded, and a 500 is a worse answer than a
-    slightly arbitrary one.
-    """
-    return (
-        _visible(db, user)
-        .filter(func.lower(ExerciseCatalog.name) == name.lower())
-        .order_by(ExerciseCatalog.user_id.is_(None).desc(), ExerciseCatalog.id)
+def _entry_or_404(db: Session, user: User, entry_id: int) -> ExerciseCatalog:
+    entry = (
+        planning.visible_catalog(db, user.id)
+        .filter(ExerciseCatalog.id == entry_id)
         .first()
     )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    return entry
+
+
+def _http(exc: planning.PlanningError) -> HTTPException:
+    """PlanningError -> the status a client can act on.
+
+    409 for "already exists" so the frontend can offer to use the existing
+    entry; 400 otherwise. The message is passed through unchanged — it is
+    written to be read.
+    """
+    return HTTPException(status_code=409 if exc.conflict else 400, detail=str(exc))
 
 
 @router.get("/", response_model=list[CatalogResponse])
@@ -127,14 +83,9 @@ def list_catalog(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = _visible(db, current_user)
-    if not include_archived:
-        query = query.filter(ExerciseCatalog.is_archived.is_(False))
-    if q:
-        # Escape the wildcards, or searching for "_" returns the whole library.
-        pattern = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        query = query.filter(ExerciseCatalog.name.ilike(f"%{pattern}%", escape="\\"))
-    return query.order_by(ExerciseCatalog.name).limit(limit).all()
+    return planning.search_catalog(
+        db, current_user.id, q, include_archived=include_archived, limit=limit
+    )
 
 
 @router.post("/", response_model=CatalogResponse)
@@ -145,39 +96,22 @@ def create_catalog_entry(
 ):
     """Add a movement to the shared library.
 
-    `user_id` is left NULL deliberately: the entry is the household's, so the
-    other account sees it immediately and the partial unique index can stop the
-    two of you creating "Squat" twice. Attributing it to the creator would defeat
-    both, because a per-user unique constraint cannot see across accounts.
+    The rules live in `app/planning.py` so the MCP connector applies exactly the
+    same ones — it cannot import this module, and a second copy of "is this a
+    duplicate, is this URL safe" would drift.
     """
-    name = data.name
-    existing = _by_name(db, current_user, name)
-    if existing is not None:
-        # Re-adding something archived is the common case — a movement comes back
-        # into a program. Revive it rather than refusing, which would leave the
-        # user unable to proceed with no obvious remedy.
-        if existing.is_archived:
-            existing.is_archived = False
-            db.commit()
-            db.refresh(existing)
-            return existing
-        raise HTTPException(status_code=409, detail=f"'{name}' is already in the list")
-
-    entry = ExerciseCatalog(
-        user_id=None,
-        is_shared=True,
-        **{**data.model_dump(), "name": name},
-    )
-    db.add(entry)
     try:
-        db.commit()
-    except IntegrityError:
-        # The other account added the same movement between the check above and
-        # this insert. The unique index is the real arbiter; report the same 409
-        # the check would have, rather than a 500 on a race the user can see the
-        # outcome of by reloading.
-        db.rollback()
-        raise HTTPException(status_code=409, detail=f"'{name}' is already in the list")
+        entry, _revived = planning.create_catalog_entry(
+            db,
+            current_user.id,
+            name=data.name,
+            muscle_group=data.muscle_group,
+            video_url=data.video_url,
+            notes=data.notes,
+        )
+    except planning.PlanningError as exc:
+        raise _http(exc) from None
+    db.commit()
     db.refresh(entry)
     return entry
 
@@ -190,23 +124,23 @@ def update_catalog_entry(
     current_user: User = Depends(get_current_user),
 ):
     """Edit a movement. Note this changes it for everyone, by design."""
-    entry = _visible(db, current_user).filter(ExerciseCatalog.id == entry_id).first()
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Exercise not found")
-    clash = _by_name(db, current_user, data.name)
-    if clash is not None and clash.id != entry.id:
-        raise HTTPException(
-            status_code=409, detail=f"'{data.name}' is already in the list"
-        )
-    for key, value in data.model_dump().items():
-        setattr(entry, key, value)
+    entry = _entry_or_404(db, current_user, entry_id)
     try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=409, detail=f"'{data.name}' is already in the list"
+        # replace=True: a PUT carries the whole object, so an omitted field
+        # means "clear it". The assistant path uses replace=False instead.
+        planning.update_catalog_entry(
+            db,
+            entry,
+            current_user.id,
+            name=data.name,
+            muscle_group=data.muscle_group,
+            video_url=data.video_url,
+            notes=data.notes,
+            replace=True,
         )
+    except planning.PlanningError as exc:
+        raise _http(exc) from None
+    db.commit()
     db.refresh(entry)
     return entry
 
@@ -217,16 +151,9 @@ def archive_catalog_entry(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Archive, never delete.
-
-    Sessions reference this row — including the other person's — so removing it
-    would strand their history. Archiving hides it from the picker and leaves
-    every past workout intact.
-    """
-    entry = _visible(db, current_user).filter(ExerciseCatalog.id == entry_id).first()
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Exercise not found")
-    entry.is_archived = True
+    """Archive, never delete — sessions reference this row, including theirs."""
+    entry = _entry_or_404(db, current_user, entry_id)
+    planning.archive_catalog_entry(entry)
     db.commit()
     return {"status": "archived", "id": entry_id}
 

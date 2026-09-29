@@ -12,8 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
+from app import planning
 from app.database import get_db
-from app.models import ActivityType, RoutineExercise, User, WorkoutTemplate
+from app.models import User, WorkoutTemplate
 from app.routers.auth import get_current_user
 
 router = APIRouter()
@@ -53,20 +54,11 @@ class RoutineResponse(BaseModel):
 
 
 def _owned(db: Session, user: User):
-    return db.query(WorkoutTemplate).filter(WorkoutTemplate.user_id == user.id)
+    return planning.owned_routines(db, user.id)
 
 
-def _write_exercises(db: Session, routine_id: int, exercises) -> None:
-    """Replace a routine's movements. Order comes from the list, not the client."""
-    for existing in db.query(RoutineExercise).filter(
-        RoutineExercise.routine_id == routine_id
-    ):
-        db.delete(existing)
-    db.flush()
-    for order, ex in enumerate(exercises):
-        db.add(
-            RoutineExercise(routine_id=routine_id, position=order, **ex.model_dump())
-        )
+def _http(exc: planning.PlanningError) -> HTTPException:
+    return HTTPException(status_code=409 if exc.conflict else 400, detail=str(exc))
 
 
 @router.get("/", response_model=list[RoutineResponse])
@@ -88,17 +80,16 @@ def create_routine(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    routine = WorkoutTemplate(
-        user_id=current_user.id,
-        name=data.name.strip(),
-        # The table predates this feature and requires a type; a routine is
-        # always strength, which is the only kind with movements to plan.
-        activity_type=ActivityType.STRENGTH,
-        default_duration_mins=data.default_duration_mins,
-    )
-    db.add(routine)
-    db.flush()
-    _write_exercises(db, routine.id, data.exercises)
+    try:
+        routine = planning.save_routine(
+            db,
+            current_user.id,
+            name=data.name,
+            exercises=data.exercises,
+            default_duration_mins=data.default_duration_mins,
+        )
+    except planning.PlanningError as exc:
+        raise _http(exc) from None
     db.commit()
     db.refresh(routine)
     return routine
@@ -114,9 +105,19 @@ def update_routine(
     routine = _owned(db, current_user).filter(WorkoutTemplate.id == routine_id).first()
     if routine is None:
         raise HTTPException(status_code=404, detail="Routine not found")
-    routine.name = data.name.strip()
-    routine.default_duration_mins = data.default_duration_mins
-    _write_exercises(db, routine.id, data.exercises)
+    try:
+        # A PUT carries the whole routine, so `exercises` is always sent and
+        # always replaces. The assistant path omits it to mean "leave them".
+        planning.save_routine(
+            db,
+            current_user.id,
+            name=data.name,
+            exercises=data.exercises,
+            default_duration_mins=data.default_duration_mins,
+            routine=routine,
+        )
+    except planning.PlanningError as exc:
+        raise _http(exc) from None
     db.commit()
     db.refresh(routine)
     return routine

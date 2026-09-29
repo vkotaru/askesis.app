@@ -193,6 +193,13 @@ Key modules:
 - `app/routers/nutrition.py` — meal CRUD plus optional Gemini meal-photo analysis
   (`gemini-1.5-flash`). Without `GEMINI_API_KEY`, `/api/nutrition/analyze-photo` returns 503
   and nothing else changes. This is the only LLM call in the app.
+- `app/planning.py` — the exercise library, routines and targets, as plain
+  SQLAlchemy with **no FastAPI**. It exists so `mcp_server/` can call it: that
+  package may not import `app.routers` (CI greps for it, and the MCP image ships
+  no FastAPI), so without this module the connector would need a second copy of
+  every validation rule. The routers are thin wrappers over it. A write that
+  belongs to *what you did* rather than *what you plan* does not go here — the
+  MCP connector's permission is effectively "everything this module exposes".
 - `app/routers/settings.py` — `POST /api/settings/backup` streams **the caller's own rows**
   back as portable JSON (same format on SQLite and Postgres); `POST /api/settings/restore`
   puts one back. Both are governed by `_BACKUP_SPEC`, a per-table allow-list with the

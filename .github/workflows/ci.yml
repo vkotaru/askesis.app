@@ -130,6 +130,17 @@ jobs:
             echo "::error::tools.py must go through queries.py (owned/by_id/children_of), not db.query()"
             exit 1
           fi
+          # 1b. Same rule for WRITES, which tools.py gained the ability to make.
+          #     They go through app/planning.py -- the module the REST API also
+          #     uses, so the two cannot disagree about what is valid. And the
+          #     commit is structural, in server.py's _register: a tool that
+          #     committed for itself could also forget to, and SessionLocal is
+          #     autocommit=False, so forgetting loses the write SILENTLY when
+          #     the connection returns to the pool.
+          if grep -nE 'db\.(commit|rollback|add|delete)\(' mcp_server/tools.py; then
+            echo "::error::tools.py must write through app/planning.py; server.py owns the commit"
+            exit 1
+          fi
 
           # 2. The image ships no FastAPI and no routers. An *import* of app.main
           #    or app.routers would break the build; catch it here first. Matches

@@ -14,8 +14,15 @@
 -- followed by a normal login to the real app. `bcrypt` is already in the image.
 -- Without this role every other control guards a door beside an open window.
 --
--- THE RULE: the MCP role may read the health data it serves, may write only its
--- own OAuth bookkeeping, and may NOT write to `users` under any circumstance.
+-- THE RULE: the MCP role may read the health data it serves, may write its own
+-- OAuth bookkeeping and the PLANNING tables (the exercise library, routines and
+-- the target columns on user_settings), and may NOT write to `users` or to any
+-- record of what actually happened -- activities, exercise_sets, daily_logs,
+-- meals, measurements -- under any circumstance.
+--
+-- The line is "what you intend" versus "what you did". An assistant may change
+-- the plan; it may not rewrite the history. `users` stays unreachable either
+-- way, which is the threat the paragraph above is about.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Run once, on the server, as the database owner:
@@ -85,7 +92,37 @@ TO askesis_mcp;
 -- matters -- no write path to password_hash -- is enforced below by the absence
 -- of any INSERT/UPDATE/DELETE grant, which does not have that fragility.
 
--- 3. Read-write: the connector's own OAuth bookkeeping, and nothing else.
+-- 3. Read-write: the planning tables.
+--
+-- Table-level, not column-level, following the same reasoning as `users` above:
+-- a column list would have to track models.py exactly and would break at
+-- runtime the next time a column is added. For `user_settings` that means the
+-- role can also write the presentation columns (theme, font) -- unwanted but
+-- harmless, and the alternative is a grant that silently breaks on the next
+-- migration.
+--
+-- `exercise_catalog` gets no DELETE: removing a movement is an `is_archived`
+-- flag, because logged sessions reference the row. `routine_exercises` does
+-- need DELETE, for the replace-all when a routine's movement list changes --
+-- not for deleting routines, which no tool can do.
+GRANT INSERT, UPDATE ON
+    exercise_catalog,
+    user_settings
+TO askesis_mcp;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+    workout_templates,
+    routine_exercises
+TO askesis_mcp;
+
+GRANT USAGE, SELECT ON SEQUENCE
+    exercise_catalog_id_seq,
+    user_settings_id_seq,
+    workout_templates_id_seq,
+    routine_exercises_id_seq
+TO askesis_mcp;
+
+-- 4. Read-write: the connector's own OAuth bookkeeping.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     mcp_clients,
     mcp_auth_codes,
@@ -99,21 +136,24 @@ GRANT USAGE, SELECT ON SEQUENCE
     mcp_grants_id_seq
 TO askesis_mcp;
 
--- 4. Deliberately NOT granted, listed so the omissions read as decisions:
+-- 5. Deliberately NOT granted, listed so the omissions read as decisions:
 --      report_tokens   -- unhashed share credentials
 --      data_shares     -- cross-user grants; the MCP identity is the OAuth
 --                         subject alone and must never widen through sharing
 --      progress_photos -- image paths; the tools expose no photos
---      meal_templates, workout_templates, routine_exercises
---                      -- routines are a plan, not history; no tool reads them
+--      meal_templates  -- no tool reads or writes them
+--    And SELECT-only, deliberately, on everything that records what happened:
+--    activities, exercises, exercise_sets, daily_logs, daily_nutrition, meals,
+--    body_measurements, training_plans, planned_workouts.
 --    No ALTER DEFAULT PRIVILEGES either: a table added by a future migration is
 --    unreadable until someone grants it here, on purpose. Fail closed.
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 5. Verify. Every line below must print the stated expectation.
+-- 6. Verify. Every line below must print the stated expectation.
 -- ─────────────────────────────────────────────────────────────────────────────
 \echo ''
-\echo '== writable tables (expect exactly the three mcp_* tables) =='
+\echo '== writable tables (expect: the three mcp_*, plus exercise_catalog,'
+\echo '   user_settings, workout_templates, routine_exercises -- and NOTHING else) =='
 SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
 FROM information_schema.table_privileges
 WHERE grantee = 'askesis_mcp' AND privilege_type <> 'SELECT'
@@ -137,10 +177,24 @@ SELECT has_table_privilege('askesis_mcp', 'users',            'SELECT') AS users
        has_table_privilege('askesis_mcp', 'exercise_sets',    'SELECT') AS exercise_sets;
 
 \echo ''
-\echo '== and it still cannot WRITE the training data (expect all f) =='
-SELECT has_table_privilege('askesis_mcp', 'exercise_sets',    'UPDATE') AS write_sets,
-       has_table_privilege('askesis_mcp', 'exercise_catalog', 'UPDATE') AS write_catalog,
-       has_table_privilege('askesis_mcp', 'activities',       'UPDATE') AS write_activities;
+\echo '== it CAN write the planning tables (expect all t) =='
+SELECT has_table_privilege('askesis_mcp', 'exercise_catalog',  'UPDATE') AS catalog,
+       has_table_privilege('askesis_mcp', 'workout_templates', 'INSERT') AS routines,
+       has_table_privilege('askesis_mcp', 'routine_exercises', 'DELETE') AS routine_ex,
+       has_table_privilege('askesis_mcp', 'user_settings',     'UPDATE') AS settings;
+
+\echo ''
+\echo '== it still cannot write what actually HAPPENED (expect all f) =='
+\echo '   -- this is the line that separates changing a plan from rewriting history'
+SELECT has_table_privilege('askesis_mcp', 'activities',        'UPDATE') AS activities,
+       has_table_privilege('askesis_mcp', 'exercise_sets',     'UPDATE') AS sets,
+       has_table_privilege('askesis_mcp', 'daily_logs',        'UPDATE') AS daily_logs,
+       has_table_privilege('askesis_mcp', 'meals',             'UPDATE') AS meals,
+       has_table_privilege('askesis_mcp', 'body_measurements', 'UPDATE') AS measurements;
+
+\echo ''
+\echo '== and it cannot DELETE from the library (archiving is a flag) (expect f) =='
+SELECT has_table_privilege('askesis_mcp', 'exercise_catalog', 'DELETE') AS delete_catalog;
 
 \echo ''
 \echo '== tables it must NOT see at all (expect all f) =='

@@ -1,5 +1,9 @@
 """Every database read in this package goes through here.
 
+(Writes go through `app/planning.py`, which the REST API also uses, so the two
+cannot disagree about what a valid routine or exercise is. The rules below are
+about reads, and every one of them still applies.)
+
 **This module is the security boundary for data access.** Two invariants have
 to hold on every query the MCP service makes, and both fail silently when
 missed:

@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError, StatementError
 from pydantic import BaseModel
 
+from app import planning
 from app.database import Base, get_db
+
+# Re-exported: export.py imports it from here, and it now lives in the
+# FastAPI-free module so the MCP connector can reach it too.
+from app.planning import get_or_create_settings  # noqa: F401
 from app.models import User, UserSettings
 from app.routers.auth import get_current_user
 
@@ -64,37 +69,6 @@ class UserSettingsUpdate(BaseModel):
     weekly_run_km: float | None = None
     weekly_bike_km: float | None = None
     weekly_disciplines: str | None = None
-
-
-def get_or_create_settings(db: Session, user_id: int) -> UserSettings:
-    """Get existing settings or create with defaults."""
-    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-
-    if not settings:
-        settings = UserSettings(
-            user_id=user_id,
-            theme="system",
-            font_size="medium",
-            font_family="space-grotesk",
-            content_width="medium",
-            color_scheme="forest",
-            distance_unit="km",
-            measurement_unit="cm",
-            weight_unit="kg",
-            water_unit="ml",
-        )
-        db.add(settings)
-        try:
-            db.commit()
-            db.refresh(settings)
-        except IntegrityError:
-            # Another request created it, rollback and fetch
-            db.rollback()
-            settings = (
-                db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-            )
-
-    return settings
 
 
 @router.get("/", response_model=UserSettingsSchema)
@@ -152,17 +126,15 @@ def update_settings(
     # the same trap the daily log's blank-a-field bug fell into, and the reason
     # calorie_target and protein_target moved into this list rather than keeping
     # the guards they used to have.
+    #
+    # `apply_targets` also enforces bounds this schema never had: every target
+    # was a bare `int | None` with no Field(...), so a calorie target of -5000
+    # was legal through this endpoint until the rules moved to planning.py.
     supplied = settings_data.model_dump(exclude_unset=True)
-    for field in (
-        "calorie_target",
-        "protein_target",
-        "step_target",
-        "weekly_run_km",
-        "weekly_bike_km",
-        "weekly_disciplines",
-    ):
-        if field in supplied:
-            setattr(settings, field, supplied[field])
+    try:
+        planning.apply_targets(settings, supplied)
+    except planning.PlanningError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
     db.commit()
     db.refresh(settings)

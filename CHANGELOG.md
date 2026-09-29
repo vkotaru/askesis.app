@@ -15,6 +15,46 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Claude can now plan for you, not just read.** The MCP connector gains six
+  write tools: add and edit exercises in the shared library (including video
+  links and form notes), archive ones you no longer use, create and edit
+  routines, set the daily step/calorie/protein targets, and set the weekly
+  run/bike/discipline plan.
+
+  The line it will not cross is **plans, not history**. Nothing it can call
+  writes a logged workout, daily log, meal or measurement — that boundary is
+  enforced twice over, by which functions the shared service layer exposes and
+  by the database grants, which still deny write on every table that records
+  what actually happened.
+
+  **Writing needs its own permission.** The connector must be reconnected once,
+  and the consent screen now lists exactly what can be changed rather than
+  promising read-only. A token issued before this change physically cannot
+  write, and refreshing one cannot widen it.
+
+### Changed
+
+- **The exercise library, routines and targets moved to one shared module**
+  (`app/planning.py`) that both the web app and the connector call. The rules —
+  what a valid link is, what counts as a duplicate, what clearing a target means
+  — now exist once rather than once per caller.
+
+### Fixed
+
+Three defects the extraction surfaced, all of which affected the web app too:
+
+- **A video link starting `HTTPS://` was rejected**, with a message saying it
+  had to start with `https://`. The check was case-sensitive.
+- **A routine could be saved pointing at an exercise that does not exist**, or
+  at the other account's private entry. The activity path validated this; the
+  routine path passed the value straight to the database.
+- **A routine movement could be named entirely of spaces.**
+- **A calorie, protein or step target could be set to anything at all** —
+  negative, or a billion. None of the six target fields had any bounds.
+
+
 ## [2.9.0] - 2026-09-27
 
 Alembic head: `seed_exercise_library`

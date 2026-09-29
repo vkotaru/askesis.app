@@ -21,6 +21,51 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-28 — MCP writes, and the service layer that made them safe
+
+The connector was read-only by design, down to the database role. Making it
+write meant deciding where the rules live.
+
+**The constraint that decided the design:** `mcp_server/` cannot import
+`app.routers` — CI greps for it and the MCP image has no FastAPI — and every
+rule worth reusing lived inside route handler bodies. So the choice was a second
+copy of each rule, or extraction. This repo had already paid for the first
+option twice: three `daily_logs` write paths where only two learned the
+provenance rule, and two `_write_exercises` that disagreed about empty lists.
+
+`app/planning.py` is the answer: plain SQLAlchemy, no FastAPI, called by both.
+Extracting it surfaced four real defects that had been live in the web app —
+the case-sensitive URL scheme check, the unvalidated `catalog_id` on routines,
+blank movement names, and targets with no bounds at all.
+
+**Scope, and why `required_scopes` could not do the work.** The SDK reads that
+list as "the token must carry ALL of these", so adding `askesis:write` there
+would have locked read-only tokens out of the *read* tools. It stays at
+`askesis:read`, and the write check is hand-written per tool in `_register`
+against `WRITE_TOOLS`. Separately, `/authorize` had been ignoring the requested
+scope entirely — a client could ask for anything and got `config.scope` stamped
+on its grant with no error. It now negotiates.
+
+**The commit is structural, not per-tool.** `SessionLocal` is
+`autocommit=False`, so a tool that forgot `db.commit()` would lose its write
+*silently* when `db.close()` returned the connection to the pool. `_register`
+commits on success and rolls back on exception, both **inside the worker
+thread** — `run()`'s `finally: db.close()` executes before the outer `except`
+blocks, so a rollback attempted there would be on a closed session.
+
+**Watch out**
+- `tools.py` arguments must stay builtins. `server.py` copies annotation
+  *strings* onto a handler in its own module, so `Literal`, `date` or a Pydantic
+  model is a NameError at container boot — which CI cannot catch, because it
+  never installs the MCP dependency set.
+- The grants in `mcp_db_role.sql` are applied by hand on the live database.
+  Deploying without running it means every write tool fails at runtime. The
+  script's self-verifying block now asserts the new shape; it previously
+  asserted the opposite and would have become a lie.
+- `scripts/check_mcp_writes.py` runs all 39 cases. The ones that matter are not
+  the happy paths: ownership between the two accounts, refusal rather than
+  half-writing, and that `WRITE_TOOLS` still contains only planning tools.
+
 ## 2026-09-28 — The live workout: a session, not a form
 
 Strength mode shipped as a filter — the same app with nav items and cards

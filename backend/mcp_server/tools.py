@@ -52,6 +52,8 @@ from app.models import (
     User,
     UserSettings,
 )
+from app import planning
+from app.models import RoutineExercise, WorkoutTemplate  # noqa: F401
 from app.provenance import parse_sources
 from mcp_server.queries import (
     MAX_ROWS,
@@ -858,6 +860,334 @@ def get_training_plan(
 
 #: Registered by mcp_server/server.py. Kept here so the catalogue and the
 #: implementations cannot drift apart.
+# ── Write tools ──────────────────────────────────────────────────────────────
+#
+# Everything below changes data, and all of it goes through `app.planning` --
+# the same module the REST API uses, so the rules cannot drift between the two.
+# Nothing here commits: `server.py` commits once per call for a write tool, and
+# rolls back on exception, so no tool can lose a write by forgetting.
+#
+# The line these tools do not cross: **plans, not history.** No logged workout,
+# daily log, meal or measurement is writable. An assistant should be able to
+# change what you intend to do, not what the record says you did.
+#
+# Arguments are restricted to builtins (`str`, `int`, `float`, `bool`,
+# `list[str]`, `dict[str, Any]`). `server.py` copies annotation *strings* onto a
+# handler in its own module, so anything needing an import that server.py lacks
+# is a NameError at container boot -- which CI cannot catch, because it never
+# installs the MCP dependency set.
+
+
+def _entry_or_error(db: Session, user_id: int, name: str) -> ExerciseCatalog:
+    """Find a movement by name, or say so in a way a model can act on."""
+    clean = (name or "").strip()
+    if not clean:
+        raise ToolError("exercise name is required")
+    entry = planning.catalog_by_name(db, user_id, clean)
+    if entry is None:
+        raise ToolError(
+            f"No exercise called {clean!r} in the library. "
+            "Use create_exercise to add it, or list_exercises to see what exists."
+        )
+    return entry
+
+
+def _catalog_dict(entry: ExerciseCatalog) -> dict[str, Any]:
+    return {
+        "name": entry.name,
+        "muscle_group": entry.muscle_group,
+        "video_url": entry.video_url,
+        "notes": entry.notes,
+        "archived": entry.is_archived,
+        "shared_with_household": entry.user_id is None,
+    }
+
+
+def list_exercises(
+    db: Session, user_id: int, query: str | None = None, include_archived: bool = False
+) -> dict[str, Any]:
+    """The shared exercise library, optionally filtered by name."""
+    rows = planning.search_catalog(
+        db, user_id, query, include_archived=include_archived, limit=MAX_ROWS
+    )
+    return {"count": len(rows), "exercises": [_catalog_dict(e) for e in rows]}
+
+
+def create_exercise(
+    db: Session,
+    user_id: int,
+    name: str,
+    muscle_group: str | None = None,
+    video_url: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Add a movement to the exercise library.
+
+    The library is **shared by everyone on this install** -- what you add here,
+    the other account sees. Adding something that already exists is an error
+    rather than a second copy; if it was archived, this brings it back.
+
+    `notes` is how to perform the movement, not how a session went.
+    """
+    try:
+        entry, revived = planning.create_catalog_entry(
+            db,
+            user_id,
+            name=name,
+            muscle_group=muscle_group,
+            video_url=video_url,
+            notes=notes,
+        )
+    except planning.PlanningError as exc:
+        raise ToolError(str(exc)) from None
+    return {
+        "created": not revived,
+        "restored_from_archive": revived,
+        **_catalog_dict(entry),
+    }
+
+
+def update_exercise(
+    db: Session,
+    user_id: int,
+    name: str,
+    new_name: str | None = None,
+    muscle_group: str | None = None,
+    video_url: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Change a movement in the shared library, found by its current name.
+
+    Only the fields given are changed -- adding a video link leaves the form
+    notes alone. This edits the entry **for everyone on this install**. Past
+    workouts keep the name they were logged with, so a rename does not rewrite
+    history.
+    """
+    entry = _entry_or_error(db, user_id, name)
+    try:
+        planning.update_catalog_entry(
+            db,
+            entry,
+            user_id,
+            name=new_name,
+            muscle_group=muscle_group,
+            video_url=video_url,
+            notes=notes,
+        )
+    except planning.PlanningError as exc:
+        raise ToolError(str(exc)) from None
+    return {"updated": True, **_catalog_dict(entry)}
+
+
+def archive_exercise(db: Session, user_id: int, name: str) -> dict[str, Any]:
+    """Hide a movement from the exercise picker.
+
+    Nothing is deleted: past workouts that used it are untouched and still read
+    correctly, and `create_exercise` with the same name brings it back. It
+    disappears for everyone on this install, not just you.
+    """
+    entry = _entry_or_error(db, user_id, name)
+    planning.archive_catalog_entry(entry)
+    return {"archived": True, **_catalog_dict(entry)}
+
+
+def _routine_dict(routine: WorkoutTemplate) -> dict[str, Any]:
+    return {
+        "name": routine.name,
+        "default_duration_mins": routine.default_duration_mins,
+        "exercises": [
+            {
+                "name": e.name,
+                "target_sets": e.target_sets,
+                "target_reps": e.target_reps,
+                "target_weight_kg": e.target_weight_kg,
+                "notes": e.notes,
+            }
+            for e in sorted(routine.exercises, key=lambda e: e.position)
+        ],
+    }
+
+
+def list_routines(db: Session, user_id: int) -> dict[str, Any]:
+    """The saved workouts for this account.
+
+    Unlike the exercise library, routines are **yours alone** -- the other
+    account has its own. Read this before editing one, so a change replaces the
+    movements you meant rather than the ones you remember.
+    """
+    rows = (
+        owned(db, WorkoutTemplate, user_id)
+        .options(selectinload(WorkoutTemplate.exercises))
+        .order_by(WorkoutTemplate.name)
+        .all()
+    )
+    return {"count": len(rows), "routines": [_routine_dict(r) for r in rows]}
+
+
+def save_routine(
+    db: Session,
+    user_id: int,
+    name: str,
+    exercises: list[dict[str, Any]] | None = None,
+    default_duration_mins: int | None = None,
+) -> dict[str, Any]:
+    """Create a routine, or update the one with this name.
+
+    `exercises` is a list of objects, in the order they should be performed:
+
+        {"name": "Barbell Bench Press",   # required, must be in the library
+         "target_sets": 3,                # optional, 1-100
+         "target_reps": 5,                # optional, 1-1000
+         "target_weight_kg": 60,          # optional, kilograms
+         "notes": "pause at the chest"}   # optional
+
+    **Omitting `exercises` leaves the movements untouched** -- use that to
+    rename a routine or change its length. Passing `[]` empties it deliberately.
+    Passing a list **replaces** every movement, so include the ones you are
+    keeping; call list_routines first if you are unsure what is in it.
+
+    Targets here are intentions. They are never written into a logged set, so
+    "did I hit my target" stays a real question.
+    """
+    routine = planning.routine_by_name(db, user_id, name)
+    if exercises is not None:
+        for item in exercises:
+            if not isinstance(item, dict):
+                raise ToolError(
+                    f"Each exercise must be an object with a 'name', got {item!r}"
+                )
+            # Resolve against the library so a typo is caught here rather than
+            # becoming a movement nothing can look up.
+            movement = (item.get("name") or "").strip()
+            if not movement:
+                raise ToolError("Each exercise needs a 'name'")
+            entry = planning.catalog_by_name(db, user_id, movement)
+            if entry is None:
+                raise ToolError(
+                    f"No exercise called {movement!r} in the library. "
+                    "Add it with create_exercise first, or use list_exercises "
+                    "to find the right name."
+                )
+            item["name"] = entry.name
+            item["catalog_id"] = entry.id
+    try:
+        routine = planning.save_routine(
+            db,
+            user_id,
+            name=name,
+            exercises=exercises,
+            default_duration_mins=default_duration_mins,
+            routine=routine,
+        )
+    except planning.PlanningError as exc:
+        raise ToolError(str(exc)) from None
+    db.flush()
+    db.refresh(routine)
+    return {"saved": True, **_routine_dict(routine)}
+
+
+#: What `set_targets` and `set_weekly_plan` between them may touch. Used to
+#: reject a `clear` naming something neither tool owns.
+_TARGET_FIELDS = frozenset(planning.TARGET_FIELDS)
+
+
+def _apply(
+    db: Session, user_id: int, supplied: dict[str, Any], clear: list[str] | None
+) -> dict[str, Any]:
+    """Shared tail of the two target tools."""
+    if clear:
+        unknown = [f for f in clear if f not in _TARGET_FIELDS]
+        if unknown:
+            raise ToolError(
+                f"Cannot clear {', '.join(unknown)}. "
+                f"Valid fields are: {', '.join(sorted(_TARGET_FIELDS))}"
+            )
+        for field in clear:
+            supplied[field] = None
+    settings = planning.get_or_create_settings(db, user_id)
+    try:
+        changed = planning.apply_targets(settings, supplied)
+    except planning.PlanningError as exc:
+        raise ToolError(str(exc)) from None
+    db.flush()
+    return {
+        "changed": changed,
+        "targets": {
+            "step_target": settings.step_target,
+            "calorie_target": settings.calorie_target,
+            "protein_target": settings.protein_target,
+        },
+        "weekly_plan": {
+            "run_km": settings.weekly_run_km,
+            "bike_km": settings.weekly_bike_km,
+            "disciplines": parse_plan(settings.weekly_disciplines),
+        },
+    }
+
+
+def set_targets(
+    db: Session,
+    user_id: int,
+    step_target: int | None = None,
+    calorie_target: int | None = None,
+    protein_target: int | None = None,
+    clear: list[str] | None = None,
+) -> dict[str, Any]:
+    """Set the daily targets shown on the dashboard.
+
+    Only the ones you pass change; the others are left exactly as they are. To
+    remove a target, name it in `clear` (for example `["protein_target"]`) --
+    passing null does nothing, because an omitted argument and a null one look
+    identical by the time this runs.
+
+    Calories and protein are daily intake goals; steps is a daily count. Each
+    draws a target line on its chart.
+    """
+    supplied: dict[str, Any] = {}
+    if step_target is not None:
+        supplied["step_target"] = step_target
+    if calorie_target is not None:
+        supplied["calorie_target"] = calorie_target
+    if protein_target is not None:
+        supplied["protein_target"] = protein_target
+    if not supplied and not clear:
+        raise ToolError("Nothing to set. Pass a target, or name one in `clear`.")
+    return _apply(db, user_id, supplied, clear)
+
+
+def set_weekly_plan(
+    db: Session,
+    user_id: int,
+    run_km: float | None = None,
+    bike_km: float | None = None,
+    disciplines: list[str] | None = None,
+    clear: list[str] | None = None,
+) -> dict[str, Any]:
+    """Set the weekly training plan shown on the dashboard.
+
+    `run_km` and `bike_km` are weekly distance goals in **kilometres**.
+    `disciplines` is the list you intend to touch in a week, each either done or
+    not -- valid keys are: calisthenics, stretch, swim, hike, bike, run,
+    strength. An unknown key is refused rather than silently dropped.
+
+    Only what you pass changes. To remove part of the plan, name it in `clear`
+    (`["weekly_run_km"]`, `["weekly_disciplines"]`).
+    """
+    supplied: dict[str, Any] = {}
+    if run_km is not None:
+        supplied["weekly_run_km"] = run_km
+    if bike_km is not None:
+        supplied["weekly_bike_km"] = bike_km
+    if disciplines is not None:
+        try:
+            supplied["weekly_disciplines"] = planning.clean_disciplines(disciplines)
+        except planning.PlanningError as exc:
+            raise ToolError(str(exc)) from None
+    if not supplied and not clear:
+        raise ToolError("Nothing to set. Pass a value, or name one in `clear`.")
+    return _apply(db, user_id, supplied, clear)
+
+
 TOOLS = {
     "get_profile": get_profile,
     "get_daily_summary": get_daily_summary,
@@ -868,4 +1198,28 @@ TOOLS = {
     "get_measurements": get_measurements,
     "get_meals": get_meals,
     "get_training_plan": get_training_plan,
+    "list_exercises": list_exercises,
+    "list_routines": list_routines,
+    # ── writes ──
+    "create_exercise": create_exercise,
+    "update_exercise": update_exercise,
+    "archive_exercise": archive_exercise,
+    "save_routine": save_routine,
+    "set_targets": set_targets,
+    "set_weekly_plan": set_weekly_plan,
 }
+
+#: The tools that change data. Drives three things in `server.py`: the
+#: `askesis:write` scope check, the commit, and the write rate limit. A tool
+#: missing from here would be callable with a read-only token AND would silently
+#: lose its write, so the set is the single place that fact is recorded.
+WRITE_TOOLS: frozenset[str] = frozenset(
+    {
+        "create_exercise",
+        "update_exercise",
+        "archive_exercise",
+        "save_routine",
+        "set_targets",
+        "set_weekly_plan",
+    }
+)

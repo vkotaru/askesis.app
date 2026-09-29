@@ -52,6 +52,19 @@ button:hover { background:#15803d; }
 
 #: Written for a person, not for a scope registry. Each line is something the
 #: connector can actually read back.
+#: What a write-scoped connection may change. Deliberately narrow, and the
+#: narrowness is the point: plans and preferences, never the record of what you
+#: actually did.
+_WRITE_GRANTS = [
+    "The <b>shared exercise library</b> — add movements, edit their video links "
+    "and form notes, archive ones you no longer use. Shared, so this changes "
+    "what everyone on this install sees.",
+    "Your <b>routines</b> — create and edit saved workouts and their target "
+    "sets, reps and weights",
+    "Your <b>targets</b> — daily steps, calories, protein, and the weekly "
+    "run/bike/discipline plan",
+]
+
 _GRANTS = [
     "Daily logs — weight, sleep, steps, water, caffeine, <b>mood tags</b> and your <b>free-text notes</b>",
     "Meals and nutrition — what you ate, calories, macros and meal descriptions",
@@ -69,8 +82,15 @@ def consent_page(
     account_label: str,
     error: str | None = None,
     hidden: dict[str, str],
+    can_write: bool = False,
 ) -> str:
-    """The login + consent form."""
+    """The login + consent form.
+
+    `can_write` is not cosmetic. This page is the only place the user is ever
+    told what they are granting, so when the connection can change data it has
+    to say so, and say exactly what — a page that still promises "read-only"
+    while the token can rewrite your routines is an uninformed grant.
+    """
     fields = "".join(
         f'<input type="hidden" name="{html.escape(k)}" value="{html.escape(v)}">'
         for k, v in hidden.items()
@@ -87,6 +107,21 @@ def consent_page(
         else ""
     )
     items = "".join(f"<li>{g}</li>" for g in _GRANTS)
+    write_items = "".join(f"<li>{g}</li>" for g in _WRITE_GRANTS)
+    access = "read and limited write" if can_write else "read-only"
+    write_block = (
+        f'<p style="font-size:14px;margin:16px 0 8px"><b>It will also be able to '
+        f"change:</b></p><ul>{write_items}</ul>"
+        if can_write
+        else ""
+    )
+    # The footer is the last thing read and the easiest to leave stale.
+    footer = (
+        "It cannot change your logged workouts, daily logs, meals or "
+        "measurements, and it cannot touch your password."
+        if can_write
+        else "It cannot change or delete anything."
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -97,11 +132,12 @@ def consent_page(
   {err}{warn}
   <div class="client">
     <b>{html.escape(client_name)}</b>
-    wants <b>read-only</b> access to your health data.
+    wants <b>{html.escape(access)}</b> access to your health data.
     <code>{html.escape(redirect_uri)}</code>
   </div>
   <p style="font-size:14px;margin:0 0 8px"><b>It will be able to read:</b></p>
   <ul>{items}</ul>
+  {write_block}
   <form method="post" autocomplete="on">
     {fields}
     <label for="u">Username or email</label>
@@ -110,7 +146,7 @@ def consent_page(
     <input id="p" name="password" type="password" autocomplete="current-password" required>
     <button type="submit">Sign in and allow</button>
   </form>
-  <p class="foot">It cannot change or delete anything.<br>
+  <p class="foot">{footer}<br>
   Revoke any time by changing your Askesis password.</p>
 </div></body></html>"""
 

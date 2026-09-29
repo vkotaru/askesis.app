@@ -133,7 +133,24 @@ class MCPConfig:
         self.allowed_hosts = [host, f"{host}:443", "localhost", "localhost:443"]
         self.allowed_origins = ["https://claude.ai", "https://claude.com"]
 
-        self.scope = "askesis:read"
+        # Two scopes, and `required_scopes` on the server must stay the READ
+        # one alone. The SDK reads that list as "the token must carry all of
+        # these", so naming write there would lock a read-only token out of the
+        # read tools entirely. Write is therefore enforced per-tool, by hand, in
+        # server.py -- there is no per-tool hook in the SDK.
+        self.read_scope = "askesis:read"
+        self.write_scope = "askesis:write"
+        #: Advertised in both metadata documents and accepted at /authorize.
+        self.supported_scopes = (self.read_scope, self.write_scope)
+
+    @property
+    def scope(self) -> str:
+        """The read scope, under its old name.
+
+        Kept so nothing that only ever wanted "the scope" has to care that
+        there are now two. New code should name the one it means.
+        """
+        return self.read_scope
 
 
 def load() -> MCPConfig:
