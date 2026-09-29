@@ -45,6 +45,7 @@ from starlette.routing import Mount, Route
 from app.database import SessionLocal
 from mcp_server import oauth
 from mcp_server import tools as T
+from mcp_server.authz import may_write
 from mcp_server.config import MCPConfig
 from mcp_server.ratelimit import mcp_writes
 
@@ -121,7 +122,9 @@ def _register(
             # naming the write scope there would lock read-only tokens out of
             # the read tools. There is no per-tool hook, so the check lives here.
             token = get_access_token()
-            if write_scope not in (getattr(token, "scopes", None) or []):
+            # The decision itself lives in authz.py so it can be imported and
+            # tested without the MCP SDK, which CI never installs.
+            if not may_write(getattr(token, "scopes", None), write_scope):
                 raise SDKToolError(
                     "This connection is read-only. Reconnect the Askesis "
                     "connector in your settings and allow it to make changes."

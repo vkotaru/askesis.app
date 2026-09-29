@@ -75,6 +75,41 @@ class PlanningError(ValueError):
 _ALLOWED_URL_SCHEMES = ("http://", "https://")
 
 
+#: Column limits, restated here because this module is the only validator the
+#: MCP path passes through. They were left behind in the routers' Pydantic
+#: schemas when the rest of the rules moved here -- so a tool could write 2500
+#: characters of notes into a Text column, which committed happily and then made
+#: `GET /api/exercise-catalog/` fail its response model on every subsequent
+#: call. A 500 on the list endpoint is unrecoverable from the UI, because the
+#: page that would let you fix the row is the one that will not load.
+#:
+#: Anything writable from here needs a bound. A `Text` column has no natural one
+#: and is the dangerous case: `varchar` at least raises at the database.
+MAX_NAME = 100
+MAX_MUSCLE_GROUP = 50
+MAX_VIDEO_URL = 500
+MAX_CATALOG_NOTES = 2000
+MAX_ROUTINE_NOTES = 255
+
+
+def clean_text(
+    value: str | None, limit: int, *, field: str, allow_blank: bool = True
+) -> str | None:
+    """Trim an optional free-text field to something the column and the API accept."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PlanningError(f"{field} must be text, got {type(value).__name__}")
+    cleaned = value.strip()
+    if not cleaned:
+        return None if allow_blank else cleaned
+    if len(cleaned) > limit:
+        raise PlanningError(
+            f"{field} is too long: {len(cleaned)} characters, maximum is {limit}"
+        )
+    return cleaned
+
+
 def clean_name(value: str | None, *, field: str = "name") -> str:
     """Strip and reject blank.
 
@@ -82,11 +117,15 @@ def clean_name(value: str | None, *, field: str = "name") -> str:
     "   " passes it and lands as an unselectable blank row in a library both
     accounts see.
     """
+    if value is not None and not isinstance(value, str):
+        raise PlanningError(f"{field} must be text, got {type(value).__name__}")
     cleaned = (value or "").strip()
     if not cleaned:
         raise PlanningError(f"{field} cannot be blank")
-    if len(cleaned) > 100:
-        raise PlanningError(f"{field} is too long (max 100 characters)")
+    if len(cleaned) > MAX_NAME:
+        raise PlanningError(
+            f"{field} is too long: {len(cleaned)} characters, maximum is {MAX_NAME}"
+        )
     return cleaned
 
 
@@ -106,8 +145,11 @@ def clean_video_url(value: str | None) -> str | None:
     cleaned = value.strip()
     if not cleaned.lower().startswith(_ALLOWED_URL_SCHEMES):
         raise PlanningError("video_url must start with http:// or https://")
-    if len(cleaned) > 500:
-        raise PlanningError("video_url is too long (max 500 characters)")
+    if len(cleaned) > MAX_VIDEO_URL:
+        raise PlanningError(
+            f"video_url is too long: {len(cleaned)} characters, "
+            f"maximum is {MAX_VIDEO_URL}"
+        )
     return cleaned
 
 
@@ -204,6 +246,8 @@ def create_catalog_entry(
     """
     name = clean_name(name)
     video_url = clean_video_url(video_url)
+    muscle_group = clean_text(muscle_group, MAX_MUSCLE_GROUP, field="muscle_group")
+    notes = clean_text(notes, MAX_CATALOG_NOTES, field="notes")
 
     existing = catalog_by_name(db, user_id, name)
     if existing is not None:
@@ -263,9 +307,11 @@ def update_catalog_entry(
     if video_url is not None or replace:
         entry.video_url = clean_video_url(video_url)
     if muscle_group is not None or replace:
-        entry.muscle_group = muscle_group
+        entry.muscle_group = clean_text(
+            muscle_group, MAX_MUSCLE_GROUP, field="muscle_group"
+        )
     if notes is not None or replace:
-        entry.notes = notes
+        entry.notes = clean_text(notes, MAX_CATALOG_NOTES, field="notes")
 
     try:
         db.flush()
@@ -352,7 +398,11 @@ def write_routine_exercises(
                 target_sets=_bounded(raw, "target_sets", 1, 100, int),
                 target_reps=_bounded(raw, "target_reps", 1, 1000, int),
                 target_weight_kg=_bounded(raw, "target_weight_kg", 0, 1000, float),
-                notes=_field(raw, "notes"),
+                notes=clean_text(
+                    _field(raw, "notes"),
+                    MAX_ROUTINE_NOTES,
+                    field="exercise notes",
+                ),
             )
         )
 
@@ -365,6 +415,7 @@ def save_routine(
     exercises: list[Any] | None = None,
     default_duration_mins: int | None = None,
     routine: WorkoutTemplate | None = None,
+    replace: bool = False,
 ) -> WorkoutTemplate:
     """Create a routine, or update the one passed in.
 
@@ -372,6 +423,11 @@ def save_routine(
     them alone; `[]` means "empty it". The two are different instructions, and
     conflating them is how an edit meant to rename a routine silently deletes
     its contents — the same failure the activity write paths hit.
+
+    `replace=True` is the REST semantic, where a PUT carries the whole object:
+    an omitted `default_duration_mins` means "clear it". Without it, clearing
+    the duration box in the UI returned 200 and kept the old value, because the
+    assistant's presence-not-truthiness rule had been applied to both callers.
     """
     name = clean_name(name)
     if default_duration_mins is not None and not 1 <= default_duration_mins <= 600:
@@ -390,7 +446,7 @@ def save_routine(
         db.flush()
     else:
         routine.name = name
-        if default_duration_mins is not None:
+        if default_duration_mins is not None or replace:
             routine.default_duration_mins = default_duration_mins
 
     if exercises is not None:
@@ -429,10 +485,15 @@ def _bounded(raw: Any, key: str, low: float, high: float, cast) -> Any:
 #: Bounds the API never had. `UserSettingsUpdate` declares these as bare
 #: `int | None` with no `Field(...)`, so a calorie target of -5000 was legal
 #: through the REST endpoint. Validating here fixes both callers at once.
+#: Lower bounds are 1, not a sensible-training-minimum. The job here is to
+#: reject values that are obviously not a target -- negative, or a billion --
+#: not to have an opinion about how much anyone should eat or walk. Setting
+#: them higher made the settings page 422 on a 400-calorie or 50-step target
+#: that it had always accepted, and the user saw only a generic toast.
 TARGET_BOUNDS: dict[str, tuple[float, float, type]] = {
-    "calorie_target": (500, 20000, int),
-    "protein_target": (10, 1000, int),
-    "step_target": (100, 100000, int),
+    "calorie_target": (1, 20000, int),
+    "protein_target": (1, 1000, int),
+    "step_target": (1, 300000, int),
     "weekly_run_km": (0, 1000, float),
     "weekly_bike_km": (0, 2000, float),
 }

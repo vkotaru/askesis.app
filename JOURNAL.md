@@ -21,6 +21,62 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-28 — Extracting *some* of the rules is worse than extracting none
+
+The review of the MCP write surface found nine things. The one that mattered is
+the one I should have predicted, because I had already fixed it twice in the
+same session.
+
+**The bug.** `app/planning.py` was extracted so the connector and the REST API
+would share one set of rules. It took the name check and the URL scheme check
+and left the **length** limits behind in the routers' Pydantic schemas — which
+the MCP path never touches. So `create_exercise(notes="x" * 2508)` committed
+into a `Text` column and `GET /api/exercise-catalog/` then failed its response
+model on every call, permanently, for both accounts. Reproduced before fixing:
+200 -> 500.
+
+This is the third instance of one shape this session: a value that no writer
+validates, stored, then rejected on the way out by a response model, leaving an
+endpoint that cannot be loaded and therefore a row that cannot be deleted. The
+first two were `_sanitise_exercise` on the sync push path and `_python_value` on
+restore. **A partial extraction creates exactly the drift the extraction was
+meant to remove**, and is harder to spot than no extraction at all, because the
+module looks like it owns the rules.
+
+The rule to carry forward: when moving validation into a shared layer, inventory
+the *constraints*, not the *validators*. Pydantic `Field(max_length=...)` is a
+constraint with no validator function, so reading the `@field_validator`
+decorators — which is what I did — finds none of them.
+
+**Consent could disagree with the grant.** `/authorize` renders the page from
+one request and stamps the scope from the next, merging form over query. A GET
+with no scope rendered "read-only"; a POST with `scope=askesis:read
+askesis:write` in the *body* was granted write. Never meaningfully exploitable —
+the POST carries the password — but the screen is where consent happens. Fixed
+by taking scope from the query string on both methods: the form has no `action`,
+so it posts to the same URL and the query survives, which makes the two the same
+expression.
+
+**Two things were claimed to be verified and were not.**
+- `mcp_db_role.sql`'s "self-verifying" block was a list of bare
+  `SELECT has_table_privilege(...)`. `ON_ERROR_STOP` aborts on SQL errors, not
+  on a result of `f` — so wrong grants printed wrong answers and exited 0. Now a
+  `DO $$ ... RAISE EXCEPTION $$` per group.
+- The scope gate lived in `server.py`, which imports the MCP SDK, which CI never
+  installs. Nothing in the repo could execute the single line separating a
+  read-only token from a write tool. Moved to `mcp_server/authz.py` — no SDK
+  imports, seven cases in the check script.
+
+**Watch out**
+- `check_mcp_writes.py` now detects a *mutating tool missing from*
+  `WRITE_TOOLS` structurally, by reading each tool's source for calls to
+  planning's write functions. That tool would otherwise be callable with a
+  read-only token and would silently lose its write, since the commit is keyed
+  on the same set.
+- Run `check_steps_paths.py` on a **fresh** database. Run after
+  `check_mcp_writes.py` it fails with `MultipleResultsFound` — a harness
+  ordering trap, not a product bug.
+
 ## 2026-09-28 — MCP writes, and the service layer that made them safe
 
 The connector was read-only by design, down to the database role. Making it

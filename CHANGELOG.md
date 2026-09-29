@@ -15,6 +15,49 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+Everything an adversarial review of the MCP write surface turned up.
+
+### Fixed
+
+- **An assistant writing long form notes could permanently break the Exercises
+  page.** The length limits lived in the web API's request schemas, and the
+  extraction that let the connector share the validation rules moved the name
+  and link checks but left the length checks behind. 2,500 characters of notes
+  saved fine and then made the exercise list fail on every later load — for both
+  accounts, with no way to repair it from the app, because the page you would
+  fix it on is the one that would not load. Every writable text field is now
+  bounded in one place.
+
+- **The connector could be granted write access from a screen that said
+  read-only.** The consent page was rendered from one request and the permission
+  stamped from the next, and the second could ask for more. It never mattered in
+  practice — the same request has to carry your password — but the screen is the
+  only place consent is expressed, so it should be impossible rather than
+  impractical. The permission is now decided by the page you actually saw.
+
+- **Clearing a routine's usual length did nothing.** Emptying the box and saving
+  returned success and kept the old value.
+
+- **Targets the settings page has always accepted started being refused** — a
+  400-calorie or 50-step goal. The new bounds were written to reject nonsense
+  and were also rejecting unusual-but-real values.
+
+- `set_targets` could clear parts of the weekly plan it says it does not touch,
+  and setting and clearing the same field in one call silently discarded the
+  value. Malformed input to `save_routine` produced an unexplained failure
+  rather than a message saying what was wrong.
+
+### Changed
+
+- **The database grant script now actually fails when the grants are wrong.**
+  Its checks printed the answer and exited successfully either way, so an
+  operator running it would see the wrong result and no error.
+
+- **The permission check that separates a read-only connection from a writing
+  one is now covered by the test script.** It previously lived in a module
+  nothing in the repo could load, so it was verified by reading it.
+
+
 ## [2.10.0] - 2026-09-28
 
 Alembic head: `seed_exercise_library`

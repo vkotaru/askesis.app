@@ -360,6 +360,27 @@ def authorize(config: MCPConfig):
             if request.method == "GET"
             else {**dict(request.query_params), **dict(await request.form())}
         )
+        if request.method != "GET":
+            # `scope` comes from the QUERY STRING on both methods, never the
+            # form body, so the page the user consented to and the grant that
+            # gets made are the same expression.
+            #
+            # Everything else merges form-over-query, and for scope that was
+            # wrong: the consent page is rendered from the GET's query string,
+            # but a POST carrying `scope=askesis:read askesis:write` in its body
+            # would be granted write after showing a read-only screen. The form
+            # has no `action`, so it posts back to this same URL and the query
+            # string survives -- which makes the query the half a body cannot
+            # contradict.
+            #
+            # A password is required either way, so this was never remotely
+            # exploitable. It should still be impossible rather than merely
+            # impractical: the screen is the only place consent is expressed.
+            query_scope = request.query_params.get("scope")
+            if query_scope is None:
+                params.pop("scope", None)
+            else:
+                params["scope"] = query_scope
         db = SessionLocal()
         try:
             validated = _validate_authorize(db, config, params)

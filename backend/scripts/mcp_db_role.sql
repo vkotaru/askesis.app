@@ -149,7 +149,13 @@ TO askesis_mcp;
 --    unreadable until someone grants it here, on purpose. Fail closed.
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 6. Verify. Every line below must print the stated expectation.
+-- 6. Verify. The DO block ASSERTS; the SELECTs below it are for reading.
+--
+-- The assertions are the point. `\set ON_ERROR_STOP on` aborts on a SQL error,
+-- not on a result of `f` -- so a block of bare `SELECT has_table_privilege(...)`
+-- prints the wrong answer and still exits 0. An operator running this as
+-- `psql < file` acts on the exit code, and it never came. RAISE EXCEPTION is
+-- what turns "self-verifying" from a description into a fact.
 -- ─────────────────────────────────────────────────────────────────────────────
 \echo ''
 \echo '== writable tables (expect: the three mcp_*, plus exercise_catalog,'
@@ -159,6 +165,62 @@ FROM information_schema.table_privileges
 WHERE grantee = 'askesis_mcp' AND privilege_type <> 'SELECT'
 GROUP BY table_name
 ORDER BY table_name;
+
+DO $$
+DECLARE
+    -- Everything that records what actually happened. The role may read these
+    -- and must never write them; this is the "plans, not history" line.
+    history text[] := ARRAY[
+        'activities', 'exercises', 'exercise_sets', 'daily_logs',
+        'daily_nutrition', 'meals', 'meal_food_items', 'body_measurements',
+        'training_plans', 'planned_workouts'
+    ];
+    -- The planning tables the write tools need.
+    planning text[] := ARRAY[
+        'exercise_catalog', 'user_settings', 'workout_templates',
+        'routine_exercises'
+    ];
+    t text;
+    priv text;
+BEGIN
+    -- users: no write, ever. The reason this role exists.
+    FOREACH priv IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE'] LOOP
+        IF has_table_privilege('askesis_mcp', 'users', priv) THEN
+            RAISE EXCEPTION 'askesis_mcp can % users -- the one thing this role must never allow', priv;
+        END IF;
+    END LOOP;
+
+    FOREACH t IN ARRAY history LOOP
+        IF NOT has_table_privilege('askesis_mcp', t, 'SELECT') THEN
+            RAISE EXCEPTION 'askesis_mcp cannot read %, which its tools serve', t;
+        END IF;
+        FOREACH priv IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE'] LOOP
+            IF has_table_privilege('askesis_mcp', t, priv) THEN
+                RAISE EXCEPTION 'askesis_mcp can % % -- that is logged history, not a plan', priv, t;
+            END IF;
+        END LOOP;
+    END LOOP;
+
+    FOREACH t IN ARRAY planning LOOP
+        IF NOT has_table_privilege('askesis_mcp', t, 'UPDATE') THEN
+            RAISE EXCEPTION 'askesis_mcp cannot write %; the write tools will fail at runtime', t;
+        END IF;
+    END LOOP;
+
+    -- Archiving is a flag, so the library is never deleted from.
+    IF has_table_privilege('askesis_mcp', 'exercise_catalog', 'DELETE') THEN
+        RAISE EXCEPTION 'askesis_mcp can DELETE from exercise_catalog; archiving is an is_archived flag';
+    END IF;
+
+    -- Never visible at all.
+    FOREACH t IN ARRAY ARRAY['report_tokens', 'data_shares', 'progress_photos'] LOOP
+        IF has_table_privilege('askesis_mcp', t, 'SELECT') THEN
+            RAISE EXCEPTION 'askesis_mcp can read %, which no tool exposes', t;
+        END IF;
+    END LOOP;
+
+    RAISE NOTICE 'grants verified: plans writable, history read-only, users untouchable';
+END $$;
 
 \echo ''
 \echo '== can it write to users? (expect f -- this is the whole point) =='

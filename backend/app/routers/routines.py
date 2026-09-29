@@ -115,6 +115,8 @@ def update_routine(
             exercises=data.exercises,
             default_duration_mins=data.default_duration_mins,
             routine=routine,
+            # A PUT carries the whole routine, so an omitted duration clears it.
+            replace=True,
         )
     except planning.PlanningError as exc:
         raise _http(exc) from None

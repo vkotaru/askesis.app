@@ -252,6 +252,101 @@ def main() -> int:
     check("  disciplines intact", r["weekly_plan"]["disciplines"], ["run", "strength"])
 
     print()
+    print("── length bounds (an MCP write must not be able to 500 the web app) ──")
+    refuses(
+        "over-long exercise notes refused",
+        T.create_exercise,
+        db,
+        a,
+        "Long Notes Lift",
+        notes="x" * 2508,
+    )
+    refuses(
+        "over-long muscle_group refused",
+        T.create_exercise,
+        db,
+        a,
+        "Long Group Lift",
+        muscle_group="g" * 80,
+    )
+    refuses(
+        "over-long movement note refused",
+        T.save_routine,
+        db,
+        a,
+        "Push A",
+        exercises=[{"name": "Overhead Press A", "notes": "y" * 300}],
+    )
+    refuses(
+        "an over-long name refused",
+        T.create_exercise,
+        db,
+        a,
+        "n" * 150,
+    )
+    refuses(
+        "a non-string movement name refused, not a crash",
+        T.save_routine,
+        db,
+        a,
+        "Push A",
+        exercises=[{"name": 123}],
+    )
+    refuses(
+        "a single object instead of a list refused",
+        T.save_routine,
+        db,
+        a,
+        "Push A",
+        exercises={"name": "Overhead Press A"},
+    )
+
+    print()
+    print("── each tool clears only what it can set ──")
+    refuses(
+        "set_targets cannot clear the weekly plan",
+        T.set_targets,
+        db,
+        a,
+        clear=["weekly_run_km"],
+    )
+    refuses(
+        "set_weekly_plan cannot clear a daily target",
+        T.set_weekly_plan,
+        db,
+        a,
+        clear=["step_target"],
+    )
+    refuses(
+        "setting and clearing the same field is a contradiction",
+        T.set_targets,
+        db,
+        a,
+        step_target=9000,
+        clear=["step_target"],
+    )
+
+    print()
+    print("── the scope gate ──")
+    # Previously untestable: it lived in server.py, which imports the MCP SDK,
+    # which CI never installs. It is the only thing between a read-only token
+    # and a write tool, so "verified by reading it" was not good enough.
+    from mcp_server.authz import may_write
+
+    W = "askesis:write"
+    check("read-only token cannot write", may_write(["askesis:read"], W), False)
+    check("read+write token can", may_write(["askesis:read", W], W), True)
+    check("no scopes at all cannot", may_write([], W), False)
+    check("a None scope list cannot", may_write(None, W), False)
+    check("case does not count as a match", may_write(["Askesis:Write"], W), False)
+    check("a prefix does not match", may_write(["askesis:writeable"], W), False)
+    check(
+        "a misconfigured empty write_scope denies, not allows",
+        may_write(["askesis:read", ""], ""),
+        False,
+    )
+
+    print()
     print("── the boundary: no tool writes history ──")
     # Not a runtime check — a structural one. If a write tool ever appears that
     # touches logged data, this list is where it would have to be declared, so
@@ -273,6 +368,32 @@ def main() -> int:
         sorted(T.WRITE_TOOLS - set(T.TOOLS)),
         [],
     )
+
+    # The dangerous direction, which the check above does not cover: a NEW
+    # mutating tool added to TOOLS and forgotten in WRITE_TOOLS would be
+    # callable with a read-only token AND would silently lose its write, since
+    # server.py only commits for tools it knows are writers.
+    #
+    # Detected structurally rather than by a list someone has to remember to
+    # update: any tool whose source calls a mutating planning function is a
+    # writer, by definition.
+    import inspect
+
+    mutators = (
+        "create_catalog_entry",
+        "update_catalog_entry",
+        "archive_catalog_entry",
+        "save_routine",
+        "apply_targets",
+        "write_routine_exercises",
+    )
+    undeclared = sorted(
+        name
+        for name, fn in T.TOOLS.items()
+        if name not in T.WRITE_TOOLS
+        and any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
+    )
+    check("no mutating tool is missing from WRITE_TOOLS", undeclared, [])
 
     db.close()
     print()

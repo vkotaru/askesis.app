@@ -1051,6 +1051,13 @@ def save_routine(
     """
     routine = planning.routine_by_name(db, user_id, name)
     if exercises is not None:
+        if isinstance(exercises, dict):
+            # Iterating a dict yields its KEYS, so without this the error names
+            # a field rather than the shape: "got 'name'".
+            raise ToolError(
+                "`exercises` must be a list of objects, not a single object. "
+                'For one movement pass [{"name": "..."}].'
+            )
         for item in exercises:
             if not isinstance(item, dict):
                 raise ToolError(
@@ -1058,7 +1065,16 @@ def save_routine(
                 )
             # Resolve against the library so a typo is caught here rather than
             # becoming a movement nothing can look up.
-            movement = (item.get("name") or "").strip()
+            raw_name = item.get("name")
+            if raw_name is not None and not isinstance(raw_name, str):
+                # `dict[str, Any]` puts no type on the value, so this is
+                # reachable. Without the check it is an AttributeError, which
+                # `_register` reports as a generic "unexpected error" -- telling
+                # the model nothing, so it retries the same shape.
+                raise ToolError(
+                    f"Each exercise's 'name' must be text, got {type(raw_name).__name__}"
+                )
+            movement = (raw_name or "").strip()
             if not movement:
                 raise ToolError("Each exercise needs a 'name'")
             entry = planning.catalog_by_name(db, user_id, movement)
@@ -1086,21 +1102,37 @@ def save_routine(
     return {"saved": True, **_routine_dict(routine)}
 
 
-#: What `set_targets` and `set_weekly_plan` between them may touch. Used to
-#: reject a `clear` naming something neither tool owns.
-_TARGET_FIELDS = frozenset(planning.TARGET_FIELDS)
+#: Each tool may only clear what it can set. Sharing one set between them let
+#: `set_targets(clear=["weekly_run_km"])` succeed, which its own description
+#: says it does not touch -- and a tool that quietly does more than it claims is
+#: worse than one that refuses.
+_DAILY_TARGETS = frozenset({"step_target", "calorie_target", "protein_target"})
+_WEEKLY_FIELDS = frozenset({"weekly_run_km", "weekly_bike_km", "weekly_disciplines"})
 
 
 def _apply(
-    db: Session, user_id: int, supplied: dict[str, Any], clear: list[str] | None
+    db: Session,
+    user_id: int,
+    supplied: dict[str, Any],
+    clear: list[str] | None,
+    clearable: frozenset[str],
 ) -> dict[str, Any]:
     """Shared tail of the two target tools."""
     if clear:
-        unknown = [f for f in clear if f not in _TARGET_FIELDS]
+        unknown = [f for f in clear if f not in clearable]
         if unknown:
             raise ToolError(
-                f"Cannot clear {', '.join(unknown)}. "
-                f"Valid fields are: {', '.join(sorted(_TARGET_FIELDS))}"
+                f"Cannot clear {', '.join(unknown)} here. "
+                f"This tool can clear: {', '.join(sorted(clearable))}"
+            )
+        # Applied before the supplied values are read, so naming a field in both
+        # is a contradiction rather than a silent discard: setting 9000 and
+        # clearing the same field used to report `changed: []` and drop the
+        # 9000 with no explanation.
+        conflict = [f for f in clear if f in supplied]
+        if conflict:
+            raise ToolError(
+                f"Cannot both set and clear {', '.join(conflict)}. Pick one."
             )
         for field in clear:
             supplied[field] = None
@@ -1152,7 +1184,7 @@ def set_targets(
         supplied["protein_target"] = protein_target
     if not supplied and not clear:
         raise ToolError("Nothing to set. Pass a target, or name one in `clear`.")
-    return _apply(db, user_id, supplied, clear)
+    return _apply(db, user_id, supplied, clear, _DAILY_TARGETS)
 
 
 def set_weekly_plan(
@@ -1185,7 +1217,7 @@ def set_weekly_plan(
             raise ToolError(str(exc)) from None
     if not supplied and not clear:
         raise ToolError("Nothing to set. Pass a value, or name one in `clear`.")
-    return _apply(db, user_id, supplied, clear)
+    return _apply(db, user_id, supplied, clear, _WEEKLY_FIELDS)
 
 
 TOOLS = {
