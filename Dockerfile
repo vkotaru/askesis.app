@@ -124,10 +124,15 @@ RUN pip install --upgrade pip && \
     pip install --require-hashes -r requirements-mcp.lock
 
 # The shared model layer — exactly the modules mcp_server imports, no more.
+#
+# `planning.py` is here because the write tools call it: it is the one
+# implementation of "what is a valid routine / exercise / target", shared with
+# the REST API so the two cannot drift. It imports no FastAPI, which is what
+# makes that possible — the assertion below is what proves it still does not.
 COPY backend/app/__init__.py   backend/app/config.py \
      backend/app/database.py   backend/app/disciplines.py \
-     backend/app/models.py     backend/app/provenance.py \
-     backend/app/security.py   ./app/
+     backend/app/models.py     backend/app/planning.py \
+     backend/app/provenance.py backend/app/security.py   ./app/
 COPY backend/mcp_server/ ./mcp_server/
 
 # Fail the BUILD if the isolation ever stops holding, rather than discovering it
