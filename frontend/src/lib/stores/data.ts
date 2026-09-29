@@ -68,6 +68,7 @@ import {
   type CatalogEntry,
   type LastSession,
   type Routine,
+  type RoutineInput,
   type CatalogInput,
 } from '$lib/api/client';
 import {
@@ -1144,6 +1145,31 @@ export const offlineApi = {
     } catch {
       return [];
     }
+  },
+
+  /**
+   * Save a routine. Online only, like catalogue entries and for the same
+   * reason: a routine references catalogue rows by **server** id, and an
+   * offline-created one has none to reference.
+   *
+   * The Dexie copy is updated directly rather than left to the next
+   * revalidation, so the Routines page shows it the moment you get there
+   * instead of a beat later.
+   */
+  async createRoutine(data: RoutineInput): Promise<Routine> {
+    const routine = await api.createRoutine(data);
+    const uid = currentUserId();
+    if (uid) {
+      await db.routines.put({
+        serverId: routine.id,
+        userId: uid,
+        name: routine.name,
+        default_duration_mins: routine.default_duration_mins ?? null,
+        exercises: routine.exercises ?? [],
+        fetchedAt: now(),
+      });
+    }
+    return routine;
   },
 
   async getCatalog(q?: string): Promise<CatalogEntry[]> {

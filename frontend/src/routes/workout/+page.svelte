@@ -56,6 +56,7 @@
   } from '$lib/utils/units';
   import { formatDuration, parseDuration } from '$lib/utils/duration';
   import { describeSet } from '$lib/utils/sets';
+  import { syncErrors } from '$lib/sync';
   import type { CatalogEntry, LastSession, SetType, TrackingType } from '$lib/api/client';
   import type { DraftSet } from '$lib/db';
   import {
@@ -88,6 +89,11 @@
   let showFinish = false;
   let finishName = '';
   let finishNotes = '';
+  /**
+   * Off by default. Most sessions are not templates, and a Routines list that
+   * grows by one every time you train stops being a list of routines.
+   */
+  let alsoSaveRoutine = false;
   let saving = false;
   let error = '';
 
@@ -115,6 +121,15 @@
   $: distanceUnit = $settings.distance_unit;
   $: distanceLabel = getDistanceLabel(distanceUnit);
   $: totals = sessionTotals($liveSession);
+  // The day the session STARTED, matching what finishSession writes — a workout
+  // finished after midnight belongs to the day it happened.
+  $: sessionDate = $liveSession
+    ? new Date($liveSession.startedAt).toLocaleDateString(undefined, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      })
+    : '';
 
   // Redirect only once we KNOW there is no session. `liveSession` is null both
   // when nothing is running and before the draft has been read from Dexie, and
@@ -320,7 +335,20 @@
     if (saving) return;
     saving = true;
     try {
-      await finishSession(finishName, finishNotes);
+      const { routineSaved } = await finishSession(finishName, finishNotes, {
+        alsoSaveRoutine,
+      });
+      // Saving a routine needs a connection; the workout itself does not. If
+      // only half of it landed, say so — through the toast, because we are
+      // about to leave this screen and the Routines page being quietly empty
+      // later is exactly the confusion this control exists to end.
+      if (alsoSaveRoutine && !routineSaved) {
+        syncErrors.set([
+          `"${finishName}" was saved to Activities, but the routine needs a ` +
+            `connection. Save it again from Routines when you're back online.`,
+        ]);
+        setTimeout(() => syncErrors.set([]), 12000);
+      }
       await goto('/', { replaceState: true });
     } catch {
       error = 'Could not save the workout. Your sets are still here — try again.';
@@ -896,7 +924,30 @@
       <div>
         <label for="finish-name" class="label">Name</label>
         <input id="finish-name" bind:value={finishName} class="input" />
+        <!-- Said out loud because it was not obvious: naming the session names
+             the ACTIVITY. It lands in Activities and on the calendar for the
+             day it started. Nothing here has ever created a routine, and a name
+             box on a finish screen reads like it might. -->
+        <p class="text-[11px] text-gray-400 mt-1">
+          Saved to Activities for {sessionDate}.
+        </p>
       </div>
+
+      {#if !$liveSession.routineId}
+        <!-- Only offered when the session did not come from a routine: you
+             already have that one, and a second copy under the same name is
+             clutter, not a feature. -->
+        <label class="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" bind:checked={alsoSaveRoutine} class="mt-0.5 h-4 w-4" />
+          <span class="text-sm">
+            Also save as a routine
+            <span class="block text-[11px] text-gray-400">
+              Keeps the movements and the number of sets, so you can start this
+              session again in one tap. Not the weights — those are meant to move.
+            </span>
+          </span>
+        </label>
+      {/if}
 
       <p class="text-sm text-gray-500">
         {sessionDurationMins($liveSession) ?? 0} min · {totals.sets} sets ·

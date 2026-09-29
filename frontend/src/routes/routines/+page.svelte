@@ -12,7 +12,9 @@
    * shared with the household, the programming is yours.
    */
   import { onMount } from 'svelte';
-  import { Plus, X, Trash2, Pencil, Search, ListChecks } from 'lucide-svelte';
+  import { goto } from '$app/navigation';
+  import { liveSession, startSession } from '$lib/stores/workout';
+  import { Plus, X, Trash2, Pencil, Search, ListChecks, Play } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { offlineApi } from '$lib/stores/data';
   import {
@@ -66,6 +68,37 @@
     formDuration = '';
     formExercises = [];
     showForm = true;
+  }
+
+  let starting = false;
+
+  /**
+   * Start a session from this routine.
+   *
+   * Refuses while one is already running rather than replacing it: a live draft
+   * is the only copy of those sets, and "start" silently discarding them would
+   * be unrecoverable.
+   */
+  async function begin(routine: Routine) {
+    if (starting) return;
+    if ($liveSession) {
+      if (
+        !confirm(
+          `"${$liveSession.name}" is still running. Finish or discard it first — ` +
+            'open it now?'
+        )
+      )
+        return;
+      await goto('/workout');
+      return;
+    }
+    starting = true;
+    try {
+      await startSession({ routine, name: routine.name });
+      await goto('/workout');
+    } finally {
+      starting = false;
+    }
   }
 
   function openEdit(routine: Routine) {
@@ -270,6 +303,19 @@
               <p class="text-[10px] text-gray-400">~{routine.default_duration_mins} min</p>
             {/if}
           </div>
+          <!-- The page calls these "saved workouts you repeat" and offered no way
+               to repeat one: you had to go back to the dashboard to start it.
+               First control on the card, because starting is what a routine is
+               for and editing it is the rare thing. -->
+          <button
+            type="button"
+            disabled={starting}
+            title="Start this workout"
+            class="btn-primary py-1.5 px-3 text-xs flex items-center gap-1 disabled:opacity-50"
+            on:click={() => begin(routine)}
+          >
+            <Play size={14} /> Start
+          </button>
           <button
             type="button"
             title="Edit"

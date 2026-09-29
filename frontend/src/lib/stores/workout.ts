@@ -48,6 +48,7 @@ import type {
   CatalogEntry,
   Exercise,
   Routine,
+  RoutineInput,
   SetType,
   TrackingType,
 } from '$lib/api/client';
@@ -555,9 +556,13 @@ export function sessionDurationMins(draft: LiveSessionDraft | null): number | nu
  * server ignoring unknown keys — that would make a client field's fate depend on
  * a Pydantic default.
  */
-export async function finishSession(name: string, notes?: string): Promise<void> {
+export async function finishSession(
+  name: string,
+  notes?: string,
+  options: { alsoSaveRoutine?: boolean } = {}
+): Promise<{ routineSaved: boolean }> {
   const draft = get(liveSession);
-  if (!draft) return;
+  if (!draft) return { routineSaved: false };
 
   const exercises: Exercise[] = draft.exercises
     .map((ex, position) => ({
@@ -595,8 +600,77 @@ export async function finishSession(name: string, notes?: string): Promise<void>
     exercises,
   };
 
+  // The activity first, always. It is the record of something that happened
+  // and exists nowhere else; the routine is a convenience derived from it, and
+  // a failure to save one must never cost the other.
   await offlineApi.createActivity(payload);
+
+  let routineSaved = false;
+  if (options.alsoSaveRoutine) {
+    try {
+      await offlineApi.createRoutine(routineFromDraft(draft, payload.name));
+      routineSaved = true;
+    } catch {
+      // Online-only, so this is what an offline finish looks like. Reported
+      // rather than retried: the caller says so plainly and the workout is
+      // already safe.
+    }
+  }
+
   await discardSession();
+  return { routineSaved };
+}
+
+/**
+ * The session you just did, as a plan you could do again.
+ *
+ * Every movement crosses, including ones you added and then did not log —
+ * they were part of the plan even if the day did not go that way. What does
+ * NOT cross is the weight: a routine is the intention, and pinning today's
+ * load into it turns "did I hit my targets" into a comparison of a number
+ * with itself. Sets and reps do cross, because "3 x 8" is the shape of the
+ * session and re-typing it is the thing a routine exists to avoid.
+ */
+function routineFromDraft(draft: LiveSessionDraft, name: string): RoutineInput {
+  return {
+    name,
+    default_duration_mins: sessionDurationMins(draft) ?? undefined,
+    exercises: draft.exercises.map((ex, position) => {
+      const done = ex.sets.filter((s) => s.state === 'logged');
+      const counted = done.length ? done : ex.sets;
+      const kind = ex.trackingType ?? 'weight_reps';
+      return {
+        name: ex.name,
+        catalog_id: ex.catalogId,
+        position,
+        target_sets: counted.length || null,
+        // Meaningless for a plank or a treadmill interval, and a stray number
+        // in that column would read as a rep target on a movement that has no
+        // reps.
+        target_reps:
+          kind === 'weight_reps' || kind === 'reps' ? (modalReps(counted) ?? null) : null,
+        target_weight_kg: null,
+      };
+    }),
+  };
+}
+
+/** The rep count you did most often. Ties go to the first, which is the heaviest. */
+function modalReps(sets: DraftSet[]): number | undefined {
+  const counts = new Map<number, number>();
+  for (const s of sets) {
+    if (s.reps == null) continue;
+    counts.set(s.reps, (counts.get(s.reps) ?? 0) + 1);
+  }
+  let best: number | undefined;
+  let bestCount = 0;
+  for (const [reps, n] of counts) {
+    if (n > bestCount) {
+      best = reps;
+      bestCount = n;
+    }
+  }
+  return best;
 }
 
 function timeOfDay(at: Date): ActivityInput['time_of_day'] {
