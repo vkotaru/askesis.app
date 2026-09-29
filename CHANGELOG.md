@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-09-29
+
+Alembic head: `add_exercise_tracking`
+
 The gym logger, after actually using it in a gym.
 
 ### Added
@@ -66,7 +70,6 @@ The gym logger, after actually using it in a gym.
 - Asking the assistant how a timed movement is progressing returned an empty
   answer that read as "you have never done this". It now says why there is no
   top set to track.
-
 
 ## [2.10.1] - 2026-09-28
 
@@ -1529,7 +1532,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.10.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/vkotaru/askesis.app/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/vkotaru/askesis.app/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/vkotaru/askesis.app/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/vkotaru/askesis.app/compare/v2.8.0...v2.9.0
