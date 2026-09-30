@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-09-29
+
+Alembic head: `add_exercise_tracking`
+
 ### Added
 
 - **Any MCP client can connect, not just Claude.** Nothing in the connector was
@@ -39,7 +43,6 @@ does not roll the database back — that head is what you would need to
   The code is now spent the moment a redemption fails. Nobody's connection is
   affected: a real client's own redemption carries the right proof and never
   reaches that path.
-
 
 ## [2.12.0] - 2026-09-29
 
@@ -1577,7 +1580,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/vkotaru/askesis.app/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vkotaru/askesis.app/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/vkotaru/askesis.app/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/vkotaru/askesis.app/compare/v2.10.0...v2.10.1
