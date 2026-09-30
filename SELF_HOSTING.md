@@ -458,11 +458,60 @@ Also confirm the app's sidecar has no Funnel: `grep -c AllowFunnel
 tailscale/serve.json` must print `0`, and the admin console must show no Funnel
 badge on the `askesis` node.
 
-### 6. Add it in Claude
+### 6. Connect a client
 
-Settings → Connectors → Add custom connector, URL `https://askesis-mcp.<tailnet>.ts.net/mcp`.
-Type it exactly — a trailing slash breaks the audience check and surfaces only as a
+Nothing in this server is Claude-specific. It is a standard remote MCP server —
+streamable HTTP at `/mcp`, RFC 9728 discovery, RFC 7591 dynamic registration,
+PKCE S256 — so any MCP client that speaks remote-HTTP-with-OAuth can connect on
+the same terms. `backend/scripts/check_oauth_flow.py` drives the whole flow as a
+generic native client (loopback redirect, no `resource` parameter, a client name
+that is not Claude) and CI runs it, so this stays true rather than merely being
+true today.
+
+The URL is `https://askesis-mcp.<tailnet>.ts.net/mcp` in every client. **Type it
+exactly** — a trailing slash breaks the audience check and surfaces only as a
 generic connection error.
 
-You will be redirected to a login/consent page served by the MCP node. It lists
-what you are sharing, free-text notes on daily logs and activities included.
+**Claude** — Settings → Connectors → Add custom connector.
+
+**Gemini CLI** — in `~/.gemini/settings.json`:
+
+```jsonc
+{
+  "mcpServers": {
+    "askesis": {
+      "httpUrl": "https://askesis-mcp.<your-tailnet>.ts.net/mcp",
+      "oauth": {
+        "enabled": true,
+        // State these. /authorize grants exactly what is asked for and always
+        // keeps read, so a client that requests nothing gets a read-only token
+        // and every write tool fails with "reconnect the connector".
+        "scopes": ["askesis:read", "askesis:write"]
+      }
+    }
+  }
+}
+```
+
+Then `/mcp auth askesis`. It opens the consent page in a browser and catches the
+callback on a loopback port, which `_redirect_allowed` permits for any native
+client (RFC 8252 §7.3 — the port is ephemeral and is not matched).
+
+**The client has to be on the tailnet.** `askesis-mcp` is a tailnet hostname; a
+CLI on your laptop or on the server itself reaches it, and anything running in
+someone else's cloud does not. Putting it within reach of a hosted assistant
+means Funnel, which puts this container on the public internet — read the threat
+model at the top of this section before doing that. The least-privilege database
+role exists precisely because that container is the exposed one.
+
+A **browser-based** client additionally sends an `Origin` header, which the SDK's
+DNS-rebinding protection checks. `claude.ai` and `claude.com` are allowed by
+default; add others with `MCP_ALLOWED_ORIGINS` (comma-separated) in `.env`.
+Native clients send no Origin and are unaffected.
+
+Whichever client, you are redirected to a login/consent page served by the MCP
+node. It names the client from its own registration — so it says whatever that
+client called itself — and lists what you are sharing, free-text notes on daily
+logs and activities included. If it can change data it says so and names what;
+if it still says "read-only, cannot change anything" while you expected write,
+the client did not request the write scope.

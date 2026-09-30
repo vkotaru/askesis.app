@@ -15,6 +15,32 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Any MCP client can connect, not just Claude.** Nothing in the connector was
+  ever Claude-specific — it is a standard remote MCP server — but that was only
+  ever true by inspection. It is now checked: a script drives the whole
+  authorization flow as a generic client (a loopback callback, no audience
+  parameter, a name that is not Claude) and CI runs it. Setup for Gemini CLI is
+  in `SELF_HOSTING.md`, including the one thing that catches people out: state
+  the scopes, or you get a read-only connection and every write fails.
+
+  The client still has to be on your tailnet. That is the point of the design,
+  not an oversight.
+
+- `MCP_ALLOWED_ORIGINS`, for adding a browser-based client without editing code.
+  Command-line clients don't need it.
+
+### Fixed
+
+- **An authorization code survived a failed proof.** Redeeming a code with the
+  wrong proof-key failed, correctly — but left the code usable for the rest of
+  its short life, so someone who had intercepted one kept their chance at it.
+  The code is now spent the moment a redemption fails. Nobody's connection is
+  affected: a real client's own redemption carries the right proof and never
+  reaches that path.
+
+
 ## [2.12.0] - 2026-09-29
 
 Alembic head: `add_exercise_tracking`

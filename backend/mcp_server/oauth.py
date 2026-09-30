@@ -54,8 +54,11 @@ ALLOWED_REDIRECT_HOSTS = {"claude.ai", "claude.com"}
 ALLOWED_REDIRECT_PATHS = {"/api/mcp/auth_callback"}
 
 #: RFC 8252 §7.3 — a native client gets an ephemeral loopback port, so the port
-#: is ignored when matching. Enabled for Claude Code / Desktop; the consent page
-#: shows an explicit warning for these.
+#: is ignored when matching. This is what lets ANY native MCP client connect:
+#: Claude Code and Desktop, Gemini CLI, anything else that listens on localhost
+#: for its callback. The HTTPS hosts above are additional, for browser clients,
+#: not a restriction on who may connect. The consent page shows an explicit
+#: warning for a loopback redirect, because a local listener can be anything.
 ALLOW_LOOPBACK_REDIRECTS = True
 
 #: Registrations are cheap to create and this table has no natural bound.
@@ -590,6 +593,26 @@ def _authorization_code(db, config: MCPConfig, form) -> Response:
             "invalid_grant", "redirect_uri does not match the authorization request."
         )
     if not verify_pkce(verifier, row.code_challenge, row.code_challenge_method):
+        # Burn the code. A failed verifier means either a broken client or
+        # someone redeeming a code they intercepted, and in the second case the
+        # legitimate client has not used it yet -- so leaving it live keeps the
+        # attacker's one chance open for the rest of its TTL. The verifier is
+        # 256 bits, so this is not about brute force; it is that an authorization
+        # code presented with the wrong proof has already failed its one job,
+        # and OAuth 2.1 says to treat that as the attack it might be.
+        #
+        # The legitimate client is not harmed: its own redemption carries the
+        # right verifier and never reaches this branch. It would only lose a
+        # code it had already lost control of.
+        db.execute(
+            update(MCPAuthCode)
+            .where(MCPAuthCode.id == row.id, MCPAuthCode.consumed_at.is_(None))
+            .values(consumed_at=datetime.utcnow())
+        )
+        db.commit()
+        logger.warning(
+            "PKCE verification failed for client %s; code burned", row.client_id
+        )
         return _oauth_error("invalid_grant", "PKCE verification failed.")
 
     # Single-use, enforced by the database rather than by the check above: the

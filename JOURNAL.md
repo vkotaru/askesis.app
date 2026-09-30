@@ -21,6 +21,60 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-29 — The OAuth surface, finally executed instead of read
+
+"Can this work with Gemini?" turned out to be a question about testing, not
+about Gemini.
+
+**The answer was yes, and I could only say so by reading the code.** Nothing in
+the connector is Claude-specific: `_redirect_allowed` permits any loopback
+redirect (RFC 8252 §7.3), `resource` is optional and defaults, PKCE is
+standard, and the consent page has always rendered `client_name` from the
+client's own registration — the "Claude" strings are all in comments. But
+`server.py` imports the MCP SDK, CI cannot install it, and so the most
+security-critical surface in the repo had *zero* executable coverage. Same
+finding as the scope gate two days ago, one layer up.
+
+`oauth.py` imports no SDK — Starlette, SQLAlchemy, pyjwt. So the entire flow
+runs in-process over an httpx ASGI transport: discover, register, consent,
+exchange, refresh. `scripts/check_oauth_flow.py`, 32 assertions, wired into the
+MCP isolation job.
+
+It is deliberately shaped as a client that is **not** Claude — loopback
+callback on a random port, no `resource` parameter at all, `client_name` of
+"Some Other CLI" — and two of its assertions are about that directly: the
+consent page contains the registered name, and does not contain "Claude".
+
+**Writing it found a real one.** A code redeemed with the wrong PKCE verifier
+was rejected and left *live* for the rest of its TTL. Not brute-forceable (256
+bits), but the threat model for PKCE is an intercepted code, and in that
+scenario the attacker's failed attempt was costing them nothing while the
+legitimate client had not redeemed yet. Now the code is burned on verification
+failure. A real client never reaches that branch.
+
+Three of the four initial failures were my *expectations* being wrong, and each
+was worth learning rather than papering over:
+- `scopes_supported` legitimately includes `offline_access` (that is what a
+  refresh token is).
+- A bad `resource` is refused **with a 302 carrying `error=invalid_target`** —
+  RFC 6749 §4.1.2.1 says a client-actionable failure goes back to the client.
+  The assertion that matters is "no code came with it".
+- A wrong password re-renders the consent form with **401**, not 200, and
+  crucially does not redirect: a failed login is not the client's business.
+
+**Watch out**
+- `MCPConfig` refuses to build under `DEV_MODE`, so the check runs with
+  `DEV_MODE=false` and a throwaway `SECRET_KEY`. That is a feature — it means
+  the script exercises real bcrypt authentication rather than the dev bypass.
+- The check needs `pyjwt`, which is in `requirements-mcp.txt` and deliberately
+  not in `requirements.txt`. CI installs that one package alone; installing the
+  whole MCP tree would drag in a pydantic that conflicts with the app's pin,
+  which is the split the job exists to defend. On this dev machine the venv has
+  no pip, so `venv/lib/python3.12/site-packages/jwt` is a **symlink** to the
+  system dist-packages copy — that is why `import jwt` works there.
+- httpx 0.26 (the app tree) has no *sync* ASGI transport. The script is async so
+  one file runs under either dependency tree.
+
 ## 2026-09-29 — "I saved a session with a name but don't see it in Routines"
 
 Not a bug in the sense of a broken code path: `finishSession` writes one

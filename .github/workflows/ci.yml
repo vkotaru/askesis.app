@@ -158,6 +158,25 @@ jobs:
 
           echo "MCP isolation invariants hold"
 
+      # The OAuth flow itself, driven end to end as a client actually performs
+      # it: discover, register, consent, exchange, refresh. `oauth.py` imports
+      # no MCP SDK, so this runs over an ASGI transport with no network and no
+      # container -- which is the only reason the most security-critical surface
+      # in the repo can be executed by CI at all rather than read.
+      #
+      # It needs pyjwt, which lives in the MCP dependency tree and deliberately
+      # not in requirements.txt. Installed on its own rather than the whole tree:
+      # `mcp` would drag in a pydantic that conflicts with the app's pin, which
+      # is the split this job exists to defend.
+      - name: MCP OAuth flow
+        env:
+          DATABASE_URL: "sqlite:///./oauthflow.db"
+        run: |
+          set -e
+          pip install "pyjwt==2.15.0"
+          DEV_MODE=true SECRET_KEY=ci-only-not-a-real-secret python -m alembic upgrade head
+          python scripts/check_oauth_flow.py
+
       - name: Check formatting with Ruff
         run: ruff format --check .
 

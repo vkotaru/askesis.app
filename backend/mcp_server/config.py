@@ -131,7 +131,20 @@ class MCPConfig:
         # client cannot forge. See ForwardedHostMiddleware in server.py — do not
         # delete it thinking the list below still protects anything.
         self.allowed_hosts = [host, f"{host}:443", "localhost", "localhost:443"]
+        # Browser origins the SDK's DNS-rebinding protection will accept. This
+        # is a *browser* control: a native client (a CLI, a desktop app) sends
+        # no Origin header and is unaffected, which is why Claude Code and
+        # Gemini CLI both connect without appearing here. The two entries below
+        # are for the web clients that do send one.
+        #
+        # MCP_ALLOWED_ORIGINS exists so adding another browser-based client is a
+        # config change rather than a code change. Comma-separated, appended.
         self.allowed_origins = ["https://claude.ai", "https://claude.com"]
+        extra_origins = os.environ.get("MCP_ALLOWED_ORIGINS", "").strip()
+        if extra_origins:
+            self.allowed_origins += [
+                o.strip().rstrip("/") for o in extra_origins.split(",") if o.strip()
+            ]
 
         # Two scopes, and `required_scopes` on the server must stay the READ
         # one alone. The SDK reads that list as "the token must carry all of

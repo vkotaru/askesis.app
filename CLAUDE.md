@@ -211,6 +211,16 @@ Key modules:
 - `app/routers/nutrition.py` — meal CRUD plus optional Gemini meal-photo analysis
   (`gemini-1.5-flash`). Without `GEMINI_API_KEY`, `/api/nutrition/analyze-photo` returns 503
   and nothing else changes. This is the only LLM call in the app.
+- **The MCP connector is client-agnostic.** It is a standard remote MCP server
+  (streamable HTTP `/mcp`, RFC 9728 discovery, RFC 7591 registration, PKCE S256,
+  optional RFC 8707 audience), so Gemini CLI or any other client connects on the
+  same terms as Claude — `_redirect_allowed` permits any loopback redirect, and
+  the consent page names the client from its own registration. The remaining
+  Claude-specific strings are comments. `backend/scripts/check_oauth_flow.py`
+  drives the whole flow in-process as a *non-Claude* native client and runs in
+  CI; it is the only executable coverage of that surface, because `server.py`
+  imports the MCP SDK and CI cannot install it (`oauth.py` deliberately does
+  not). Setup for each client is in `SELF_HOSTING.md`.
 - `app/planning.py` — the exercise library, routines and targets, as plain
   SQLAlchemy with **no FastAPI**. It exists so `mcp_server/` can call it: that
   package may not import `app.routers` (CI greps for it, and the MCP image ships
