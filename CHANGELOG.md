@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-09-30
+
+Alembic head: `add_exercise_tracking`
+
 ### Added
 
 - **A Trends page.** The dashboard answers "how is this week going"; nothing
@@ -42,7 +46,6 @@ does not roll the database back — that head is what you would need to
 - The "hide the scrollbar" style for horizontally scrolling rows only ever
   applied inside the navigation menu, so every other use of it showed a
   scrollbar anyway.
-
 
 ## [2.13.0] - 2026-09-29
 
@@ -1609,7 +1612,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/vkotaru/askesis.app/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/vkotaru/askesis.app/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vkotaru/askesis.app/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/vkotaru/askesis.app/compare/v2.10.1...v2.11.0
