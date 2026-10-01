@@ -74,6 +74,17 @@ body {
            focus:outline-none focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-800;
   }
 
+  /* Used by any horizontally scrolling chip row. It previously existed only
+     inside Layout.svelte's scoped <style>, so every other use of the class
+     silently did nothing and showed a scrollbar. */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   .label {
     @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2;
   }

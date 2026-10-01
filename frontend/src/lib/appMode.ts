@@ -42,10 +42,15 @@ export interface ModeDefinition {
  * fields on the same row without anyone typing. Measurements, progress photos
  * and the calendar were considered and left out — the dashboard's five-week
  * grid already answers what the calendar did.
+ *
+ * Trends is in for the same reason Daily Log is: body weight over six months is
+ * the chart a lifter actually wants, and the page hides its own nutrition
+ * metrics in this mode rather than being hidden wholesale (`trendsNutrition`).
  */
 const STRENGTH_ROUTES = [
   '/',
   '/workout',
+  '/trends',
   '/daily-log',
   '/activities',
   '/routines',
@@ -132,6 +137,10 @@ const KNOWN_PARTS = [
   'nutritionTargets',
   'weeklyPlan',
   'modePicker',
+  // The Trends page stays in strength mode; its calorie, protein and distance
+  // metrics do not. A part rather than a route, because hiding the whole page
+  // would also take the weight and sleep history with it.
+  'trendsNutrition',
 ];
 
 export function partVisible(mode: AppMode | string | null | undefined, key: string): boolean {

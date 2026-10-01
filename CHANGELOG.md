@@ -15,6 +15,35 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A Trends page.** The dashboard answers "how is this week going"; nothing
+  answered "what have the last six months looked like". Pick a metric — weight,
+  sleep, steps, calories, protein, training time, distance — and a range from
+  one month to everything you have.
+
+  Past about three months it switches from a bar a day to a weekly average,
+  then to monthly, because a year of daily bars is one pixel each on a phone.
+  It says which it is doing. Every average is over **the days you actually
+  logged**, and it tells you how many that was out of the window — "7.1 h
+  average" means a different thing over 142 nights than over nine.
+
+  It reads entirely from this device, so it works with no connection. It also
+  says how far back this device goes: the app keeps the most recent 500 days
+  locally, and a chart that just began somewhere would otherwise look like lost
+  data.
+
+  Your step, calorie and protein targets are drawn on as a dashed line. On a
+  strength-only account the page keeps weight, sleep, steps and training time
+  and drops the nutrition metrics, rather than disappearing entirely.
+
+### Fixed
+
+- The "hide the scrollbar" style for horizontally scrolling rows only ever
+  applied inside the navigation menu, so every other use of it showed a
+  scrollbar anyway.
+
+
 ## [2.13.0] - 2026-09-29
 
 Alembic head: `add_exercise_tracking`

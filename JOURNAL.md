@@ -21,6 +21,54 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-09-30 — Trends, and the thing that made it cheap
+
+"No way to look at six months of calories." The decisive fact turned up before
+any design work: **`hydrate` pulls 500 rows per table into Dexie and nothing
+ever evicts them.** So a full-history view needs no endpoint, no pagination and
+no network — about sixteen months of daily logs are already on the device. That
+turned a backend feature into a frontend one.
+
+A dedicated `/trends` page rather than range selectors on the dashboard cards,
+because the two are answering different questions and a 6-month bar chart inside
+a dashboard-sized card is cramped in a way no amount of care fixes. The
+dashboard stays a this-week view, which is its job.
+
+**Aggregation is the whole problem.** A year is ~365 points across ~310 CSS px.
+`lib/trends.ts` holds the rules, in one place, because they are the same rules
+three cards already implement separately:
+- Average over the days that **have a figure**, never over the calendar. Two
+  logged days totalling 4,400 kcal is 2,200/day, not 631. `NutritionChartCard`
+  carries the same comment; this is that bug one zoom level out, where nobody
+  would notice it.
+- A missing day is missing, not zero. No point is invented.
+- Granularity comes from the data's **actual span**, not the button pressed:
+  "All" on three months of logging should still be daily.
+
+**SVG scaling bit twice, and both are worth remembering.**
+1. `viewBox="0 0 560 300"` with `height: 220px` in CSS letterboxes the drawing
+   into the middle of the box — `preserveAspectRatio` defaults to `meet`. The
+   chart rendered at about half the height of the card it sat in. `h-auto` and
+   let the viewBox's ratio decide.
+2. Every length inside a viewBox is scaled by the same factor as the box. At
+   310px wide that is ~0.55, so `font-size: 10` axis labels came out at five and
+   a half pixels. The sizes in that file are now chosen for how they *render*,
+   and say so.
+
+**Watch out**
+- `scrollbar-hide` existed only inside `Layout.svelte`'s scoped `<style>`.
+  Svelte scopes component styles, so every other use of that class in the repo
+  did nothing. Moved into `app.css`.
+- An x-axis labeller that keeps "every Nth, plus always the last" draws the last
+  two on top of each other whenever `(n-1) % N` is small.
+- The trend arrow is **grey unless the metric has an opinion**. Sleep up is
+  good, steps up is good; weight is not the app's business — this install is
+  used by someone cutting and someone who is not.
+- Verification used a *scratch copy* of the dev database seeded with 14 months
+  (`scratchpad/seed_trends.py`), not the real one. In DEV_MODE the synthetic user
+  is not user 1, so a seed written against `User.first()` silently fills rows
+  nobody can see.
+
 ## 2026-09-29 — The OAuth surface, finally executed instead of read
 
 "Can this work with Gemini?" turned out to be a question about testing, not
