@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-10-05
+
+Alembic head: `add_exercise_tracking`
+
 ### Changed
 
 - **The icon rail is five icons, not fourteen.** A column of identical grey
@@ -37,7 +41,6 @@ does not roll the database back — that head is what you would need to
   happened: "3 days filled", "Nothing new", or the actual error. It is absent
   entirely when no watch is connected to your account, rather than present and
   permanently greyed.
-
 
 ## [2.14.0] - 2026-09-30
 
@@ -1636,7 +1639,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.15.0...HEAD
+[2.15.0]: https://github.com/vkotaru/askesis.app/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/vkotaru/askesis.app/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/vkotaru/askesis.app/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vkotaru/askesis.app/compare/v2.11.0...v2.12.0
