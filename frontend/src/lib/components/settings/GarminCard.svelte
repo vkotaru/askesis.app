@@ -1,88 +1,42 @@
 <script lang="ts">
+  /**
+   * The full Garmin panel: what it does, when it runs, how the last run went,
+   * and the one-time login instructions when it needs them.
+   *
+   * The *state* lives in `$lib/garmin` because the header's sync button reads
+   * the same thing — one poller, one "can I sync right now" predicate, one
+   * phrasing of "3 days filled". This file is the rendering.
+   */
   import { onMount, onDestroy } from 'svelte';
   import { RefreshCw, Watch, AlertTriangle, Clock, CheckCircle2 } from 'lucide-svelte';
   import { clsx } from 'clsx';
-  import { api, type GarminStatus } from '$lib/api/client';
-  import { sync } from '$lib/sync';
-
-  let status: GarminStatus | null = null;
-  // Distinct from "status.enabled === false": this is "we could not ask".
-  let unreachable = false;
-  let starting = false;
-  let actionError = '';
-  let poll: ReturnType<typeof setInterval> | null = null;
+  import {
+    garminStatus,
+    garminUnreachable,
+    garminStarting,
+    canSyncNow,
+    filledPhrases,
+    relativeTime,
+    startGarminSync,
+    watchGarmin,
+  } from '$lib/garmin';
 
   const LOGIN_CMD = 'docker compose exec app python scripts/garmin_sync.py --login';
 
-  async function load() {
-    try {
-      status = await api.getGarminStatus();
-      unreachable = false;
-    } catch {
-      // Offline, or a server that predates this endpoint. Either way there is
-      // nothing truthful to show, and a stale "last synced 4h ago" would be a
-      // worse answer than none.
-      unreachable = true;
-    }
-    schedulePoll();
-  }
+  let actionError = '';
+  let release: (() => void) | null = null;
 
-  function schedulePoll() {
-    const shouldPoll = !!status?.running;
-    if (shouldPoll && !poll) {
-      poll = setInterval(load, 3000);
-    } else if (!shouldPoll && poll) {
-      clearInterval(poll);
-      poll = null;
-      // A finished run has written rows the cache has never seen. Pull them in
-      // rather than waiting for whatever revalidation happens to fire next,
-      // otherwise you sync your watch and the app still shows blanks.
-      if (lastSummaryTotal() > 0) sync();
-    }
-  }
-
-  function lastSummaryTotal(): number {
-    return Object.values(status?.last_run?.summary ?? {}).reduce((a, b) => a + b, 0);
-  }
+  $: status = $garminStatus;
+  $: filled = filledPhrases(status);
 
   async function syncNow() {
-    starting = true;
-    actionError = '';
-    try {
-      const res = await api.runGarminSync();
-      if (!res.started) actionError = 'A sync is already running.';
-    } catch (e) {
-      actionError = e instanceof Error ? e.message : 'Could not start a sync.';
-    } finally {
-      starting = false;
-      await load();
-    }
+    actionError = (await startGarminSync()) ?? '';
   }
 
-  function relative(iso: string): string {
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.round(hrs / 24)}d ago`;
-  }
-
-  // Only the counts that actually moved — a run that filled nothing should say
-  // so plainly rather than printing a row of zeroes.
-  const SUMMARY_LABELS: Record<string, [string, string]> = {
-    daily_logs_filled: ['day filled', 'days filled'],
-    daily_logs_created: ['day added', 'days added'],
-    activities_created: ['activity added', 'activities added'],
-    activities_updated: ['activity updated', 'activities updated'],
-  };
-
-  $: filled = Object.entries(status?.last_run?.summary ?? {})
-    .filter(([key, n]) => n > 0 && key in SUMMARY_LABELS)
-    .map(([key, n]) => `${n} ${SUMMARY_LABELS[key][n === 1 ? 0 : 1]}`);
-
-  onMount(load);
-  onDestroy(() => poll && clearInterval(poll));
+  onMount(() => {
+    release = watchGarmin();
+  });
+  onDestroy(() => release?.());
 </script>
 
 <div class="card p-6">
@@ -97,7 +51,7 @@
     {/if}
   </div>
 
-  {#if unreachable}
+  {#if $garminUnreachable}
     <p class="text-sm text-gray-500">
       Can't reach the server right now, so there's nothing to report.
     </p>
@@ -164,7 +118,7 @@
         <dd class="text-right">
           {#if status.last_run}
             <span title={status.last_run.started_at}>
-              {relative(status.last_run.started_at)}
+              {relativeTime(status.last_run.started_at)}
             </span>
             <span class="text-gray-400 text-xs">· {status.last_run.trigger}</span>
           {:else}
@@ -211,7 +165,7 @@
       type="button"
       class="btn-secondary w-full mt-4 flex items-center justify-center gap-2"
       on:click={syncNow}
-      disabled={starting || status.running || !status.configured || !status.is_owner}
+      disabled={!canSyncNow(status, $garminStarting)}
     >
       <RefreshCw size={16} class={clsx(status.running && 'animate-spin')} />
       {status.running ? 'Syncing…' : 'Sync now'}

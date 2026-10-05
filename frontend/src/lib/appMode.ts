@@ -73,6 +73,36 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
   },
 ];
 
+/**
+ * The handful of destinations the icon rail shows.
+ *
+ * The rail was every section the mode allowed — fourteen icons in full mode,
+ * a column of grey glyphs taller than the content beside it, most of which
+ * nobody opens in a given month. An icon-only rail is only legible while it is
+ * short enough to learn; past about six entries it stops being navigation and
+ * becomes a wall.
+ *
+ * So the rail is the daily drivers and the hamburger keeps everything, with
+ * labels. A "More" button at the bottom of the rail opens it — a rail that
+ * silently drops nine destinations has to say where they went, and the header
+ * hamburger is at the opposite corner of the screen from where you are looking.
+ *
+ * Per mode, because the daily drivers differ: a gym-only account reaches for
+ * Routines and Exercises as often as the other reaches for Nutrition.
+ */
+const PRIMARY_NAV: Record<AppMode, string[]> = {
+  full: ['/', '/daily-log', '/nutrition', '/activities', '/trends'],
+  // Not '/workout': a live session is reached from the dashboard's Start
+  // button and from the running-session bar, and it has no nav entry to point
+  // at. Daily Log is here instead, because body weight is the thing a lifter
+  // types by hand every morning.
+  strength: ['/', '/daily-log', '/routines', '/exercises', '/trends'],
+};
+
+export function isPrimaryNav(mode: AppMode | string | null | undefined, path: string): boolean {
+  return PRIMARY_NAV[modeDefinition(mode).value].includes(path);
+}
+
 export function modeDefinition(mode: AppMode | string | null | undefined): ModeDefinition {
   return MODE_DEFINITIONS.find((m) => m.value === mode) ?? MODE_DEFINITIONS[0];
 }

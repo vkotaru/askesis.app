@@ -15,6 +15,30 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Changed
+
+- **The icon rail is five icons, not fourteen.** A column of identical grey
+  glyphs taller than the content beside it is not navigation you can read —
+  it only works while it is short enough to learn by position. It now shows
+  what you open daily, with a **More** button at the bottom for everything
+  else, which opens the same labelled menu the hamburger does. Nothing is gone
+  and nothing moved in the menu.
+
+  The five differ by account: Dashboard, Daily Log, Nutrition, Activities and
+  Trends normally; Dashboard, Daily Log, Trends, Routines and Exercises on a
+  strength-only account.
+
+### Added
+
+- **A Garmin sync button in the header.** Pulling from the watch was in
+  Settings only, which is exactly where you are not when you notice the
+  dashboard is showing yesterday's steps. It sits next to the connection dot —
+  on a phone in the header, on a desktop in the sidebar — and it tells you what
+  happened: "3 days filled", "Nothing new", or the actual error. It is absent
+  entirely when no watch is connected to your account, rather than present and
+  permanently greyed.
+
+
 ## [2.14.0] - 2026-09-30
 
 Alembic head: `add_exercise_tracking`

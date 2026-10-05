@@ -21,6 +21,49 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-05 — A four-millisecond failure is still a failure
+
+Two asks: fewer icons, and a Garmin sync that is not three taps into Settings.
+
+**The rail.** It had grown to fourteen icons by always being "every section the
+mode allows". An icon-only rail is legible only while it is short enough to
+learn by position; past about six it is a wall of grey glyphs. `PRIMARY_NAV` in
+`lib/appMode.ts` names five per mode, and a **More** button opens the same
+labelled drawer the hamburger does. The drawer is unchanged — a rail that
+silently drops nine destinations has to say where they went, and the header
+hamburger is at the opposite corner from where the eye is.
+
+**The bug this turned up.** The new header button first reported its outcome by
+watching `running` go true→false. Tapping it did nothing visible at all, and the
+reason is worth keeping: a sync with no cached session **fails in about four
+milliseconds** — faster than the status request that follows the POST — so the
+running state is never observed, and an edge-triggered reporter has no edge to
+fire on. Verified before and after: tap, 4ms run, no spinner, no message, no way
+to tell the tap had registered.
+
+Now keyed on a *new* `last_run.started_at` captured before starting, so the
+outcome is reported whether or not the run was ever seen in flight. The failure
+text is shown verbatim because the common one names the command that fixes it.
+
+The general shape, which this repo keeps meeting: **an edge-triggered UI misses
+anything faster than its own polling interval**, and the fast path is usually
+the error path. Compare state, not transitions.
+
+**And the extraction, done first rather than after the drift.** Two things now
+start a sync and report on it. The card owned the fetch, the 3s poller, the
+"may I sync" predicate and the pull-new-rows call; a second copy would have been
+a second poller on the same endpoint and two answers to the same question.
+`lib/garmin.ts` holds it, refcounted so the poller stops with the last watcher.
+
+**Watch out**
+- The button renders *nothing* when no watch is configured or the configured one
+  is the other account's. A permanently greyed control in a header is a
+  permanent question.
+- Its toast is `position: fixed` rather than anchored to the button, because the
+  button is in a header at one breakpoint and a sidebar footer at the other.
+  `max-w-sm` on a 390px screen overflows — the parent's padding is not part of
+  the child's max-width. `max-w-full`.
+
 ## 2026-09-30 — Trends, and the thing that made it cheap
 
 "No way to look at six months of calories." The decisive fact turned up before

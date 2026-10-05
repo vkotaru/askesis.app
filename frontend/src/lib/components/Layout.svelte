@@ -1,14 +1,15 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Menu, Users, Target, ListChecks, Dumbbell, LineChart } from 'lucide-svelte';
+  import { Home, ClipboardList, Utensils, Apple, Activity, CalendarDays, Settings, LogOut, Ruler, Camera, Menu, Users, Target, ListChecks, Dumbbell, LineChart, MoreHorizontal } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { api, type User } from '$lib/api/client';
   import { settings } from '$lib/stores/settings';
-  import { routeAllowed } from '$lib/appMode';
+  import { routeAllowed, isPrimaryNav } from '$lib/appMode';
   import { user as userStore } from '$lib/stores/user';
   import { clearLocalSession, prepareSignOut } from '$lib/stores/data';
   import { deployedVersion, formatVersionLabel, formatVersionTitle } from '$lib/version';
   import SyncStatus from './SyncStatus.svelte';
+  import GarminSyncButton from './GarminSyncButton.svelte';
   import LiveSessionBar from './LiveSessionBar.svelte';
 
   export let user: User;
@@ -38,6 +39,9 @@
   // already had. Filtering this list relabelled the rows while leaving the
   // previous icons in place, so "Daily Log" appeared with the Shared icon.
   $: visibleNav = navItems.filter((item) => routeAllowed($settings.app_mode, item.href));
+  // The rail shows the daily drivers; the drawer shows all of visibleNav. See
+  // PRIMARY_NAV in lib/appMode.ts for why the rail is not simply everything.
+  $: railNav = visibleNav.filter((item) => isPrimaryNav($settings.app_mode, item.href));
 
   // Sign-out has to erase this account's offline cache: the browser is shared
   // (household app), and anything left in IndexedDB is readable by whoever
@@ -133,6 +137,10 @@
       </h1>
       <div class="flex items-center gap-3">
         <SyncStatus />
+        <!-- Pull from the watch without going to Settings first: this is the
+             control you want precisely when the dashboard is showing
+             yesterday's steps. Renders nothing when no watch is connected. -->
+        <GarminSyncButton />
         <button
           on:click|stopPropagation={() => (showMobileMenu = !showMobileMenu)}
           class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -277,7 +285,10 @@
           <LogOut size={16} />
           Sign out
         </button>
-        <SyncStatus />
+        <div class="flex items-center gap-1">
+          <GarminSyncButton />
+          <SyncStatus />
+        </div>
       </div>
     </div>
   </aside>
@@ -311,13 +322,18 @@
        every page on the screen where vertical space is scarcest.
        A rail keeps navigation one tap away (a drawer alone would make it two)
        and mirrors the desktop sidebar, so the app is laid out the same way at
-       both sizes. Icons only at 56px; the hamburger above still opens the full
-       labelled menu, which is also the accessible path to the same links. -->
+       both sizes. Icons only at 48px; the hamburger above still opens the full
+       labelled menu, which is also the accessible path to the same links.
+
+       It shows PRIMARY_NAV, not everything. Fourteen identical grey glyphs in a
+       column is not navigation you can read — the rail works only while it is
+       short enough to learn by position. The rest live one tap away behind
+       "More", which opens the same labelled drawer as the hamburger. -->
   <nav
     class="md:hidden fixed left-0 top-14 bottom-0 z-40 w-12 flex flex-col items-center gap-1 overflow-y-auto scrollbar-hide bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 py-2 pb-safe"
     aria-label="Primary"
   >
-    {#each visibleNav as { href, icon: Icon, label, color } (href)}
+    {#each railNav as { href, icon: Icon, label, color } (href)}
       {@const isActive = currentPath === href}
       <a
         {href}
@@ -342,6 +358,22 @@
         <Icon size={20} class={isActive ? color : ''} />
       </a>
     {/each}
+
+    <!-- Everything the rail does not show. Labelled, because an ellipsis icon
+         on its own reads as "settings" to about half of people. The separator
+         above it says these are a different kind of thing from the five. -->
+    {#if visibleNav.length > railNav.length}
+      <div class="w-6 border-t border-gray-200 dark:border-gray-700 my-1" aria-hidden="true"></div>
+      <button
+        type="button"
+        on:click|stopPropagation={() => (showMobileMenu = true)}
+        aria-label="More sections"
+        class="flex flex-col items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+      >
+        <MoreHorizontal size={18} />
+        <span class="text-[8px] leading-none mt-0.5">More</span>
+      </button>
+    {/if}
   </nav>
 
   <!-- Unsent-changes prompt. Signing out wipes this device's copy of the
