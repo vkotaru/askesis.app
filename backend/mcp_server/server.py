@@ -317,6 +317,21 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "disciplines you intend to touch this week. Only what you pass changes; "
         f"name a field in `clear` to remove it. {_UNITS}"
     ),
+    "log_day_nutrition": (
+        "Log one day's food intake: calories for Breakfast, Lunch, Dinner and "
+        "Snack, and the day's protein/carbs/fat in grams. This is the one tool "
+        "that writes logged history, so: BEFORE calling it, read the day "
+        "(get_meals for each meal's calories, get_daily_summary for the "
+        "macros), then show the user the numbers you will write and any "
+        "existing values they replace, and get a yes. When reading a "
+        "screenshot (e.g. MyFitnessPal), take each meal's calorie total, not "
+        "single food lines; fold extra meal sections into Snack; take macros "
+        "from the day's totals; resolve 'Today'/'Yesterday' against the "
+        "profile's date; and if the meals don't add up to the screenshot's own "
+        "daily total, say so instead of guessing. Omitted fields are left "
+        "unchanged and nothing is deleted. An existing meal total is replaced, "
+        "not added to."
+    ),
 }
 
 
@@ -328,8 +343,10 @@ def build_server(config: MCPConfig, verifier: TokenVerifier) -> MCPServer:
         description=(
             "Personal health and training history: daily logs, nutrition, "
             "activities, measurements and training plans. Reads everything; "
-            "writes only plans — the shared exercise library, routines, and "
-            "daily/weekly targets. Logged workouts and daily logs are read-only."
+            "writes plans — the shared exercise library, routines, and "
+            "daily/weekly targets — plus one day's food intake (meal calories "
+            "and macros). Logged workouts and the rest of the daily log are "
+            "read-only."
         ),
         version="0.1.0",
         token_verifier=verifier,

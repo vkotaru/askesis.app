@@ -53,7 +53,7 @@ from app.models import (
     User,
     UserSettings,
 )
-from app import planning
+from app import intake_log, planning
 from app.models import RoutineExercise, WorkoutTemplate  # noqa: F401
 from app.provenance import parse_sources
 from mcp_server.queries import (
@@ -205,6 +205,10 @@ def get_profile(db: Session, user_id: int) -> dict[str, Any]:
         # identifier -- so shipping it off the box lets anyone who has seen one
         # response lock the real account out. `name` identifies the person.
         "account": {"name": user.name},
+        # The household's calendar date. A chat model has no reliable clock, and
+        # "Today" on a screenshot has to resolve to the same day the app files
+        # entries under -- not the server's UTC date.
+        "today": local_today().isoformat(),
         "display_preferences": {
             "_note": (
                 "These are the user's UI preferences, NOT the units of the numbers "
@@ -1268,6 +1272,45 @@ def set_weekly_plan(
     return _apply(db, user_id, supplied, clear, _WEEKLY_FIELDS)
 
 
+def log_day_nutrition(
+    db: Session,
+    user_id: int,
+    date: str,
+    breakfast_kcal: float | None = None,
+    lunch_kcal: float | None = None,
+    dinner_kcal: float | None = None,
+    snack_kcal: float | None = None,
+    protein_g: float | None = None,
+    carbs_g: float | None = None,
+    fat_g: float | None = None,
+) -> dict[str, Any]:
+    """Log one day's calories per meal and the day's protein/carbs/fat.
+
+    Usually read off a screenshot of another food tracker (MyFitnessPal's Diary
+    or Nutrition screen). Leave a field out to leave it unchanged; nothing is
+    ever deleted. An existing meal total is replaced, not added to. A meal with
+    several entries, or with itemised foods, is skipped and reported.
+    """
+    try:
+        day = intake_log.parse_day(date)
+        return intake_log.log_day(
+            db,
+            user_id,
+            day,
+            meals={
+                "Breakfast": breakfast_kcal,
+                "Lunch": lunch_kcal,
+                "Dinner": dinner_kcal,
+                "Snack": snack_kcal,
+            },
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+        )
+    except intake_log.IntakeError as exc:
+        raise ToolError(str(exc)) from None
+
+
 TOOLS = {
     "get_profile": get_profile,
     "get_daily_summary": get_daily_summary,
@@ -1287,6 +1330,7 @@ TOOLS = {
     "save_routine": save_routine,
     "set_targets": set_targets,
     "set_weekly_plan": set_weekly_plan,
+    "log_day_nutrition": log_day_nutrition,
 }
 
 #: The tools that change data. Drives three things in `server.py`: the
@@ -1301,5 +1345,6 @@ WRITE_TOOLS: frozenset[str] = frozenset(
         "save_routine",
         "set_targets",
         "set_weekly_plan",
+        "log_day_nutrition",
     }
 )

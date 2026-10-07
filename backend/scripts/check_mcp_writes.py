@@ -19,7 +19,8 @@ Exits non-zero on any failure. Point it at a throwaway database.
 The cases that matter most are not the happy paths. They are:
   * ownership  -- one account cannot read or change another's routines
   * refusal    -- bad input is rejected rather than half-written
-  * isolation  -- the tools cannot reach logged history at all
+  * isolation  -- the tools cannot reach logged history, except the one
+                  narrow intake write (log_day_nutrition)
 
 The scope gate and the commit live in `server.py`, not in the tools, so they are
 asserted here by inspection of `WRITE_TOOLS` rather than by calling them.
@@ -395,16 +396,172 @@ def main() -> int:
     )
 
     print()
-    print("── the boundary: no tool writes history ──")
+    print("── log_day_nutrition: the one write to logged history ──")
+    from datetime import timedelta
+
+    from app.config import local_today
+    from app.models import DailyNutrition, Meal
+
+    d = (local_today() - timedelta(days=3)).isoformat()
+
+    def meals_on(uid, label):
+        return (
+            db.query(Meal)
+            .filter(Meal.user_id == uid, Meal.date == local_today() - timedelta(days=3))
+            .filter(Meal.label == label, Meal.deleted_at.is_(None))
+            .all()
+        )
+
+    r = T.log_day_nutrition(
+        db,
+        a,
+        d,
+        breakfast_kcal=420,
+        lunch_kcal=650,
+        snack_kcal=0,
+        protein_g=152,
+        carbs_g=210.44,
+        fat_g=71,
+    )
+    db.commit()
+    check(
+        "creates a row per meal given",
+        (r["meals"]["Breakfast"]["result"], r["meals"]["Lunch"]["result"]),
+        ("created", "created"),
+    )
+    check(
+        "  but never a zero-calorie row",
+        (r["meals"]["Snack"]["result"], len(meals_on(a, "Snack"))),
+        ("skipped", 0),
+    )
+    check("  day total is the sum", r["day_total_kcal"], 1070)
+    check("  macros set, rounded to 0.1 g", r["macros"]["carbs_g"]["value"], 210.4)
+
+    r = T.log_day_nutrition(db, a, d, lunch_kcal=700, dinner_kcal=800)
+    db.commit()
+    check(
+        "a second call updates, not adds",
+        (len(meals_on(a, "Lunch")), r["meals"]["Lunch"]["before_kcal"]),
+        (1, 650),
+    )
+    check("  omitted meals are left alone", len(meals_on(a, "Breakfast")), 1)
+    check("  day total reflects the replace", r["day_total_kcal"], 420 + 700 + 800)
+    nut = (
+        db.query(DailyNutrition)
+        .filter(
+            DailyNutrition.user_id == a,
+            DailyNutrition.date == local_today() - timedelta(days=3),
+        )
+        .one()
+    )
+    check("  omitted macros are left alone", (nut.protein_g, nut.fat_g), (152.0, 71.0))
+
+    r = T.log_day_nutrition(db, a, d, lunch_kcal=700)
+    check("same value reports unchanged", r["meals"]["Lunch"]["result"], "unchanged")
+
+    # Two Dinner rows: the Daily Log locks the box; the tool must not pick one.
+    db.add(
+        Meal(
+            user_id=a,
+            date=local_today() - timedelta(days=3),
+            label="Dinner",
+            calories=100,
+        )
+    )
+    db.commit()
+    r = T.log_day_nutrition(db, a, d, dinner_kcal=900)
+    db.commit()
+    check(
+        "a label with several rows is skipped",
+        r["meals"]["Dinner"]["result"],
+        "skipped",
+    )
+    check(
+        "  and both rows are untouched",
+        sorted(m.calories for m in meals_on(a, "Dinner")),
+        [100, 800],
+    )
+
+    r = T.log_day_nutrition(db, b, d, lunch_kcal=500)
+    db.commit()
+    check(
+        "the other account gets its own row",
+        (len(meals_on(b, "Lunch")), meals_on(a, "Lunch")[0].calories),
+        (1, 700),
+    )
+
+    refuses(
+        "a future date refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        (local_today() + timedelta(days=1)).isoformat(),
+        lunch_kcal=500,
+    )
+    refuses(
+        "a misread year refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        (local_today() - timedelta(days=3650)).isoformat(),
+        lunch_kcal=500,
+    )
+    refuses(
+        "a non-ISO date refused", T.log_day_nutrition, db, a, "Oct 6", lunch_kcal=500
+    )
+    refuses(
+        "a misread 21400 kcal lunch refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        d,
+        lunch_kcal=21400,
+    )
+    refuses("negative calories refused", T.log_day_nutrition, db, a, d, lunch_kcal=-5)
+    refuses(
+        "an impossible macro refused", T.log_day_nutrition, db, a, d, protein_g=1520
+    )
+    refuses(
+        "a string for calories refused, not a crash",
+        T.log_day_nutrition,
+        db,
+        a,
+        d,
+        lunch_kcal="650",
+    )
+    refuses("nothing to log refused", T.log_day_nutrition, db, a, d)
+
+    # Validate-everything-first: one bad field must leave the day untouched.
+    before = meals_on(a, "Breakfast")[0].calories
+    refuses(
+        "a bad macro alongside a good meal refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        d,
+        breakfast_kcal=999,
+        fat_g=-1,
+    )
+    db.rollback()
+    check(
+        "  and the good meal was not half-written",
+        meals_on(a, "Breakfast")[0].calories,
+        before,
+    )
+
+    print()
+    print("── the boundary: plans, plus one intake write, and nothing else ──")
     # Not a runtime check — a structural one. If a write tool ever appears that
     # touches logged data, this list is where it would have to be declared, so
     # the assertion is that the list still says what we think it says.
+    # `log_day_nutrition` is the one deliberate exception (app/intake_log.py).
     check(
-        "write tools are exactly the planning ones",
+        "write tools are the planning ones + log_day_nutrition",
         sorted(T.WRITE_TOOLS),
         [
             "archive_exercise",
             "create_exercise",
+            "log_day_nutrition",
             "save_routine",
             "set_targets",
             "set_weekly_plan",
@@ -439,7 +596,10 @@ def main() -> int:
         name
         for name, fn in T.TOOLS.items()
         if name not in T.WRITE_TOOLS
-        and any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
+        and (
+            any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
+            or "intake_log.log_day(" in inspect.getsource(fn)
+        )
     )
     check("no mutating tool is missing from WRITE_TOOLS", undeclared, [])
 

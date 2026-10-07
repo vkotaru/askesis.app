@@ -21,6 +21,54 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-06 — The connector may now write one thing it did not plan
+
+The ask: stop retyping MyFitnessPal numbers. The first design was an in-app
+upload: the backend sends the screenshot to Gemini, then an editable preview.
+**Dropped** for sharing the screenshot to Claude and having it call an MCP write
+tool. That path has no image pipeline and no API key on the box. The
+conversation is a better preview than a form ("no, lunch was 640"), and it is
+how the user actually does this, from a phone.
+
+The cost is a line this repo drew on purpose: the connector writes **plans**,
+never **what you did**, and its DB role enforced it. That line now has exactly
+one exception, kept narrow and in one place:
+- `app/intake_log.py`, deliberately not `planning.py`, whose contract is "the
+  connector may call anything in here".
+- One tool, `log_day_nutrition`, with a named parameter per meal (models fill
+  named fields more reliably than a free-form dict).
+- INSERT/UPDATE on `meals` and `daily_nutrition` only. No DELETE, and
+  `meal_food_items` stays read-only. `mcp_db_role.sql` asserts all of it.
+
+It writes the Daily Log quick entry's exact shape, because that is how calories
+are stored: one label-only `Meal` row per label, summed. Its rules are copied
+from `routes/daily-log/+page.svelte`, and the docstring says so: update a
+single row rather than add another, leave a label with several rows (or with
+itemised foods) alone, never create a zero row, delete nothing. Everything is
+validated before anything is written, so one bad macro cannot half-write a day.
+
+**What made it safe to verify:** `check_mcp_writes.py` gained 22 cases. They
+were run on SQLite, then on a throwaway Postgres **connected as `askesis_mcp`**
+after applying the role script, so grants were enforced, not assumed. The same
+role was refused `DELETE FROM meals`, `UPDATE users` and `UPDATE daily_logs`.
+The MCP image was built and the tool imported inside it.
+
+**Watch out**
+- Re-running `mcp_db_role.sql` with `$(openssl rand ...)`, as first-time setup
+  says, **changes the password** and logs the running service out. Pass the
+  existing `MCP_DB_PASSWORD`; SELF_HOSTING now shows that form.
+- `get_daily_summary` gives a day's calorie *total*; only `get_meals` has the
+  per-meal split. The tool description tells the model to read both before
+  writing, and its first draft named only the summary.
+- `get_profile` now returns `today` (`local_today()`). A chat model has no
+  reliable date, and "Today" on a screenshot must file under the household's
+  day.
+- Rows written server-side reach the PWA through `/sync/changes` and merge by
+  `serverId` (meals never match by date). One edge remains: if a phone holds
+  an *unsynced* local Lunch for the same day, the day ends with two Lunch rows.
+  The Daily Log already sums and locks a label with several rows, so nothing is
+  lost, but it is not deduped.
+
 ## 2026-10-06 — The sync button was where it wasn't asked for, and hid when broken
 
 The 2026-10-05 request was a Garmin sync icon in the **side rail**. It shipped in

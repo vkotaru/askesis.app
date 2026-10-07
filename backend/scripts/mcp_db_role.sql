@@ -18,11 +18,18 @@
 -- OAuth bookkeeping and the PLANNING tables (the exercise library, routines and
 -- the target columns on user_settings), and may NOT write to `users` or to any
 -- record of what actually happened -- activities, exercise_sets, daily_logs,
--- meals, measurements -- under any circumstance.
+-- measurements -- under any circumstance.
 --
 -- The line is "what you intend" versus "what you did". An assistant may change
 -- the plan; it may not rewrite the history. `users` stays unreachable either
 -- way, which is the threat the paragraph above is about.
+--
+-- ONE DELIBERATE EXCEPTION (log_day_nutrition, app/intake_log.py): INSERT and
+-- UPDATE, never DELETE, on `meals` and `daily_nutrition`, so a screenshot of
+-- another food tracker can be logged from a chat. Itemised foods
+-- (`meal_food_items`) stay read-only. The worst a compromised container can do
+-- with this is overwrite calorie and macro numbers -- it still cannot touch an
+-- account, delete a row, or reach any other history table.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Run once, on the server, as the database owner:
@@ -122,6 +129,20 @@ GRANT USAGE, SELECT ON SEQUENCE
     routine_exercises_id_seq
 TO askesis_mcp;
 
+-- 3b. Insert/update, NO delete: one day's intake. See ONE DELIBERATE EXCEPTION
+--     at the top. A meal's soft delete is a `deleted_at` UPDATE, which this
+--     grant would technically allow; intake_log.py has no code path that sets
+--     it, and no tool exposes one.
+GRANT INSERT, UPDATE ON
+    meals,
+    daily_nutrition
+TO askesis_mcp;
+
+GRANT USAGE, SELECT ON SEQUENCE
+    meals_id_seq,
+    daily_nutrition_id_seq
+TO askesis_mcp;
+
 -- 4. Read-write: the connector's own OAuth bookkeeping.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     mcp_clients,
@@ -142,9 +163,9 @@ TO askesis_mcp;
 --                         subject alone and must never widen through sharing
 --      progress_photos -- image paths; the tools expose no photos
 --      meal_templates  -- no tool reads or writes them
---    And SELECT-only, deliberately, on everything that records what happened:
---    activities, exercises, exercise_sets, daily_logs, daily_nutrition, meals,
---    body_measurements, training_plans, planned_workouts.
+--    And SELECT-only, deliberately, on everything else that records what
+--    happened: activities, exercises, exercise_sets, daily_logs,
+--    meal_food_items, body_measurements, training_plans, planned_workouts.
 --    No ALTER DEFAULT PRIVILEGES either: a table added by a future migration is
 --    unreadable until someone grants it here, on purpose. Fail closed.
 
@@ -158,8 +179,9 @@ TO askesis_mcp;
 -- what turns "self-verifying" from a description into a fact.
 -- ─────────────────────────────────────────────────────────────────────────────
 \echo ''
-\echo '== writable tables (expect: the three mcp_*, plus exercise_catalog,'
-\echo '   user_settings, workout_templates, routine_exercises -- and NOTHING else) =='
+\echo '== writable tables (expect: the three mcp_*, exercise_catalog, user_settings,'
+\echo '   workout_templates, routine_exercises, and only INSERT,UPDATE on meals and'
+\echo '   daily_nutrition -- and NOTHING else) =='
 SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
 FROM information_schema.table_privileges
 WHERE grantee = 'askesis_mcp' AND privilege_type <> 'SELECT'
@@ -172,9 +194,11 @@ DECLARE
     -- and must never write them; this is the "plans, not history" line.
     history text[] := ARRAY[
         'activities', 'exercises', 'exercise_sets', 'daily_logs',
-        'daily_nutrition', 'meals', 'meal_food_items', 'body_measurements',
+        'meal_food_items', 'body_measurements',
         'training_plans', 'planned_workouts'
     ];
+    -- The one exception: insert/update, never delete.
+    intake text[] := ARRAY['meals', 'daily_nutrition'];
     -- The planning tables the write tools need.
     planning text[] := ARRAY[
         'exercise_catalog', 'user_settings', 'workout_templates',
@@ -201,6 +225,17 @@ BEGIN
         END LOOP;
     END LOOP;
 
+    FOREACH t IN ARRAY intake LOOP
+        FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE'] LOOP
+            IF NOT has_table_privilege('askesis_mcp', t, priv) THEN
+                RAISE EXCEPTION 'askesis_mcp cannot % %; log_day_nutrition will fail at runtime', priv, t;
+            END IF;
+        END LOOP;
+        IF has_table_privilege('askesis_mcp', t, 'DELETE') THEN
+            RAISE EXCEPTION 'askesis_mcp can DELETE from % -- intake is insert/update only', t;
+        END IF;
+    END LOOP;
+
     FOREACH t IN ARRAY planning LOOP
         IF NOT has_table_privilege('askesis_mcp', t, 'UPDATE') THEN
             RAISE EXCEPTION 'askesis_mcp cannot write %; the write tools will fail at runtime', t;
@@ -219,7 +254,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    RAISE NOTICE 'grants verified: plans writable, history read-only, users untouchable';
+    RAISE NOTICE 'grants verified: plans writable, intake insert/update only, other history read-only, users untouchable';
 END $$;
 
 \echo ''
@@ -251,7 +286,7 @@ SELECT has_table_privilege('askesis_mcp', 'exercise_catalog',  'UPDATE') AS cata
 SELECT has_table_privilege('askesis_mcp', 'activities',        'UPDATE') AS activities,
        has_table_privilege('askesis_mcp', 'exercise_sets',     'UPDATE') AS sets,
        has_table_privilege('askesis_mcp', 'daily_logs',        'UPDATE') AS daily_logs,
-       has_table_privilege('askesis_mcp', 'meals',             'UPDATE') AS meals,
+       has_table_privilege('askesis_mcp', 'meals',             'DELETE') AS delete_meals,
        has_table_privilege('askesis_mcp', 'body_measurements', 'UPDATE') AS measurements;
 
 \echo ''

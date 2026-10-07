@@ -15,6 +15,26 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Log a MyFitnessPal day from a screenshot, through Claude.** Share the Diary
+  or Nutrition screenshot to Claude with the Askesis connector and say "log
+  this". Claude reads the meal totals and macros, shows you what it will write
+  and what it replaces, and on your yes calls the new `log_day_nutrition` tool.
+  It writes exactly what the Daily Log's quick entry does: one row per meal,
+  updated rather than duplicated, never a zero-calorie row, nothing deleted.
+  Misread values (a 21,400 kcal lunch, a future date, the wrong year) are
+  refused.
+- `get_profile` now returns `today`, the household's date, so "Today" on a
+  screenshot resolves to the day the app files entries under.
+
+### Upgrade
+
+- **Re-run `backend/scripts/mcp_db_role.sql` after deploying**, with your
+  existing `MCP_DB_PASSWORD` (command in `SELF_HOSTING.md`). It grants the
+  connector INSERT/UPDATE, never DELETE, on `meals` and `daily_nutrition`.
+  Until then the new tool fails; nothing else is affected.
+
 ### Changed
 
 - **Garmin sync is in the side rail.** On a phone it sits directly under the

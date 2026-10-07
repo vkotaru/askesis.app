@@ -233,6 +233,13 @@ Key modules:
   every validation rule. The routers are thin wrappers over it. A write that
   belongs to *what you did* rather than *what you plan* does not go here — the
   MCP connector's permission is effectively "everything this module exposes".
+- `app/intake_log.py` — **the one exception**: `log_day_nutrition` writes a day's
+  meal calories (one label-only `Meal` row per Breakfast/Lunch/Dinner/Snack,
+  updated rather than duplicated) and macros (`DailyNutrition`), so a
+  MyFitnessPal screenshot shared to Claude can be logged. Separate from
+  `planning.py` so that module stays plans-only. The DB role gets INSERT/UPDATE,
+  never DELETE, on exactly those two tables (`scripts/mcp_db_role.sql` asserts
+  it). Its rules mirror the Daily Log's quick entry — change one, change both.
 - `app/routers/settings.py` — `POST /api/settings/backup` streams **the caller's own rows**
   back as portable JSON (same format on SQLite and Postgres); `POST /api/settings/restore`
   puts one back. Both are governed by `_BACKUP_SPEC`, a per-table allow-list with the

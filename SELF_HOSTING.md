@@ -418,6 +418,20 @@ docker compose exec -T db psql -U askesis -d askesis \
 It prints its own verification. `can_update_users` **must** be `f`. Keep the
 password for `MCP_DB_PASSWORD` below.
 
+**Re-run it after any release that changes the grants** (the CHANGELOG says so),
+passing the password you already have rather than a new one, or the running MCP
+service loses its login:
+
+```bash
+docker compose exec -T db psql -U askesis -d askesis \
+  -v mcp_password="$(grep -E '^MCP_DB_PASSWORD=' .env | cut -d= -f2-)" \
+  < backend/scripts/mcp_db_role.sql
+```
+
+The role may write plans, plus INSERT/UPDATE (never DELETE) on `meals` and
+`daily_nutrition` for `log_day_nutrition` — so a food-tracker screenshot shared
+to Claude can be logged. Without that grant the tool fails with a generic error.
+
 ### 3. A second Tailscale auth key
 
 Generate a new key in the admin console **tagged `tag:askesis-mcp`**. Separate from

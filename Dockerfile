@@ -129,10 +129,13 @@ RUN pip install --upgrade pip && \
 # implementation of "what is a valid routine / exercise / target", shared with
 # the REST API so the two cannot drift. It imports no FastAPI, which is what
 # makes that possible — the assertion below is what proves it still does not.
+# `intake_log.py` is the one write to logged history (log_day_nutrition), kept
+# separate from planning.py so "everything in planning" stays plans-only.
 COPY backend/app/__init__.py   backend/app/config.py \
      backend/app/database.py   backend/app/disciplines.py \
      backend/app/models.py     backend/app/planning.py \
-     backend/app/provenance.py backend/app/security.py   ./app/
+     backend/app/provenance.py backend/app/security.py \
+     backend/app/intake_log.py ./app/
 COPY backend/mcp_server/ ./mcp_server/
 
 # Fail the BUILD if the isolation ever stops holding, rather than discovering it

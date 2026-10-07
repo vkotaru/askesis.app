@@ -28,6 +28,10 @@ this module draws is **what you intend** versus **what you did**, and only the
 first is something an assistant should be able to change on your behalf. Moving
 a write for logged data in here would quietly widen what the MCP connector can
 touch, because the connector's permission is "everything in this module".
+
+The single exception -- one day's meal calories and macros, so a food-tracker
+screenshot can be logged from a chat -- lives in `app/intake_log.py`, by itself,
+so that widening is one file and one decision rather than a drift.
 """
 
 from __future__ import annotations
