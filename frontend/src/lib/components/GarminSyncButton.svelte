@@ -4,13 +4,14 @@
    *
    * The sync lived only on the Settings page, which is three taps and a scroll
    * from the dashboard — and it is the thing you reach for *because* the
-   * dashboard is showing yesterday's steps. So it sits beside the sync-status
-   * dot instead, in the header on a phone and in the sidebar footer on a
-   * desktop.
+   * dashboard is showing yesterday's steps. So it lives with the navigation:
+   * in the icon rail on a phone, in the sidebar's list on a desktop. (It was
+   * first in the phone header beside the sync dot, which is not where anyone
+   * looks for an action — the request had been the side rail.)
    *
    * **It renders nothing when there is nothing to tap** — no watch configured,
-   * or the configured one is the other person's. A permanently greyed button in
-   * the header would be a permanent question.
+   * or the configured one is the other person's; see `garminShown`. When it is
+   * shown but cannot sync, a tap says why rather than doing nothing.
    *
    * All the state comes from `$lib/garmin`, which the Settings card also reads,
    * so the two cannot disagree about whether a sync is running and there is
@@ -22,15 +23,16 @@
   import {
     garminStatus,
     garminStarting,
-    garminActionable,
+    garminShown,
+    garminReason,
     canSyncNow,
     filledPhrases,
     startGarminSync,
     watchGarmin,
   } from '$lib/garmin';
 
-  /** The sidebar footer has room for a word; the phone header does not. */
-  export let compact = true;
+  /** `rail`: the phone's 48px icon column. `sidebar`: a row in the desktop nav. */
+  export let variant: 'rail' | 'sidebar' = 'rail';
 
   let release: (() => void) | null = null;
   let message = '';
@@ -81,7 +83,12 @@
   async function go(event: MouseEvent) {
     // The layout closes its menus on any window click.
     event.stopPropagation();
-    if (!enabled) return;
+    if (!enabled) {
+      // Not disabled in the DOM on purpose: a disabled button swallows the tap,
+      // and "nothing happens" is the one answer that explains nothing.
+      if (!running) show(garminReason(status) ?? 'Garmin sync is unavailable');
+      return;
+    }
     // Remembered before starting, so the reporter above can tell this run from
     // whatever was last on screen. '' stands for "there was no previous run",
     // which is distinct from "the previous run happens to have this timestamp".
@@ -102,34 +109,40 @@
   });
 </script>
 
-{#if $garminActionable}
+{#if $garminShown}
   <button
     type="button"
     on:click={go}
-    disabled={!enabled}
-    title={running ? 'Syncing from Garmin…' : 'Sync from Garmin now'}
+    aria-disabled={!enabled}
+    title={running ? 'Syncing from Garmin…' : (garminReason(status) ?? 'Sync from Garmin now')}
     aria-label={running ? 'Syncing from Garmin' : 'Sync from Garmin now'}
     class={clsx(
-      'relative flex items-center gap-1.5 rounded-lg transition-colors',
-      compact ? 'p-2' : 'px-2 py-1 text-sm',
+      'flex-shrink-0 transition-colors',
+      variant === 'rail'
+        ? 'flex flex-col items-center justify-center w-9 h-9 rounded-xl'
+        : 'w-full flex items-center gap-3 px-4 py-3 rounded-xl mb-1 font-medium',
       enabled
-        ? 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+        ? 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
         : 'text-gray-300 dark:text-gray-600'
     )}
   >
     {#if running}
-      <RefreshCw size={compact ? 20 : 16} class="animate-spin text-cardio-500" />
+      <RefreshCw size={variant === 'rail' ? 18 : 20} class="animate-spin text-cardio-500" />
     {:else}
-      <Watch size={compact ? 20 : 16} />
+      <Watch size={variant === 'rail' ? 18 : 20} class={enabled ? 'text-cardio-500' : ''} />
     {/if}
-    {#if !compact}<span>Sync watch</span>{/if}
+    {#if variant === 'rail'}
+      <span class="text-[8px] leading-none mt-0.5">{running ? 'Syncing' : 'Sync'}</span>
+    {:else}
+      <span>{running ? 'Syncing watch…' : 'Sync watch'}</span>
+    {/if}
   </button>
 {/if}
 
 {#if message}
-  <!-- Fixed rather than anchored to the button: the button is in a header on
-       one breakpoint and a sidebar footer on the other, and a popover
-       positioned against it would be off-screen in one of them. -->
+  <!-- Fixed rather than anchored to the button: the button is in a 48px rail
+       on one breakpoint and a sidebar on the other, and a popover positioned
+       against it would be clipped or off-screen in one of them. -->
   <div
     class="fixed inset-x-0 bottom-4 z-[60] flex justify-center px-4 pointer-events-none"
     style="bottom: calc(1rem + env(safe-area-inset-bottom));"

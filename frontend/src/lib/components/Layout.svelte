@@ -137,10 +137,6 @@
       </h1>
       <div class="flex items-center gap-3">
         <SyncStatus />
-        <!-- Pull from the watch without going to Settings first: this is the
-             control you want precisely when the dashboard is showing
-             yesterday's steps. Renders nothing when no watch is connected. -->
-        <GarminSyncButton />
         <button
           on:click|stopPropagation={() => (showMobileMenu = !showMobileMenu)}
           class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -262,6 +258,15 @@
       {/each}
     </nav>
 
+    <!-- Pull from the watch without going to Settings first: this is the
+         control you want precisely when the dashboard is showing yesterday's
+         steps. Outside the <nav> rather than its last row, because the desktop
+         list shows every section and scrolls — the end of it is below the fold
+         on a laptop. Renders nothing when no watch is connected. -->
+    <div class="px-3 pt-1">
+      <GarminSyncButton variant="sidebar" />
+    </div>
+
     <!-- User section -->
     <div class="p-4 border-t border-gray-100 dark:border-gray-700">
       <div class="flex items-center gap-3 mb-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
@@ -285,10 +290,7 @@
           <LogOut size={16} />
           Sign out
         </button>
-        <div class="flex items-center gap-1">
-          <GarminSyncButton />
-          <SyncStatus />
-        </div>
+        <SyncStatus />
       </div>
     </div>
   </aside>
@@ -358,6 +360,9 @@
         <Icon size={20} class={isActive ? color : ''} />
       </a>
     {/each}
+
+    <!-- The watch sync, directly under the five: one tap from any page. -->
+    <GarminSyncButton variant="rail" />
 
     <!-- Everything the rail does not show. Labelled, because an ellipsis icon
          on its own reads as "settings" to about half of people. The separator

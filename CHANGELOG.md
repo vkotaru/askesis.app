@@ -15,6 +15,20 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Changed
+
+- **Garmin sync is in the side rail.** On a phone it sits directly under the
+  five icons, labelled "Sync"; on a desktop it is a "Sync watch" row pinned
+  below the section list, so it is visible without scrolling. It is no longer
+  in the phone header.
+
+### Fixed
+
+- **The sync button no longer vanishes when the server can't tell whose watch
+  it is.** With several accounts and `GARMIN_SYNC_USER` unset it used to hide
+  itself without a word. It now stays visible, and tapping it says what to set.
+  A button that can't sync explains why on tap instead of doing nothing.
+
 ## [2.16.0] - 2026-10-06
 
 Alembic head: `add_exercise_tracking`

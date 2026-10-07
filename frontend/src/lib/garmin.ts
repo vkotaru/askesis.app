@@ -141,6 +141,8 @@ export function garminReason(status: GarminStatus | null): string | null {
   if (!status) return 'Checking…';
   if (status.running) return 'Syncing…';
   if (!status.configured) return 'Not connected';
+  if (!status.sync_username)
+    return "Can't tell whose watch this is — set GARMIN_SYNC_USER on the server";
   if (!status.is_owner) return "Connected to someone else's watch";
   if (status.rate_limited) return 'Garmin is rate-limiting';
   if (status.needs_reauth) return 'Needs a login on the server';
@@ -175,5 +177,17 @@ export function relativeTime(iso: string): string {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
-/** True only when there is something a person could usefully tap. */
-export const garminActionable = derived(garminStatus, ($s) => !!$s?.configured && !!$s?.is_owner);
+/**
+ * Should the sync button be on screen at all.
+ *
+ * Hidden when there is no watch, or it is the other person's: a control that
+ * can never work for you is a permanent question. But NOT hidden when the
+ * server cannot tell whose watch it is (several accounts, GARMIN_SYNC_USER
+ * unset) — that is a fixable misconfiguration, and hiding the button for it is
+ * how "the sync button is gone" happened with nothing on screen to say why.
+ * Shown, a tap says what to set.
+ */
+export const garminShown = derived(
+  garminStatus,
+  ($s) => !!$s?.configured && ($s.is_owner || !$s.sync_username)
+);

@@ -21,6 +21,34 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-06 — The sync button was where it wasn't asked for, and hid when broken
+
+The 2026-10-05 request was a Garmin sync icon in the **side rail**. It shipped in
+the phone *header* beside the connection dot, and was reported back as "broken".
+Two reasons, both worth keeping:
+
+- **Placement.** The rail is where navigation-shaped actions live. A header icon
+  next to a status dot reads as more status. It is now under the five rail
+  icons, and on desktop it is pinned *below* the scrolling section list, not its
+  last row. The desktop list shows all fourteen sections, so its end is below the
+  fold on a laptop, which the first try at this hit.
+- **Hiding.** "Render nothing when there is nothing to tap" also hid it when the
+  server couldn't resolve the owner (several accounts, `GARMIN_SYNC_USER` unset).
+  That is a fixable misconfiguration, and hiding the control for it removes the
+  only place the problem could have been noticed. `garminShown` now hides only
+  for "no watch" and "someone else's watch".
+
+**Watch out**
+- The button is `aria-disabled`, not `disabled`. A disabled button swallows the
+  tap, and "nothing happens" explains nothing. A tap that can't sync shows
+  `garminReason` in the toast.
+- Verified at 390px and 1280px in headless Chrome against a backend with four
+  accounts: owner unresolved → greyed "Sync" in the rail, tap names
+  GARMIN_SYNC_USER; owner set → active; header has no copy.
+- `pkill -f <pattern>` from a Bash tool call matches the tool's own shell, whose
+  command line contains the pattern, and kills it (exit 144). Kill by the PID
+  `ss -ltnp` reports for the port instead.
+
 ## 2026-10-06 — "Can't reach the server" was the server answering
 
 Asked for: a button on the web that makes the backend investigate the Garmin
