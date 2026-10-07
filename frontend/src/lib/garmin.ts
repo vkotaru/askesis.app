@@ -14,17 +14,49 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import { api, type GarminStatus } from '$lib/api/client';
+import { api, ApiError, type GarminStatus } from '$lib/api/client';
 import { sync } from '$lib/sync';
 
 export const garminStatus = writable<GarminStatus | null>(null);
 
 /**
- * Distinct from `status.enabled === false`, and the distinction matters: this
- * is "we could not ask", where a stale "last synced 4h ago" would be a worse
- * answer than none at all.
+ * Why the last status request failed, or null when it answered.
+ *
+ * Distinct from `status.enabled === false`: this is "we could not ask", where a
+ * stale "last synced 4h ago" would be a worse answer than none. It was once a
+ * boolean rendered as "Can't reach the server" — which a 500, an expired
+ * session and an old build all said too, while the server was plainly up. The
+ * kinds are different problems with different fixes, so they stay apart.
  */
-export const garminUnreachable = writable(false);
+export interface GarminFetchError {
+  kind: 'offline' | 'auth' | 'missing' | 'server';
+  /** HTTP status, absent when the request never got an answer. */
+  status?: number;
+  message: string;
+}
+
+export const garminError = writable<GarminFetchError | null>(null);
+
+export function describeFetchError(e: unknown): GarminFetchError {
+  if (e instanceof ApiError) {
+    if (e.status === 401) return { kind: 'auth', status: 401, message: 'Your session has expired.' };
+    if (e.status === 404)
+      return {
+        kind: 'missing',
+        status: 404,
+        message: 'The server has no Garmin endpoint — it is running an older build.',
+      };
+    // A bare status says nothing the badge doesn't; say what it means instead.
+    const message =
+      e.message === `HTTP ${e.status}` ? 'It failed without saying why.' : e.message;
+    return { kind: 'server', status: e.status, message };
+  }
+  // fetch() rejects with a TypeError only when no response came back at all.
+  if (e instanceof TypeError) {
+    return { kind: 'offline', message: 'The request did not get a response.' };
+  }
+  return { kind: 'server', message: e instanceof Error ? e.message : String(e) };
+}
 
 /** Set while a start request is in flight, before `running` has caught up. */
 export const garminStarting = writable(false);
@@ -39,13 +71,13 @@ export async function refreshGarmin(): Promise<void> {
     const next = await api.getGarminStatus();
     const wasRunning = get(garminStatus)?.running ?? false;
     garminStatus.set(next);
-    garminUnreachable.set(false);
+    garminError.set(null);
     // A run that has just finished wrote rows this device has never seen. Pull
     // them rather than waiting for whatever revalidation happens to fire next —
     // otherwise you sync your watch and the app still shows blanks.
     if (wasRunning && !next.running && filledCount(next) > 0) void sync();
-  } catch {
-    garminUnreachable.set(true);
+  } catch (e) {
+    garminError.set(describeFetchError(e));
   }
   managePoll();
 }

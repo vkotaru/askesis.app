@@ -15,6 +15,25 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A Diagnose button on the Garmin card.** It asks the server to check each
+  step on its own — the status call itself, the timezone, the nightly schedule,
+  the saved session on disk (including whether it can be renewed), whose watch
+  it is, the last run, and whether Garmin can be reached — and lists which pass
+  and which fail, with the actual error. It works even when the card's normal
+  status request is the thing that is broken.
+
+### Fixed
+
+- **"Can't reach the server" now only means that.** The Garmin card said it for
+  every failure, including the server answering with an error, an expired
+  session and an out-of-date build. It now names which one, shows the HTTP
+  status, and has a Retry button.
+- **A server error with a non-JSON body no longer looks like a network
+  failure.** The API client let the JSON parse error escape in place of the
+  HTTP status, everywhere in the app, not only on the Garmin card.
+
 ## [2.15.1] - 2026-10-06
 
 Alembic head: `add_exercise_tracking`

@@ -21,6 +21,44 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-06 — "Can't reach the server" was the server answering
+
+Asked for: a button on the web that makes the backend investigate the Garmin
+card's "Can't reach the server". The message was the first problem. Every
+failure of the status request fell into one `catch` and set one boolean, so a
+500, a 401 and a 404 all read as a network failure while the rest of the app
+loaded fine.
+
+**The trap under it, found only by driving a browser.** The first version
+classified errors by `instanceof ApiError` and still printed "Can't reach the
+server" for a 500. `fetchJSON` reads the error body with `res.json()`, and
+uvicorn's 500 body is the plain text `Internal Server Error`. The parse throws
+a `SyntaxError`, and the catch rethrew *any* `Error` whose message wasn't
+`HTTP <n>`, so a JSON parse error escaped in place of the status. Every caller
+in the app got that for every non-JSON error body: uvicorn 500s, and any HTML
+error page from a proxy. Only `ApiError` may escape now. Without the browser
+pass this would have shipped looking fixed: the types checked and the logic
+read correctly.
+
+**Diagnose** (`GET /api/integrations/garmin/diagnose`) runs each server-side
+step in its own `try`, *including the status handler itself called
+in-process*, so when that is the failing thing its exception text finally
+reaches a screen. It also checks the token store is **writable**, not just
+readable: every run renews the token and writes it back, so a read-only store
+works once and then expires a few weeks later for no visible reason.
+
+**What we didn't build:** a button that hands the problem to Claude to read the
+server logs. It would mean the internet-facing MCP container, or a cloud agent,
+holding log access. Diagnose answers the same question from inside the app with
+no new trust boundary.
+
+**Watch out**
+- Diagnose makes one unauthenticated GET to connect.garmin.com. That is not the
+  SSO login Garmin rate-limits by IP. Never make it log in.
+- Verified at 390px with headless Chrome over CDP, using an unreadable token
+  store (`chmod 000`) as the real failure: 500 → named, diagnosed; browser
+  offline → "Can't reach the server"; restored → status passes.
+
 ## 2026-10-06 — The "tomorrow after 6 PM" bug was the server, not the browser
 
 Open since August, never reproduced, and the note on it pointed at the browser:

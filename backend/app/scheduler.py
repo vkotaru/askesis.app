@@ -75,6 +75,14 @@ def is_running() -> bool:
     return _run_lock.locked()
 
 
+def next_run_time() -> datetime | None:
+    """When the nightly job fires next, or None if no scheduler is running."""
+    if _scheduler is None:
+        return None
+    job = _scheduler.get_job("garmin_sync")
+    return job.next_run_time if job else None
+
+
 def _resolve_sync_user(db, configured: str) -> User | None:
     """The account to sync: the configured one, or the only one there is.
 

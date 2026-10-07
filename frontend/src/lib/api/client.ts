@@ -316,6 +316,18 @@ export interface GarminStatus {
   last_run: GarminRun | null;
 }
 
+/** One row of GET /api/integrations/garmin/diagnose. */
+export interface GarminDiagnosticCheck {
+  name: string;
+  result: 'pass' | 'fail' | 'warn' | 'info';
+  detail: string;
+}
+
+export interface GarminDiagnosis {
+  checked_at: string;
+  checks: GarminDiagnosticCheck[];
+}
+
 export interface CalendarEvent {
   id: number;
   name: string;
@@ -588,7 +600,11 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
             : null;
       throw new ApiError(detail || `HTTP ${res.status}`, res.status, errorData.code);
     } catch (e) {
-      if (e instanceof Error && e.message !== `HTTP ${res.status}`) throw e;
+      // Only our own ApiError may escape. A body that is not JSON -- uvicorn's
+      // plain-text "Internal Server Error", a proxy's HTML 502 page -- makes
+      // res.json() throw a SyntaxError, and letting that out loses the status
+      // code entirely: callers saw a JSON parse error and called it offline.
+      if (e instanceof ApiError) throw e;
       throw new ApiError(`HTTP ${res.status}`, res.status);
     }
   }
@@ -986,6 +1002,9 @@ export const api = {
   // this must not enter Dexie, and offline it should read as unavailable rather
   // than as a stale "last synced" that was true an hour ago.
   getGarminStatus: () => fetchJSON<GarminStatus>('/api/integrations/garmin/status'),
+  // Every server-side step the status endpoint takes, each run on its own, so
+  // the one that fails is named instead of collapsing into a bare 500.
+  diagnoseGarmin: () => fetchJSON<GarminDiagnosis>('/api/integrations/garmin/diagnose'),
   // 202 and returns immediately; the pull is a blocking chain of rate-limited
   // requests. Poll getGarminStatus() for the outcome — failures inside the run
   // cannot come back as a status code here.
