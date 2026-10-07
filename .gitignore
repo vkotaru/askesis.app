@@ -44,5 +44,8 @@ backend/static/
 # OS
 .DS_Store
 
-# Claude Code local config
-.claude/
+# Claude Code local config. The shared settings and hooks are committed;
+# everything else under .claude/ (settings.local.json, projects/) is per-machine.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/

@@ -14,6 +14,11 @@ and traps found the hard way. Entries are newest-first.
   constraint discovered, a decision whose rationale won't survive in the diff. Routine work does not
   earn an entry — the file stays short enough to keep being read.
 
+A `PreToolUse` hook (`.claude/hooks/journal-check.sh`) enforces the timing: a commit that touches
+`frontend/src/` or `backend/app/` without `JOURNAL.md` staged is blocked once with a reminder.
+Write the entry then, or re-run the same commit if the change is routine — it goes through. The
+entry belongs with the commit rather than at session end because a crashed session has no end.
+
 Same format as `jobly.app/JOURNAL.md`. `CHANGELOG.md` records what shipped for a user; the journal
 records what it cost and what not to try again.
 
