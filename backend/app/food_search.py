@@ -59,6 +59,24 @@ def _map_category(raw: str | None) -> str | None:
     return "other"
 
 
+def _usda_kcal(by_unit: dict[tuple[str, str], float]) -> float:
+    """Kilocalories from a USDA nutrient list, whatever units it reports.
+
+    Prefers an explicit KCAL value: plain "Energy", then the Atwater variants
+    Foundation foods use. Converts kJ only when no KCAL figure exists.
+    """
+    for name in (
+        "Energy",
+        "Energy (Atwater General Factors)",
+        "Energy (Atwater Specific Factors)",
+    ):
+        if (name, "KCAL") in by_unit:
+            return by_unit[(name, "KCAL")]
+    if ("Energy", "KJ") in by_unit:
+        return by_unit[("Energy", "KJ")] / 4.184
+    return 0
+
+
 async def search_usda(query: str, limit: int = 10) -> list[dict]:
     """Search USDA FoodData Central. Requires USDA_API_KEY in settings."""
     settings = get_settings()
@@ -82,10 +100,18 @@ async def search_usda(query: str, limit: int = 10) -> list[dict]:
 
         results = []
         for food in data.get("foods", []):
-            nutrients = {
-                n["nutrientName"]: n.get("value", 0)
+            # Keyed by name AND unit. USDA lists "Energy" twice -- once in KCAL,
+            # once in kJ -- in no fixed order, and a name-only dict kept
+            # whichever came last: whole egg read as 599 "kcal" (its kJ value)
+            # half the time. Every other nutrient used here is in grams.
+            by_unit = {
+                (n["nutrientName"], (n.get("unitName") or "").upper()): n.get(
+                    "value", 0
+                )
                 for n in food.get("foodNutrients", [])
             }
+            nutrients = {name: value for (name, _unit), value in by_unit.items()}
+            nutrients["Energy"] = _usda_kcal(by_unit)
             results.append(
                 {
                     "external_id": f"usda:{food['fdcId']}",

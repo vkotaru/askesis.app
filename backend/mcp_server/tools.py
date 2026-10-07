@@ -29,6 +29,7 @@ explicitly labelled as a preference rather than a unit of measure.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import date as date_type
 from datetime import timedelta
@@ -53,7 +54,7 @@ from app.models import (
     User,
     UserSettings,
 )
-from app import intake_log, planning
+from app import food_library, intake_log, planning
 from app.models import RoutineExercise, WorkoutTemplate  # noqa: F401
 from app.provenance import parse_sources
 from mcp_server.queries import (
@@ -67,6 +68,8 @@ from mcp_server.queries import (
     owned,
     shared,
 )
+
+logger = logging.getLogger(__name__)
 
 #: Widest window a single call may ask for. A model asked for "this year" will
 #: happily request 365 days of joined rows; this makes it say so out loud
@@ -1283,6 +1286,7 @@ def log_day_nutrition(
     protein_g: float | None = None,
     carbs_g: float | None = None,
     fat_g: float | None = None,
+    mode: str = "replace",
 ) -> dict[str, Any]:
     """Log one day's calories per meal and the day's protein/carbs/fat.
 
@@ -1306,9 +1310,104 @@ def log_day_nutrition(
             protein_g=protein_g,
             carbs_g=carbs_g,
             fat_g=fat_g,
+            mode=mode,
         )
     except intake_log.IntakeError as exc:
         raise ToolError(str(exc)) from None
+
+
+def search_foods(
+    db: Session, user_id: int, query: str, include_online: bool = True
+) -> dict[str, Any]:
+    """Look a food up: your saved foods first, then USDA and Open Food Facts.
+
+    Library foods carry their own serving size. Online results are per 100 g.
+    """
+    try:
+        saved = food_library.search(db, user_id, query)
+    except food_library.FoodError as exc:
+        raise ToolError(str(exc)) from None
+    online: list[dict[str, Any]] = []
+    online_note = None
+    if include_online:
+        # The tool runs in a worker thread with no event loop, so the async
+        # client gets one of its own. Failures inside are already swallowed to
+        # [] by food_search (and logged) -- a lookup outage must not fail a
+        # question the saved library can answer.
+        import asyncio
+
+        from app.food_search import search_external
+
+        try:
+            online = asyncio.run(search_external(query, limit=8))
+        except Exception:  # noqa: BLE001 -- never let the network fail the tool
+            logger.warning("online food search failed", exc_info=True)
+            online = []
+        if not online:
+            online_note = (
+                "No online results (none found, or the lookup is unavailable)."
+            )
+    return {
+        "saved": [food_library.food_dict(f, user_id) for f in saved],
+        "online": [
+            {
+                "name": r.get("name"),
+                "brand": r.get("brand"),
+                "per": "100 g",
+                "calories_kcal": r.get("calories"),
+                "protein_g": r.get("protein_g"),
+                "carbs_g": r.get("carbs_g"),
+                "fat_g": r.get("fat_g"),
+                "fiber_g": r.get("fiber_g"),
+                "source": r.get("source"),
+            }
+            for r in online
+        ],
+        **({"online_note": online_note} if online_note else {}),
+    }
+
+
+def save_food(
+    db: Session,
+    user_id: int,
+    name: str,
+    serving_size: float,
+    serving_unit: str,
+    calories: float,
+    brand: str | None = None,
+    category: str | None = None,
+    protein_g: float | None = None,
+    carbs_g: float | None = None,
+    fat_g: float | None = None,
+    fiber_g: float | None = None,
+    notes: str | None = None,
+    private: bool = False,
+) -> dict[str, Any]:
+    """Save a food to the library, or update yours with the same name and brand.
+
+    Numbers are PER SERVING as defined by `serving_size` + `serving_unit`
+    (e.g. 46 g, or 1 bowl). Saving again replaces every field, so pass them all.
+    """
+    try:
+        food, created = food_library.save(
+            db,
+            user_id,
+            name=name,
+            serving_size=serving_size,
+            serving_unit=serving_unit,
+            calories=calories,
+            brand=brand,
+            category=category,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+            fiber_g=fiber_g,
+            notes=notes,
+            private=private,
+        )
+    except food_library.FoodError as exc:
+        raise ToolError(str(exc)) from None
+    return {"created": created, **food_library.food_dict(food, user_id)}
 
 
 TOOLS = {
@@ -1323,6 +1422,7 @@ TOOLS = {
     "get_training_plan": get_training_plan,
     "list_exercises": list_exercises,
     "list_routines": list_routines,
+    "search_foods": search_foods,
     # ── writes ──
     "create_exercise": create_exercise,
     "update_exercise": update_exercise,
@@ -1331,6 +1431,7 @@ TOOLS = {
     "set_targets": set_targets,
     "set_weekly_plan": set_weekly_plan,
     "log_day_nutrition": log_day_nutrition,
+    "save_food": save_food,
 }
 
 #: The tools that change data. Drives three things in `server.py`: the
@@ -1346,5 +1447,6 @@ WRITE_TOOLS: frozenset[str] = frozenset(
         "set_targets",
         "set_weekly_plan",
         "log_day_nutrition",
+        "save_food",
     }
 )

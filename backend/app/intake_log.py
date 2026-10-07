@@ -110,13 +110,25 @@ def log_day(
     protein_g: float | None = None,
     carbs_g: float | None = None,
     fat_g: float | None = None,
+    mode: str = "replace",
 ) -> dict[str, Any]:
     """Write one day's intake and report every field: before, after, or why not.
 
-    Validates everything before touching anything, so a single bad value
-    leaves the day exactly as it was rather than half-written.
+    `mode="replace"` sets each given total (a screenshot of the whole day).
+    `mode="add"` adds each given amount to what is there (one more snack), in
+    one step on the server, so a caller never has to read a total, add to it
+    and write it back -- the read-modify-write that loses an entry whenever it
+    slips.
+
+    Validates everything -- including, in add mode, the totals it would
+    produce -- before touching anything, so one bad value leaves the day
+    exactly as it was rather than half-written.
     """
-    # ── validate all of it first ─────────────────────────────────────────────
+    if mode not in ("replace", "add"):
+        raise IntakeError(f"mode must be 'replace' or 'add', got {mode!r}.")
+    adding = mode == "add"
+
+    # ── validate the input ───────────────────────────────────────────────────
     wanted: dict[str, int] = {}
     for raw_label, kcal in (meals or {}).items():
         if kcal is None:
@@ -138,8 +150,9 @@ def log_day(
             "Nothing to log: pass at least one meal's calories or a macro."
         )
 
-    # ── meals ────────────────────────────────────────────────────────────────
+    # ── plan: read only, and refuse here if any result is out of bounds ──────
     meal_report: dict[str, dict[str, Any]] = {}
+    meal_writes: list[tuple[Meal | None, str, int]] = []  # (row or new, label, kcal)
     for label, kcal in wanted.items():
         rows = (
             db.query(Meal)
@@ -162,16 +175,22 @@ def log_day(
             meal_report[label] = {
                 "result": "skipped",
                 "reason": f"{label} has itemised foods logged in the app; "
-                "overwriting its total would contradict them.",
+                "changing its total would contradict them.",
                 "current_kcal": rows[0].calories,
             }
         elif rows:
             before = rows[0].calories
-            rows[0].calories = kcal
+            after = (before or 0) + kcal if adding else kcal
+            if after > MAX_MEAL_KCAL:
+                raise IntakeError(
+                    f"{label} would become {after} kcal, over {MAX_MEAL_KCAL} -- "
+                    "check the amount, or whether it was already logged."
+                )
+            meal_writes.append((rows[0], label, after))
             meal_report[label] = {
-                "result": "unchanged" if before == kcal else "updated",
+                "result": "unchanged" if before == after else "updated",
                 "before_kcal": before,
-                "kcal": kcal,
+                "kcal": after,
             }
         elif kcal == 0:
             # The Daily Log's rule: only a real number creates a row.
@@ -180,30 +199,49 @@ def log_day(
                 "reason": "0 kcal; no row created.",
             }
         else:
-            db.add(Meal(user_id=user_id, date=day, label=label, calories=kcal))
-            meal_report[label] = {"result": "created", "kcal": kcal}
+            meal_writes.append((None, label, kcal))
+            meal_report[label] = {
+                "result": "created",
+                "before_kcal": None,
+                "kcal": kcal,
+            }
 
-    # ── macros ───────────────────────────────────────────────────────────────
     macro_report: dict[str, dict[str, Any]] = {}
+    nutrition = None
     if macros:
-        row = (
+        nutrition = (
             db.query(DailyNutrition)
             .filter(DailyNutrition.user_id == user_id, DailyNutrition.date == day)
             .first()
         )
-        if row is None:
-            row = DailyNutrition(user_id=user_id, date=day)
-            db.add(row)
         for field, value in macros.items():
-            before = getattr(row, field)
-            setattr(row, field, value)
+            before = getattr(nutrition, field) if nutrition else None
+            after = round((before or 0) + value, 1) if adding else value
+            if after > MAX_MACRO_G:
+                raise IntakeError(
+                    f"{field} would become {after} g for the day, over "
+                    f"{MAX_MACRO_G:g} -- check the amount."
+                )
             macro_report[field] = {
                 "result": "unchanged"
-                if before == value
+                if before == after
                 else ("set" if before is None else "updated"),
                 "before": before,
-                "value": value,
+                "value": after,
             }
+
+    # ── apply ────────────────────────────────────────────────────────────────
+    for row, label, kcal in meal_writes:
+        if row is None:
+            db.add(Meal(user_id=user_id, date=day, label=label, calories=kcal))
+        else:
+            row.calories = kcal
+    if macros:
+        if nutrition is None:
+            nutrition = DailyNutrition(user_id=user_id, date=day)
+            db.add(nutrition)
+        for field, entry in macro_report.items():
+            setattr(nutrition, field, entry["value"])
 
     db.flush()
     total = sum(
@@ -214,6 +252,7 @@ def log_day(
     )
     return {
         "date": day.isoformat(),
+        "mode": mode,
         "meals": meal_report,
         "macros": macro_report,
         "day_total_kcal": total,

@@ -550,18 +550,196 @@ def main() -> int:
     )
 
     print()
+    print("── log_day_nutrition mode='add': one more snack, no read-modify-write ──")
+    d2 = (local_today() - timedelta(days=4)).isoformat()
+    T.log_day_nutrition(db, a, d2, lunch_kcal=500, protein_g=40)
+    db.commit()
+    r = T.log_day_nutrition(
+        db, a, d2, mode="add", lunch_kcal=120, snack_kcal=90, protein_g=11.5, fat_g=3
+    )
+    db.commit()
+    check(
+        "add sums onto the existing meal",
+        (r["meals"]["Lunch"]["before_kcal"], r["meals"]["Lunch"]["kcal"]),
+        (500, 620),
+    )
+    check(
+        "  creates a meal that wasn't there", r["meals"]["Snack"]["result"], "created"
+    )
+    check("  adds to the day's protein", r["macros"]["protein_g"]["value"], 51.5)
+    check("  and an unset macro starts from 0", r["macros"]["fat_g"]["value"], 3.0)
+    check("  day total includes both", r["day_total_kcal"], 620 + 90)
+    refuses(
+        "an unknown mode refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        d2,
+        mode="merge",
+        lunch_kcal=1,
+    )
+    lunch_before = T.log_day_nutrition(db, a, d2, mode="add", lunch_kcal=0)["meals"][
+        "Lunch"
+    ]["kcal"]
+    refuses(
+        "add that would push a meal past the cap refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        d2,
+        mode="add",
+        lunch_kcal=4900,
+    )
+    refuses(
+        "add that would push a macro past the cap refused",
+        T.log_day_nutrition,
+        db,
+        a,
+        d2,
+        mode="add",
+        protein_g=999,
+    )
+    db.rollback()
+    r = T.log_day_nutrition(db, a, d2, mode="add", lunch_kcal=0)
+    check(
+        "  and the refused add left the meal as it was",
+        r["meals"]["Lunch"]["kcal"],
+        lunch_before,
+    )
+
+    print()
+    print("── the food library: save_food / search_foods ──")
+    r = T.save_food(
+        db,
+        a,
+        "Egg Whites",
+        46,
+        "g",
+        25,
+        brand="Kirkland Signature",
+        protein_g=5,
+        carbs_g=0,
+        fat_g=0,
+        notes="label: 3 tbsp (46 g)",
+    )
+    db.commit()
+    check(
+        "save creates a shared food",
+        (r["created"], r["shared_with_household"], r["yours"]),
+        (True, True, True),
+    )
+    r = T.save_food(
+        db, a, "egg whites", 46, "g", 25, brand="KIRKLAND SIGNATURE", protein_g=5.5
+    )
+    db.commit()
+    check(
+        "same name+brand, any case, updates instead",
+        (r["created"], r["protein_g"]),
+        (False, 5.5),
+    )
+    check("  saving again replaces every field", r["notes"], None)
+    s = T.search_foods(db, a, "kirkland egg white", include_online=False)
+    check(
+        "search matches word-wise across name and brand",
+        [f["name"] for f in s["saved"]],
+        ["egg whites"],
+    )
+    s = T.search_foods(db, b, "egg whites", include_online=False)
+    check(
+        "the other account sees a shared food",
+        (len(s["saved"]), s["saved"][0]["yours"]),
+        (1, False),
+    )
+    refuses(
+        "the other account cannot overwrite it",
+        T.save_food,
+        db,
+        b,
+        "Egg Whites",
+        46,
+        "g",
+        30,
+        brand="Kirkland Signature",
+    )
+    r = T.save_food(
+        db,
+        a,
+        "Chicken Rice Bowl",
+        1,
+        "bowl",
+        540,
+        category="Recipe",
+        protein_g=42,
+        carbs_g=60,
+        fat_g=14,
+        private=True,
+        notes="Serves 4: 600 g chicken thigh, 300 g dry rice, 2 tbsp oil, veg",
+    )
+    db.commit()
+    check(
+        "a private recipe is saved",
+        (r["category"], r["shared_with_household"]),
+        ("Recipe", False),
+    )
+    check("  with its ingredients kept", r["notes"].startswith("Serves 4"), True)
+    s = T.search_foods(db, b, "rice bowl", include_online=False)
+    check("  and the other account cannot see it", s["saved"], [])
+    refuses("a zero serving size refused", T.save_food, db, a, "X", 0, "g", 10)
+    refuses("missing calories refused", T.save_food, db, a, "X", 10, "g", None)
+    refuses(
+        "a misread 25000 kcal serving refused", T.save_food, db, a, "X", 46, "g", 25000
+    )
+    refuses("an over-long unit refused", T.save_food, db, a, "X", 1, "u" * 30, 10)
+    refuses(
+        "over-long notes refused", T.save_food, db, a, "X", 1, "g", 10, notes="n" * 2100
+    )
+    refuses(
+        "an empty search refused", T.search_foods, db, a, "   ", include_online=False
+    )
+    db.rollback()
+
+    # USDA lists Energy in KCAL and kJ, in either order; a name-keyed dict once
+    # kept the kJ value, so whole egg read 599 kcal. No network needed.
+    from app.food_search import _usda_kcal
+
+    check(
+        "USDA kcal wins over kJ, whichever is listed last",
+        (
+            _usda_kcal({("Energy", "KCAL"): 143, ("Energy", "KJ"): 599}),
+            _usda_kcal({("Energy", "KJ"): 776, ("Energy", "KCAL"): 185}),
+        ),
+        (143, 185),
+    )
+    check("  kJ alone is converted", round(_usda_kcal({("Energy", "KJ"): 599})), 143)
+
+    # The REST response model must accept everything save_food can store, or a
+    # connector write breaks the app's food list.
+    from app.models import FoodItem as _Food
+    from app.routers.nutrition import FoodItemResponse as _FoodOut
+
+    rows = db.query(_Food).filter(_Food.source == "mcp").all()
+    bad = []
+    for row in rows:
+        try:
+            _FoodOut.model_validate(row)
+        except Exception as exc:  # noqa: BLE001
+            bad.append(f"{row.name}: {exc}")
+    check("every connector-saved food fits the REST response", bad, [])
+
+    print()
     print("── the boundary: plans, plus one intake write, and nothing else ──")
     # Not a runtime check — a structural one. If a write tool ever appears that
     # touches logged data, this list is where it would have to be declared, so
     # the assertion is that the list still says what we think it says.
     # `log_day_nutrition` is the one deliberate exception (app/intake_log.py).
     check(
-        "write tools are the planning ones + log_day_nutrition",
+        "write tools: planning + save_food + log_day_nutrition",
         sorted(T.WRITE_TOOLS),
         [
             "archive_exercise",
             "create_exercise",
             "log_day_nutrition",
+            "save_food",
             "save_routine",
             "set_targets",
             "set_weekly_plan",
@@ -599,6 +777,7 @@ def main() -> int:
         and (
             any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
             or "intake_log.log_day(" in inspect.getsource(fn)
+            or "food_library.save(" in inspect.getsource(fn)
         )
     )
     check("no mutating tool is missing from WRITE_TOOLS", undeclared, [])

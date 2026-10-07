@@ -21,6 +21,48 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-07 — A food library for the connector, and a kJ bug hiding in USDA
+
+Follow-on to the screenshot logging: describe food instead of showing totals,
+and keep personal foods (a Kirkland label, home recipes) for next time.
+
+- **`mode="add"` on `log_day_nutrition`.** Describing food arrives in pieces
+  ("also a banana"), and a replace-only tool turns each piece into a
+  read-modify-write done by the model, which loses an entry the first time it
+  slips. Now the server adds. `log_day` became plan-then-apply, because add mode
+  has to bound the *resulting* totals, which needs reads, and "validate
+  everything before writing anything" had to survive that.
+- **`app/food_library.py`.** `save_food` / `search_foods` over the existing
+  `food_items` table, plus a `notes` column for a recipe's ingredients (without
+  it you know a bowl is 540 kcal and never why). Matching is name + brand,
+  case-insensitive. Another account's shared food is refused rather than
+  shadowed by a near-duplicate.
+
+**The bug live verification found.** The first real USDA call returned whole
+egg at 599 kcal per 100 g. USDA lists `Energy` twice, KCAL and kJ, in no fixed
+order, and `food_search.py` built `{nutrientName: value}`, so the last one won.
+That is kJ about half the time. It had been wrong on the Nutrition page's food
+search all along: plausible enough per item to go unnoticed, and catastrophic
+summed into a recipe. Now keyed by (name, unit), preferring KCAL, with a
+no-network check for both orders. Found only because the lookup was actually
+run against USDA with `DEMO_KEY`, not mocked.
+
+**And one inherited trap, caught by reading rather than running.**
+`PUT /api/nutrition/foods/{id}` set every field of `FoodItemCreate`, and the
+app's food editor predates `notes`. Editing a recipe in the app would have
+wiped its ingredients, the same shape as the exercise-library PUT bug. The PUT
+now keeps `notes` unless the request names it.
+
+**Watch out**
+- `search_foods` runs `asyncio.run` inside the worker thread `server.py` uses
+  for every tool (no loop there, so that is legal). Calling it from inside a
+  running loop would raise.
+- Open Food Facts returned 503 during this work. `food_search` swallows that to
+  `[]`, and the tool says "lookup unavailable" rather than failing.
+- Outbound HTTP from the MCP container in production was not verified from
+  here. The image has `httpx` and the code path works; the box's egress through
+  the Tailscale sidecar's netns is assumed.
+
 ## 2026-10-06 — The connector may now write one thing it did not plan
 
 The ask: stop retyping MyFitnessPal numbers. The first design was an in-app

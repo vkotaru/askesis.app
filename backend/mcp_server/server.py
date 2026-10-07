@@ -329,8 +329,31 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "from the day's totals; resolve 'Today'/'Yesterday' against the "
         "profile's date; and if the meals don't add up to the screenshot's own "
         "daily total, say so instead of guessing. Omitted fields are left "
-        "unchanged and nothing is deleted. An existing meal total is replaced, "
-        "not added to."
+        "unchanged and nothing is deleted. mode='replace' (default) sets each "
+        "total -- right for a screenshot of the whole day. mode='add' adds the "
+        "given amounts to what is already logged -- right for 'I also had a "
+        "banana': pass only the new food's numbers, never a sum you worked out "
+        "yourself. When the user describes food rather than showing totals, "
+        "look each item up with search_foods first and scale it to the amount "
+        "eaten; say what you assumed (portion, brand) if you had to estimate."
+    ),
+    "search_foods": (
+        "Look a food up before estimating it. Returns the user's saved foods "
+        "first (their own labels and home recipes, each with its own serving "
+        "size), then USDA FoodData Central and Open Food Facts results, which "
+        "are per 100 g. Prefer a saved food when one matches. Read-only."
+    ),
+    "save_food": (
+        "Save a food to the library so it can be looked up next time: a "
+        "nutrition label read from a screenshot, or a home recipe. Numbers are "
+        "PER SERVING as defined by serving_size + serving_unit (a label's "
+        "'3 tbsp (46 g)' is serving_size=46, serving_unit='g'). For a recipe: "
+        "look up each ingredient, total them, divide by the number of servings, "
+        "use category='Recipe', and put the ingredient list with amounts in "
+        "`notes`. Show the user the numbers before saving. Saving the same name "
+        "and brand again updates the user's own entry and replaces every "
+        "field, so pass them all. Foods are shared with the household unless "
+        "private=true."
     ),
 }
 
@@ -344,9 +367,9 @@ def build_server(config: MCPConfig, verifier: TokenVerifier) -> MCPServer:
             "Personal health and training history: daily logs, nutrition, "
             "activities, measurements and training plans. Reads everything; "
             "writes plans — the shared exercise library, routines, and "
-            "daily/weekly targets — plus one day's food intake (meal calories "
-            "and macros). Logged workouts and the rest of the daily log are "
-            "read-only."
+            "daily/weekly targets — plus the food library and one day's food "
+            "intake (meal calories and macros). Logged workouts and the rest "
+            "of the daily log are read-only."
         ),
         version="0.1.0",
         token_verifier=verifier,

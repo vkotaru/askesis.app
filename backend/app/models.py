@@ -234,8 +234,12 @@ class FoodItem(Base):
     carbs_g: Mapped[float | None] = mapped_column(Float)
     fat_g: Mapped[float | None] = mapped_column(Float)
     fiber_g: Mapped[float | None] = mapped_column(Float)
+    # A recipe's ingredients, or where a label's numbers came from. Bounded by
+    # FoodItemCreate (and app/food_library.py) so a stored value always fits
+    # the response model -- an unbounded one would 500 the whole food list.
+    notes: Mapped[str | None] = mapped_column(Text)
     is_shared: Mapped[bool] = mapped_column(Boolean, default=True)
-    source: Mapped[str | None] = mapped_column(String(50))  # manual, ai_analysis
+    source: Mapped[str | None] = mapped_column(String(50))  # manual, ai_analysis, mcp
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

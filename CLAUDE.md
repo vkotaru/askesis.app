@@ -240,6 +240,14 @@ Key modules:
   `planning.py` so that module stays plans-only. The DB role gets INSERT/UPDATE,
   never DELETE, on exactly those two tables (`scripts/mcp_db_role.sql` asserts
   it). Its rules mirror the Daily Log's quick entry — change one, change both.
+  `mode="add"` adds on the server, so a model never read-modify-writes a total.
+- `app/food_library.py` — `save_food` / `search_foods` for the MCP connector:
+  labels and home recipes (ingredients in `food_items.notes`), matched on
+  name + brand case-insensitively, shared unless private. Library data, so the
+  role gets INSERT/UPDATE on `food_items`, no DELETE. Its bounds are at least
+  as strict as `FoodItemCreate`, because a stored value the response model
+  rejects 500s the app's whole food list. The food PUT keeps `notes` unless
+  the request names it — the app's editor predates the column.
 - `app/routers/settings.py` — `POST /api/settings/backup` streams **the caller's own rows**
   back as portable JSON (same format on SQLite and Postgres); `POST /api/settings/restore`
   puts one back. Both are governed by `_BACKUP_SPEC`, a per-table allow-list with the

@@ -112,6 +112,7 @@ class FoodItemCreate(BaseModel):
     carbs_g: float | None = Field(None, ge=0)
     fat_g: float | None = Field(None, ge=0)
     fiber_g: float | None = Field(None, ge=0)
+    notes: str | None = Field(None, max_length=2000)
     is_shared: bool = True
 
 
@@ -861,7 +862,14 @@ def update_food_item(
     if not food:
         raise HTTPException(status_code=404, detail="Food item not found")
 
-    for key, value in data.model_dump().items():
+    # `notes` is kept unless the request names it. The app's food editor
+    # predates the column and sends every OTHER field, so a whole-object
+    # replace would wipe a recipe's ingredient list -- the exact bug the
+    # exercise library's PUT shipped (see CLAUDE.md, PUT replaces).
+    fields = data.model_dump()
+    if "notes" not in data.model_fields_set:
+        fields.pop("notes")
+    for key, value in fields.items():
         setattr(food, key, value)
     db.commit()
     db.refresh(food)

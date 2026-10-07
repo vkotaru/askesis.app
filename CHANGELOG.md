@@ -15,6 +15,33 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Log food by describing it.** `log_day_nutrition` has a `mode="add"` that
+  adds what you just ate to the meal and the day's macros in one step on the
+  server, so "I also had a banana" can never overwrite what was already logged.
+- **Your own food library, from Claude.** `save_food` saves a food once — a
+  nutrition label read off a screenshot, or a home recipe worked out per serving
+  from its ingredients (kept in a new `notes` field) — and `search_foods` looks
+  it up next time, before falling back to USDA and Open Food Facts. Foods are
+  shared with the household unless saved private.
+
+### Fixed
+
+- **USDA search results could show kilojoules as calories.** USDA lists energy
+  in both units and the lookup kept whichever came last, so a whole egg read
+  599 kcal per 100 g instead of 143. Affected the Nutrition page's food search
+  too.
+- Editing a food in the app no longer clears a recipe's ingredient notes.
+
+### Upgrade
+
+- One migration (`add_food_notes`), applied automatically on start.
+- **Re-run `backend/scripts/mcp_db_role.sql`** with your existing
+  `MCP_DB_PASSWORD`: it grants the connector INSERT/UPDATE (never DELETE) on
+  `food_items`. Optionally set `USDA_API_KEY` in `.env` for the USDA half of
+  the lookup; Open Food Facts needs no key.
+
 ## [2.17.0] - 2026-10-06
 
 Alembic head: `add_exercise_tracking`

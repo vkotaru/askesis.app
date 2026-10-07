@@ -15,8 +15,9 @@
 -- Without this role every other control guards a door beside an open window.
 --
 -- THE RULE: the MCP role may read the health data it serves, may write its own
--- OAuth bookkeeping and the PLANNING tables (the exercise library, routines and
--- the target columns on user_settings), and may NOT write to `users` or to any
+-- OAuth bookkeeping and the PLANNING tables (the exercise library, routines,
+-- the target columns on user_settings, and the food library), and may NOT
+-- write to `users` or to any
 -- record of what actually happened -- activities, exercise_sets, daily_logs,
 -- measurements -- under any circumstance.
 --
@@ -143,6 +144,18 @@ GRANT USAGE, SELECT ON SEQUENCE
     daily_nutrition_id_seq
 TO askesis_mcp;
 
+-- 3c. Insert/update, NO delete: the food library (save_food). Library data,
+--     like exercise_catalog -- what a food IS, not what anyone ate -- so it
+--     sits on the planning side of the line. Removing a food stays an app-only
+--     soft delete.
+GRANT INSERT, UPDATE ON
+    food_items
+TO askesis_mcp;
+
+GRANT USAGE, SELECT ON SEQUENCE
+    food_items_id_seq
+TO askesis_mcp;
+
 -- 4. Read-write: the connector's own OAuth bookkeeping.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     mcp_clients,
@@ -180,8 +193,8 @@ TO askesis_mcp;
 -- ─────────────────────────────────────────────────────────────────────────────
 \echo ''
 \echo '== writable tables (expect: the three mcp_*, exercise_catalog, user_settings,'
-\echo '   workout_templates, routine_exercises, and only INSERT,UPDATE on meals and'
-\echo '   daily_nutrition -- and NOTHING else) =='
+\echo '   workout_templates, routine_exercises, food_items, and only INSERT,UPDATE on'
+\echo '   meals and daily_nutrition -- and NOTHING else) =='
 SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
 FROM information_schema.table_privileges
 WHERE grantee = 'askesis_mcp' AND privilege_type <> 'SELECT'
@@ -202,7 +215,7 @@ DECLARE
     -- The planning tables the write tools need.
     planning text[] := ARRAY[
         'exercise_catalog', 'user_settings', 'workout_templates',
-        'routine_exercises'
+        'routine_exercises', 'food_items'
     ];
     t text;
     priv text;
@@ -242,9 +255,12 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- Archiving is a flag, so the library is never deleted from.
+    -- Archiving is a flag, so the libraries are never deleted from.
     IF has_table_privilege('askesis_mcp', 'exercise_catalog', 'DELETE') THEN
         RAISE EXCEPTION 'askesis_mcp can DELETE from exercise_catalog; archiving is an is_archived flag';
+    END IF;
+    IF has_table_privilege('askesis_mcp', 'food_items', 'DELETE') THEN
+        RAISE EXCEPTION 'askesis_mcp can DELETE from food_items; removing a food is an app-only soft delete';
     END IF;
 
     -- Never visible at all.

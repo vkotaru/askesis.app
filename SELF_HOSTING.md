@@ -428,9 +428,14 @@ docker compose exec -T db psql -U askesis -d askesis \
   < backend/scripts/mcp_db_role.sql
 ```
 
-The role may write plans, plus INSERT/UPDATE (never DELETE) on `meals` and
-`daily_nutrition` for `log_day_nutrition` — so a food-tracker screenshot shared
-to Claude can be logged. Without that grant the tool fails with a generic error.
+The role may write plans and the food library (`food_items`, for `save_food`),
+plus INSERT/UPDATE (never DELETE) on `meals` and `daily_nutrition` for
+`log_day_nutrition`. Without those grants the tools fail with a generic error.
+
+`search_foods` makes outbound requests to USDA FoodData Central and Open Food
+Facts from the MCP container. `USDA_API_KEY` (free, from api.data.gov) is the
+one key passed to that container besides its own; unset, USDA is skipped and
+Open Food Facts still answers.
 
 ### 3. A second Tailscale auth key
 
