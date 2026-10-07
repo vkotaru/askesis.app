@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-10-06
+
+Alembic head: `add_exercise_tracking`
+
 ### Added
 
 - **A Diagnose button on the Garmin card.** It asks the server to check each
@@ -1672,7 +1676,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.15.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.16.0...HEAD
+[2.16.0]: https://github.com/vkotaru/askesis.app/compare/v2.15.1...v2.16.0
 [2.15.1]: https://github.com/vkotaru/askesis.app/compare/v2.15.0...v2.15.1
 [2.15.0]: https://github.com/vkotaru/askesis.app/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/vkotaru/askesis.app/compare/v2.13.0...v2.14.0
