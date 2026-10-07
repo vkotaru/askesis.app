@@ -786,6 +786,10 @@ typing-inspection==0.4.4 \
     #   mcp
     #   pydantic
     #   pydantic-settings
+tzdata==2024.1 \
+    --hash=sha256:2674120f8d891909751c38abcdfd386ac0a5a1127954fbc332af6b5ceae07efd \
+    --hash=sha256:9068bc196136463f5245e51efda838afa15aaeca9903f49050dfa2679db4d252
+    # via -r /tmp/req.txt
 uvicorn==0.52.4 \
     --hash=sha256:73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86 \
     --hash=sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1

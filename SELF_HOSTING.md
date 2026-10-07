@@ -239,6 +239,13 @@ so the two disagree and the pull reaches for a day that has barely started.
 With the zone set, `GARMIN_SYNC_HOUR=3` means 03:17 local wherever you are:
 after midnight, before you wake up, with the previous day fully closed.
 
+The same zone also decides which day the *server* calls "today" — the public
+report's date and windows, the MCP tools' "today" and "this week", the
+training-plan checks. `APP_TZ` sets that separately if you ever need to; empty,
+it falls back to `GARMIN_SYNC_TZ`. Leave both unset and the report says
+tomorrow's date every evening, and Claude reads an empty tomorrow when you ask
+about today.
+
 **You will not have to log in again.** Each run refreshes the session token and
 writes it back to the volume, so the login survives indefinitely as long as the
 schedule runs and the volume lives. A re-login is needed only if you change your

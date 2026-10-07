@@ -12,12 +12,13 @@ catch-all GET /{token}, or "token" is read as a report token.
 """
 
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from app.config import local_today
 from app.database import get_db
 from app.models import (
     User,
@@ -205,7 +206,7 @@ def get_report(
         raise HTTPException(status_code=404, detail="Report not found")
 
     user_id = rt.user_id
-    today = date.today()
+    today = local_today()
 
     # ── Weight trend (last 30 days) ───────────────────────────────────────
     thirty_days_ago = today - timedelta(days=30)

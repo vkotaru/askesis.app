@@ -15,6 +15,16 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The server no longer thinks it is tomorrow every evening.** The container
+  runs UTC, so every afternoon or evening in the Americas the public report printed tomorrow's
+  date and windowed its charts from it, and the MCP tools answered "today" and
+  "this week" about a day that had not started. Server-side "today" now comes
+  from `APP_TZ`, falling back to `GARMIN_SYNC_TZ` — so a server that already
+  sets the Garmin zone is fixed with no config change. The MCP container is
+  passed both and now ships `tzdata`.
+
 ## [2.15.0] - 2026-10-05
 
 Alembic head: `add_exercise_tracking`

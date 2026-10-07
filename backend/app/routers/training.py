@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import local_today
 from app.database import get_db
 from app.models import (
     User,
@@ -424,7 +425,7 @@ def create_plan(
             detail="You already have an active training plan. Cancel it first.",
         )
 
-    today = date.today()
+    today = local_today()
     race_date = data.race_date
     days_until_race = (race_date - today).days
     if days_until_race < 7:

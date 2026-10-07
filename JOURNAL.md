@@ -21,6 +21,38 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-06 — The "tomorrow after 6 PM" bug was the server, not the browser
+
+Open since August, never reproduced, and the note on it pointed at the browser:
+`toISOString()` building a UTC date. **The frontend was innocent.** Every "today"
+there is `format(new Date(), 'yyyy-MM-dd')`, which is local. The UTC date came
+from the server: the container has no `TZ`, and four call sites used a bare
+`date.today()` — the public report (its printed date *and* its 30-day windows),
+three MCP tools (`_window`, the week anchor, the plan's "this week"), and the
+training plan's race-date check.
+
+`app/config.py::local_today()` is the one answer now, in `APP_TZ` falling back to
+`GARMIN_SYNC_TZ`. Garmin had already met this exact bug and fixed it locally
+(`app/garmin.py` reads its zone with a comment saying why); the fix stayed local,
+so the next three callers repeated it. It lives in `config.py` because that file
+already ships in the MCP image — a new module would need a Dockerfile `COPY`.
+
+Reproduced and verified one evening when UTC was already on the next day: the report
+endpoint, driven in-process under `TZ=UTC`, returned tomorrow's date unset
+and today's with the zone.
+
+**Watch out**
+- The MCP container gets no `env_file` by design, so a new setting it needs is
+  named in its `environment:` block or it silently isn't there. Both zones are.
+- `requirements-mcp.lock` gained `tzdata` by seeding pip-compile with the
+  existing lock as its output file, so nothing else moved. Regenerating from
+  scratch per the header recipe would re-resolve every transitive pin.
+- Whether the box sets `GARMIN_SYNC_TZ` was not checked (it was unreachable).
+  If not, set `APP_TZ` there, or this ships and fixes nothing.
+- `scripts/check_mcp_writes.py` and `check_steps_paths.py` fail against a
+  reused dev DB (leftover rows from earlier runs). They are written for a fresh
+  one, as CI gives them; that is not a regression.
+
 ## 2026-10-05 — A four-millisecond failure is still a failure
 
 Two asks: fewer icons, and a Garmin sync that is not three taps into Settings.

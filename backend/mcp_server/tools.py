@@ -36,6 +36,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import local_today
 from app.disciplines import DISCIPLINE_BY_KEY, DISCIPLINE_KEYS, classify, parse_plan
 from app.models import (
     Activity,
@@ -116,7 +117,7 @@ def _window(
     start: str | None, end: str | None, default_days: int = 30
 ) -> tuple[date_type, date_type]:
     """Parse and sanity-check a date window, defaulting to the last N days."""
-    today = date_type.today()  # noqa: DTZ011 - civil date, matching how the app keys days
+    today = local_today()
     try:
         e = date_type.fromisoformat(end) if end else today
         s = (
@@ -351,7 +352,7 @@ def get_weekly_review(
     so this agrees with the dashboard rather than quietly using a different week.
     """
     try:
-        anchor = date_type.fromisoformat(week_of) if week_of else date_type.today()  # noqa: DTZ011
+        anchor = date_type.fromisoformat(week_of) if week_of else local_today()
     except ValueError as exc:
         raise ToolError(f"week_of must be ISO-8601 (YYYY-MM-DD): {exc}") from exc
 
@@ -847,7 +848,7 @@ def get_training_plan(
         .order_by(PlannedWorkout.date.asc())
         .all()
     )
-    today = date_type.today()  # noqa: DTZ011
+    today = local_today()
     by_week: dict[int, dict[str, Any]] = {}
     for w in workouts:
         slot = by_week.setdefault(

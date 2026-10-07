@@ -1,8 +1,10 @@
 import sys
+from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+from zoneinfo import ZoneInfo
 
 # backend/ — the default uploads dir sits next to app/, and the Docker image
 # bind-mounts the host's ./data/uploads over it.
@@ -61,6 +63,12 @@ class Settings(BaseSettings):
     # account creation, so it is a password, not a label: generate one with
     # `openssl rand -hex 16` rather than picking a word.
     registration_code: str = ""
+
+    # The household's IANA zone: which calendar day the server calls "today"
+    # (the public report, the MCP tools, the training-plan checks). Empty falls
+    # back to GARMIN_SYNC_TZ, the setting that existed first. The container runs
+    # UTC, so an unset zone makes "today" tomorrow every evening in the Americas.
+    app_tz: str = ""
 
     # Nightly Garmin pull. Off unless explicitly enabled.
     garmin_sync_enabled: bool = False
@@ -123,3 +131,13 @@ def get_settings() -> Settings:
                     sys.exit(1)
 
     return settings
+
+
+def local_today() -> date:
+    """Today's civil date where the user lives -- never `date.today()`.
+
+    Days are keyed by the browser's local date, and the server runs UTC, so a
+    bare `date.today()` here is tomorrow every evening west of Greenwich.
+    """
+    s = get_settings()
+    return datetime.now(ZoneInfo(s.app_tz or s.garmin_sync_tz or "UTC")).date()

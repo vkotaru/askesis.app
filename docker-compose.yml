@@ -182,6 +182,10 @@ services:
       # Total auth bypass; the config guard refuses to start if this is true.
       DEV_MODE: "false"
       MCP_SOCKET: /run/askesis-mcp/mcp.sock
+      # Which calendar day the tools call "today" (app/config.py local_today).
+      # Not secrets; passed through so this container agrees with the app.
+      APP_TZ: ${APP_TZ:-}
+      GARMIN_SYNC_TZ: ${GARMIN_SYNC_TZ:-}
     profiles: ["mcp"]
     volumes:
       - ./data/run-mcp:/run/askesis-mcp
