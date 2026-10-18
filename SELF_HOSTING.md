@@ -501,20 +501,15 @@ generic connection error.
 **Claude** — Settings → Connectors → Add custom connector.
 
 **Gemini app** (gemini.google.com) — Settings → Connected Apps → Custom apps →
-Add a custom app, with the same `/mcp` URL. Google's callbacks are not built in,
-so the first attempt fails ("The Google redirect URL was rejected by the server")
-and the MCP log records what it tried:
+Add a custom app, with the same `/mcp` URL. Leave the client ID / secret it may
+offer empty; this server issues neither. Google's callbacks are built in
+(`GOOGLE_REDIRECT_HOSTS` in `mcp_server/oauth.py`), so nothing goes in `.env`.
 
-```bash
-docker compose logs mcp | grep "registration refused" | tail -1
-```
-
-Put **every** URL in that list into `.env` as `MCP_ALLOWED_REDIRECTS`,
-comma-separated (a registration is refused if any one is missing), then
-`docker compose down && docker compose up -d` and add the app again. Each URL is
-matched exactly; a wildcard, query string or non-https entry stops the container.
-They embed your Google account id, so they stay in `.env`. Don't fill in the
-client ID / secret Gemini offers as a fallback — this server issues neither.
+Another hosted client whose callback is not built in fails registration, and the
+MCP log names the URLs it tried
+(`docker compose logs mcp | grep "registration refused"`). List them all, exactly,
+in `MCP_ALLOWED_REDIRECTS`; a wildcard, query string or non-https entry stops the
+container.
 
 **Gemini CLI** — in `~/.gemini/settings.json`:
 

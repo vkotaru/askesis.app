@@ -15,6 +15,12 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Changed
+
+- **The Gemini app's callbacks are built in**, like Claude's, so adding the
+  connector there needs nothing in `.env`. `MCP_ALLOWED_REDIRECTS` from 2.20.0
+  stays, for a hosted client that isn't built in.
+
 ## [2.20.0] - 2026-10-18
 
 Alembic head: `add_food_notes`

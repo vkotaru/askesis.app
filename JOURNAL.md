@@ -29,11 +29,19 @@ callback plus loopback, in code. Google registers **six** callbacks at once
 (`oauth-redirect{,-test,-sandbox}.googleusercontent.com`, paths `/r/` and `/a/`),
 and registration refuses the lot if any one is unlisted.
 
-- **Exact URLs from `.env`, not a pattern.** `MCP_ALLOWED_REDIRECTS` holds whole
-  URLs. A rule like `*.googleusercontent.com` was considered and rejected: that
-  domain serves arbitrary user content, so a host pattern would let anyone hosting
-  there receive codes. Google's URLs embed the account id and the server's
-  hostname, which is also why they belong in `.env` and not in this public repo.
+- **First cut (2.20.0): exact URLs from `.env`.** Reversed the same day (2.20.1)
+  because it was stricter than the Claude rule for no gain. The worry was
+  `googleusercontent.com`, which serves arbitrary user content. But the three
+  `oauth-redirect*` hosts are Google's own redirector, not that content. The
+  Claude rule already admits "any claude.ai user's callback", and a code is
+  only issued after an Askesis password is typed. So Google is now built in:
+  exact hosts (`netloc`, so no port or userinfo), the path `/[ra]/<token>` by
+  shape, and no query. Don't widen it to `*.googleusercontent.com`; that version
+  *would* be the hole. `MCP_ALLOWED_REDIRECTS` stays for unknown clients.
+- **Trap: `check_oauth_flow.py` shares one rate-limit window.** Extra
+  registration cases pushed it past 30 OAuth requests a minute, and the flow
+  further down died with a `KeyError: 'location'` (a 429, not a logic bug). The
+  script now starts a fresh window after the registration section.
 - **Bad entries stop the container** (wildcard, query, non-https), same rule as the
   rest of `config.py`.
 - **Trap: `MCP_ALLOWED_ORIGINS` never reached the container.** The MCP service

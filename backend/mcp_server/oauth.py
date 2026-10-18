@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 from datetime import datetime, timedelta
 from urllib.parse import urlencode, urlparse
@@ -49,11 +50,25 @@ logger = logging.getLogger("askesis.mcp.oauth")
 
 #: Where an authorization code may be sent. Anything outside this is refused at
 #: registration, which is the single most valuable control on this surface: it
-#: makes a stolen code unredirectable rather than merely hard to steal. Any
-#: other hosted client (the Gemini app) is added by exact URL with
-#: MCP_ALLOWED_REDIRECTS -- see config.allowed_redirects.
+#: makes a stolen code unredirectable rather than merely hard to steal. A hosted
+#: client not built in below is added by exact URL with MCP_ALLOWED_REDIRECTS --
+#: see config.allowed_redirects.
 ALLOWED_REDIRECT_HOSTS = {"claude.ai", "claude.com"}
 ALLOWED_REDIRECT_PATHS = {"/api/mcp/auth_callback"}
+
+#: The Gemini app. Unlike Claude it has no single callback: each user and server
+#: gets its own path (it embeds the Google account id and this server's
+#: hostname), registered on all three of Google's OAuth-redirect hosts under
+#: both /r/ and /a/. So the host is matched exactly and the path by shape.
+#: These are Google's own redirector, not the user-content side of
+#: googleusercontent.com, so this admits exactly what the Claude rule admits:
+#: the code goes back to that vendor, for whichever of its users signed in.
+GOOGLE_REDIRECT_HOSTS = {
+    "oauth-redirect.googleusercontent.com",
+    "oauth-redirect-test.googleusercontent.com",
+    "oauth-redirect-sandbox.googleusercontent.com",
+}
+GOOGLE_REDIRECT_PATH = re.compile(r"/[ra]/[A-Za-z0-9_-]+")
 
 #: RFC 8252 §7.3 — a native client gets an ephemeral loopback port, so the port
 #: is ignored when matching. This is what lets ANY native MCP client connect:
@@ -76,6 +91,12 @@ def _redirect_allowed(uri: str, extra: frozenset[str] = frozenset()) -> bool:
         return False
     if p.scheme == "https" and p.hostname in ALLOWED_REDIRECT_HOSTS:
         return p.path in ALLOWED_REDIRECT_PATHS
+    # netloc, not hostname: no port and no userinfo on these.
+    if p.scheme == "https" and p.netloc in GOOGLE_REDIRECT_HOSTS:
+        return (
+            not (p.params or p.query or p.fragment)
+            and GOOGLE_REDIRECT_PATH.fullmatch(p.path) is not None
+        )
     if ALLOW_LOOPBACK_REDIRECTS and p.scheme == "http":
         return p.hostname in ("localhost", "127.0.0.1", "::1")
     return False

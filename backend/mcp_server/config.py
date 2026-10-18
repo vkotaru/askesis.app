@@ -147,17 +147,15 @@ class MCPConfig:
             ]
 
         # OAuth redirect URIs allowed at registration beyond the built-in ones
-        # (claude.ai's callback and any loopback). This is what a hosted client
-        # other than Claude needs -- the Gemini app registers a set of
-        # oauth-redirect*.googleusercontent.com callbacks, one per environment.
+        # (Claude's callback, the Gemini app's, any loopback -- see oauth.py).
+        # This is for a hosted client that is none of those.
         #
         # Matched as WHOLE STRINGS, never as a prefix or a pattern: the redirect
         # allow-list is what makes a stolen authorization code unredirectable,
         # and a pattern loose enough to be convenient is loose enough to be
         # useful to someone else. So anything that looks like a pattern, or is
         # not https, stops the container instead of being quietly accepted.
-        # Comma-separated. Google's URIs embed an account id -- they belong in
-        # .env, never in this repository.
+        # Comma-separated.
         self.allowed_redirects: frozenset[str] = frozenset()
         extra_redirects = os.environ.get("MCP_ALLOWED_REDIRECTS", "").strip()
         if extra_redirects:

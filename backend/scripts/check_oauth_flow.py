@@ -58,13 +58,9 @@ os.environ.setdefault("SECRET_KEY", "check-oauth-flow-throwaway-" + "s" * 32)
 os.environ.setdefault("MCP_PUBLIC_ORIGIN", "https://askesis-mcp.example.ts.net")
 os.environ.setdefault("MCP_TOKEN_SECRET", "t" * 32)
 os.environ.setdefault("MCP_APP_SECRET_KEY", "a" * 32)
-#: A hosted client's callback, shaped like the Gemini app's, added by config
-#: rather than by code. Exact-match is what is being asserted below.
-HOSTED_REDIRECT = "https://oauth-redirect.googleusercontent.com/r/user_bound_example"
-os.environ["MCP_ALLOWED_REDIRECTS"] = (
-    HOSTED_REDIRECT
-    + ", https://oauth-redirect.googleusercontent.com/a/user_bound_example"
-)
+#: A client added by config rather than code. Exact-match is asserted below.
+HOSTED_REDIRECT = "https://hosted.example.com/oauth/callback"
+os.environ["MCP_ALLOWED_REDIRECTS"] = HOSTED_REDIRECT
 
 import httpx  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
@@ -214,29 +210,45 @@ async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides 
     )
     check("an off-site redirect is refused", bad.status_code, 400)
     check("  and says why", bad.json()["error"], "invalid_redirect_uri")
+    # The Gemini app: a per-user path on each of Google's three OAuth-redirect
+    # hosts, under /r/ and /a/, registered all at once -- built in, no .env.
+    gid = "user_bound_custom-mcp-0000-askesis-mcp_example_ts_net"
+    gemini = [
+        f"https://oauth-redirect{env}.googleusercontent.com/{kind}/{gid}"
+        for env in ("", "-test", "-sandbox")
+        for kind in ("r", "a")
+    ]
+    reg_g = await client.post(
+        "/register", json={"client_name": "Gemini", "redirect_uris": gemini}
+    )
+    check("the Gemini app's six callbacks register", reg_g.status_code, 201)
+    google = "https://oauth-redirect.googleusercontent.com"
+    for near in (
+        f"{google}/x/{gid}",
+        f"{google}/r/{gid}/more",
+        f"{google}/r/{gid}?next=https://evil.test",
+        f"{google}:8443/r/{gid}",
+        f"https://evil@oauth-redirect.googleusercontent.com/r/{gid}",
+        f"https://oauth-redirect.evil.googleusercontent.com/r/{gid}",
+        f"https://lh3.googleusercontent.com/r/{gid}",
+        f"http://oauth-redirect.googleusercontent.com/r/{gid}",
+    ):
+        miss = await client.post(
+            "/register", json={"client_name": "Near miss", "redirect_uris": [near]}
+        )
+        check(f"  but not {near[8:52]}", miss.status_code, 400)
+
     hosted = await client.post(
-        "/register",
-        json={
-            "client_name": "Hosted",
-            "redirect_uris": [
-                HOSTED_REDIRECT,
-                "https://oauth-redirect.googleusercontent.com/a/user_bound_example",
-            ],
-        },
+        "/register", json={"client_name": "Hosted", "redirect_uris": [HOSTED_REDIRECT]}
     )
     check(
         "a redirect listed in MCP_ALLOWED_REDIRECTS registers", hosted.status_code, 201
     )
-    for near in (
-        HOSTED_REDIRECT + "x",
-        HOSTED_REDIRECT + "/more",
-        HOSTED_REDIRECT.replace("oauth-redirect.", "oauth-redirect.evil."),
-    ):
+    for near in (HOSTED_REDIRECT + "x", HOSTED_REDIRECT + "/more"):
         miss = await client.post(
-            "/register",
-            json={"client_name": "Near miss", "redirect_uris": [near]},
+            "/register", json={"client_name": "Near miss", "redirect_uris": [near]}
         )
-        check(f"  but not a near miss ({near[-24:]})", miss.status_code, 400)
+        check(f"  but not a near miss ({near[-14:]})", miss.status_code, 400)
     mixed = await client.post(
         "/register",
         json={
@@ -244,13 +256,11 @@ async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides 
             "redirect_uris": [HOSTED_REDIRECT, "https://evil.test/cb"],
         },
     )
-    check(
-        "  and one unlisted uri refuses the whole registration", mixed.status_code, 400
-    )
+    check("one unlisted uri refuses the whole registration", mixed.status_code, 400)
     for value in (
-        "https://*.googleusercontent.com/r/x",
+        "https://*.example.com/cb",
         "http://example.com/cb",
-        "https://e.com/cb?x=1",
+        "https://example.com/cb?x=1",
     ):
         os.environ["MCP_ALLOWED_REDIRECTS"] = value
         try:
@@ -260,6 +270,11 @@ async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides 
             refused = True
         check(f"MCP_ALLOWED_REDIRECTS={value} stops the container", refused, True)
     os.environ["MCP_ALLOWED_REDIRECTS"] = HOSTED_REDIRECT
+    # The registrations above spent most of one IP's OAuth budget (30 a minute)
+    # and the flow below needs the rest. A fresh window, not a raised limit.
+    oauth.rl.oauth_requests = oauth.rl.SlidingWindow(
+        oauth.rl.OAUTH_MAX_REQUESTS, oauth.rl.OAUTH_WINDOW_SECONDS
+    )
 
     print()
     print("── consent ──")
