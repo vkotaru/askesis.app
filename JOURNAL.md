@@ -21,6 +21,40 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-18 — Who may connect an assistant, and what a password change must cut
+
+A review of the connector against unprocastinate's found three gaps, all now closed.
+
+- **A password change didn't disconnect the assistant.** The access token died on
+  the epoch check, but `_refresh` minted a new one stamped with the *new* epoch,
+  so Claude was back within the hour. Now `record_password_change` revokes the
+  grants, and `_refresh` refuses any grant older than the last change. That
+  second check is the backstop, and it was needed straight away:
+  **`manage_users.py set-password` never advanced the epoch at all**, so a reset
+  from the shell signed out nothing, browser sessions included. Every password
+  write now goes through the helper. A new one must too.
+- **Any account with a password could connect.** `MCP_ALLOWED_USERS` now
+  controls it, and empty means nobody. An unlisted account gets the
+  wrong-password page and timing, because a separate "not allowed" message would
+  confirm the password. At refresh it is refused but *not revoked*: revoking
+  there would turn one deploy with the variable unset into every grant
+  destroyed.
+- **A replayed refresh token was only refused.** Rotation overwrote the hash, so
+  the old value was just "unknown". One column (`prior_refresh_token_hash`)
+  keeps the value it replaced. That catches the case that matters: the thief
+  refreshes first, and the real client's next refresh presents the old token. It
+  also made rotation a conditional UPDATE, because two simultaneous refreshes of
+  one token could both win before.
+- **Not done: a tailnet-only consent page** (review item 4, optional).
+  `MCP_AUTHORIZE_ORIGIN` already exists. The cost is that every client then
+  needs Tailscale on the device where you approve, the Gemini app on a phone
+  included, plus an ACL change on the MCP node, which today is granted no
+  tailnet destinations. Left for a deliberate decision.
+- **Open: is `X-Forwarded-For` trustworthy behind Funnel?** `client_ip` takes the
+  *first* entry. That is right if Funnel overwrites the header, and spoofable
+  if it appends. The per-username limiter holds either way. Check it from
+  outside the tailnet before relying on the per-IP half.
+
 ## 2026-10-18 — Letting the Gemini app in, and a setting that never arrived
 
 The Gemini app's custom-app flow failed with "The Google redirect URL was rejected

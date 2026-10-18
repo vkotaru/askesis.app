@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from datetime import timedelta
 import hashlib
 import os
 import secrets
@@ -61,13 +62,16 @@ os.environ.setdefault("MCP_APP_SECRET_KEY", "a" * 32)
 #: A client added by config rather than code. Exact-match is asserted below.
 HOSTED_REDIRECT = "https://hosted.example.com/oauth/callback"
 os.environ["MCP_ALLOWED_REDIRECTS"] = HOSTED_REDIRECT
+#: Only named accounts may connect; the fixture account is named.
+os.environ["MCP_ALLOWED_USERS"] = "gemtest"
 
 import httpx  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.routing import Route  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
-from app.models import User  # noqa: E402
+from app.models import MCPGrant, User  # noqa: E402
+from app.routers.auth import record_password_change  # noqa: E402
 from app.security import hash_password  # noqa: E402
 from mcp_server import oauth  # noqa: E402
 from mcp_server.config import MCPConfig, MCPConfigError  # noqa: E402
@@ -158,6 +162,46 @@ async def authorize(
     )
 
 
+async def connect(client: httpx.AsyncClient, cid: str) -> dict:
+    """Consent and exchange: a fresh grant's token response."""
+    verifier, challenge = pkce()
+    resp = await authorize(client, client_id=cid, challenge=challenge, scope=None)
+    code = parse_qs(urlparse(resp.headers["location"]).query)["code"][0]
+    return (
+        await client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": REDIRECT,
+                "client_id": cid,
+                "code_verifier": verifier,
+            },
+        )
+    ).json()
+
+
+async def refresh(client: httpx.AsyncClient, cid: str, token: str) -> httpx.Response:
+    return await client.post(
+        "/token",
+        data={"grant_type": "refresh_token", "refresh_token": token, "client_id": cid},
+    )
+
+
+def grant_of(access_token: str, config: MCPConfig) -> MCPGrant:
+    claims = decode_access_token(
+        access_token,
+        secret=config.token_secret,
+        issuer=config.public_origin,
+        audience=config.resource_url,
+    )
+    db = SessionLocal()
+    try:
+        return db.get(MCPGrant, claims["gid"])
+    finally:
+        db.close()
+
+
 async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides the order
     config = MCPConfig()
     app = build_app(config)
@@ -179,6 +223,12 @@ async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides 
             )
         )
         db.commit()
+    # The password section below moves this forward; a re-run on the same DB
+    # must not start with every new grant already "older than the password".
+    db.query(User).filter(User.username == "gemtest").update(
+        {User.password_changed_at: None}
+    )
+    db.commit()
     db.close()
 
     print("── discovery ──")
@@ -493,6 +543,86 @@ async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides 
     # something to hand back to the client, it is something to retry here.
     check("a wrong password re-renders the form", bad_pw.status_code, 401)
     check("  and no code leaks into the page", "code=" in bad_pw.text, False)
+
+    # The sections below make another dozen OAuth requests; fresh window again.
+    oauth.rl.oauth_requests = oauth.rl.SlidingWindow(
+        oauth.rl.OAUTH_MAX_REQUESTS, oauth.rl.OAUTH_WINDOW_SECONDS
+    )
+
+    print()
+    print("── a replayed refresh token revokes the grant ──")
+    first = await connect(client, cid)
+    second = await refresh(client, cid, first["refresh_token"])
+    check("the first refresh works", second.status_code, 200)
+    # Either party presenting the old value second is the signal: here the
+    # "thief" refreshed first, and the real client comes back with the old one.
+    again = await refresh(client, cid, first["refresh_token"])
+    check("the old token again is refused", again.status_code, 400)
+    check(
+        "  and says it was reused", "reused" in again.json()["error_description"], True
+    )
+    after = await refresh(client, cid, second.json()["refresh_token"])
+    check("  and the newer token is dead too", after.status_code, 400)
+    check(
+        "  because the grant is revoked",
+        grant_of(first["access_token"], config).revoked_at is not None,
+        True,
+    )
+    junk = await refresh(client, cid, "never-issued")
+    check("an unknown token is only refused", junk.status_code, 400)
+
+    print()
+    print("── only accounts in MCP_ALLOWED_USERS connect ──")
+    live = await connect(client, cid)
+    saved = config.allowed_users
+    config.allowed_users = frozenset()
+    verifier, challenge = pkce()
+    shut = await authorize(client, client_id=cid, challenge=challenge, scope=None)
+    check("the right password, unlisted, is refused", shut.status_code, 401)
+    check(
+        "  with the same page as a wrong password",
+        "Incorrect username" in shut.text,
+        True,
+    )
+    check("  and no code", "code=" in shut.headers.get("location", ""), False)
+    blocked = await refresh(client, cid, live["refresh_token"])
+    check("an unlisted account's refresh is refused", blocked.status_code, 400)
+    config.allowed_users = saved
+    check(
+        "  but not revoked, so fixing the list restores it",
+        (await refresh(client, cid, live["refresh_token"])).status_code,
+        200,
+    )
+
+    print()
+    print("── a new password disconnects every client ──")
+    changed = await connect(client, cid)
+    db = SessionLocal()
+    user = db.query(User).filter(User.username == "gemtest").one()
+    user.password_hash = hash_password(PASSWORD)
+    revoked = record_password_change(db, user)
+    db.commit()
+    db.close()
+    check("record_password_change revokes live grants", revoked >= 1, True)
+    stale = await refresh(client, cid, changed["refresh_token"])
+    check("  and their refresh is refused", stale.status_code, 400)
+
+    # The backstop: a path that changes the password WITHOUT revoking (the old
+    # manage_users.py did exactly this) must still not let a refresh carry on.
+    forgot = await connect(client, cid)
+    db = SessionLocal()
+    user = db.query(User).filter(User.username == "gemtest").one()
+    made = db.get(MCPGrant, grant_of(forgot["access_token"], config).id).created_at
+    user.password_changed_at = made + timedelta(seconds=2)
+    db.commit()
+    db.close()
+    late = await refresh(client, cid, forgot["refresh_token"])
+    check("a grant older than the password is refused", late.status_code, 400)
+    check(
+        "  and says why",
+        "password changed" in late.json()["error_description"],
+        True,
+    )
 
     print()
     if fails:

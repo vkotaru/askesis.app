@@ -185,6 +185,8 @@ services:
       # being passed through here, so setting it in .env did nothing.
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
       MCP_ALLOWED_REDIRECTS: ${MCP_ALLOWED_REDIRECTS:-}
+      # Usernames allowed to connect a client. Empty means nobody can.
+      MCP_ALLOWED_USERS: ${MCP_ALLOWED_USERS:-}
       # Total auth bypass; the config guard refuses to start if this is true.
       DEV_MODE: "false"
       MCP_SOCKET: /run/askesis-mcp/mcp.sock

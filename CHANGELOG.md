@@ -15,6 +15,20 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Security
+
+- **Only accounts you name can connect an assistant.** `MCP_ALLOWED_USERS`
+  in `.env` lists them. **Empty means nobody**, so set it before deploying or
+  the connector stops working at its next call.
+- **Changing your password disconnects Claude and Gemini.** Before, the old
+  connection refreshed itself back within the hour. This applies to the app's
+  settings and to `manage_users.py set-password`, which also signed nothing
+  out until now.
+- **A copied refresh token is caught.** If an old one is used again, the
+  connection is revoked and has to be made again, instead of the old token
+  just being refused. Two refreshes racing on one token can no longer both
+  succeed.
+
 ## [2.20.1] - 2026-10-18
 
 Alembic head: `add_food_notes`

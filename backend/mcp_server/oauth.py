@@ -19,6 +19,7 @@ Only what a client genuinely needs, hardened past the minimum:
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 import re
@@ -468,10 +469,20 @@ def authorize(config: MCPConfig):
                 .filter((User.username == identifier) | (User.email == identifier))
                 .one_or_none()
             )
+            # An account not in MCP_ALLOWED_USERS is treated as if it did not
+            # exist: same page, same timing, same failure count. A distinct
+            # "not allowed" answer would tell a guesser the password was right.
+            if user is not None and not config.user_allowed(user):
+                logger.warning(
+                    "MCP login for %r refused: not in MCP_ALLOWED_USERS", identifier
+                )
+                user = None
             # `verify_password` burns a bcrypt round against a dummy hash when
             # the lookup misses, so a wrong username costs the same as a wrong
             # password and the timing does not distinguish them.
-            if user is None or not verify_password(password, user.password_hash):
+            if user is None or not verify_password(
+                password, user.password_hash if user else None
+            ):
                 rl.login_failures.record(key)
                 logger.warning("failed MCP login for %r from %s", identifier, ip)
                 return Response(
@@ -479,7 +490,10 @@ def authorize(config: MCPConfig):
                         client_name=client.client_name or "An application",
                         redirect_uri=redirect_uri,
                         account_label="your Askesis account",
-                        error="Incorrect username or password.",
+                        error=(
+                            "Incorrect username or password, or this account "
+                            "is not allowed to connect."
+                        ),
                         hidden=hidden,
                         can_write=config.write_scope in pkce["scope"].split(),
                     ),
@@ -537,12 +551,43 @@ def authorize(config: MCPConfig):
 # ── Token ────────────────────────────────────────────────────────────────────
 
 
-def _issue(db, config: MCPConfig, grant: MCPGrant, user: User) -> JSONResponse:
-    """Mint an access token and a fresh refresh token for a grant."""
+def _issue(
+    db,
+    config: MCPConfig,
+    grant: MCPGrant,
+    user: User,
+    presented_hash: str | None = None,
+) -> JSONResponse | None:
+    """Mint an access token and a fresh refresh token for a grant.
+
+    With `presented_hash` (a refresh), the rotation is a conditional UPDATE on
+    the token still being that value, so two redemptions of one refresh token
+    cannot both succeed; the loser gets None. The replaced value is kept as
+    `prior_refresh_token_hash`, which is how a later replay is recognised.
+    """
     refresh = new_secret()
-    grant.refresh_token_hash = hash_secret(refresh)
-    grant.refresh_expires_at = datetime.utcnow() + REFRESH_TOKEN_TTL
-    grant.last_used_at = datetime.utcnow()
+    now = datetime.utcnow()
+    values = {
+        "refresh_token_hash": hash_secret(refresh),
+        "refresh_expires_at": now + REFRESH_TOKEN_TTL,
+        "last_used_at": now,
+    }
+    if presented_hash is None:
+        for name, value in values.items():
+            setattr(grant, name, value)
+    else:
+        won = db.execute(
+            update(MCPGrant)
+            .where(
+                MCPGrant.id == grant.id,
+                MCPGrant.refresh_token_hash == presented_hash,
+                MCPGrant.revoked_at.is_(None),
+            )
+            .values(prior_refresh_token_hash=presented_hash, **values)
+        ).rowcount
+        if not won:
+            db.rollback()
+            return None
     db.commit()
 
     access, expires = mint_access_token(
@@ -658,6 +703,9 @@ def _authorization_code(db, config: MCPConfig, form) -> Response:
     if user is None:
         db.rollback()
         return _oauth_error("invalid_grant", "Account no longer exists.")
+    if not config.user_allowed(user):
+        db.commit()  # the code stays spent
+        return _oauth_error("invalid_grant", "This account may not connect.")
 
     grant = MCPGrant(
         user_id=user.id, client_id=row.client_id, scope=row.scope, resource=row.resource
@@ -673,16 +721,57 @@ def _authorization_code(db, config: MCPConfig, form) -> Response:
     return _issue(db, config, grant, user)
 
 
+def _revoke_for_reuse(db, grant: MCPGrant) -> Response:
+    """A rotated refresh token came back: two parties hold this grant.
+
+    There is no telling which is the real client -- the thief may have
+    refreshed first -- so every live grant that user gave that client is
+    revoked and the user signs in again. The cost of a false alarm (a client
+    that retried a refresh it had already won) is one re-authorization; the cost
+    of letting it go is an attacker with indefinite, refreshable access.
+    """
+    n = (
+        db.query(MCPGrant)
+        .filter(
+            MCPGrant.user_id == grant.user_id,
+            MCPGrant.client_id == grant.client_id,
+            MCPGrant.revoked_at.is_(None),
+        )
+        .update(
+            {MCPGrant.revoked_at: datetime.utcnow(), MCPGrant.refresh_token_hash: None},
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    logger.error(
+        "refresh token reuse on grant %s (client %s, user %s): revoked %s grant(s)",
+        grant.id,
+        grant.client_id,
+        grant.user_id,
+        n,
+    )
+    return _oauth_error(
+        "invalid_grant", "Refresh token reused; this authorization was revoked."
+    )
+
+
 def _refresh(db, config: MCPConfig, form) -> Response:
-    presented = form.get("refresh_token") or ""
+    presented = hash_secret(form.get("refresh_token") or "")
     grant = (
         db.query(MCPGrant)
-        .filter(MCPGrant.refresh_token_hash == hash_secret(presented))
+        .filter(MCPGrant.refresh_token_hash == presented)
         .one_or_none()
     )
     # `invalid_grant` specifically, not `invalid_request`: clients distinguish
     # them, and the wrong one turns "re-authorize me" into a hard failure.
     if grant is None:
+        replayed = (
+            db.query(MCPGrant)
+            .filter(MCPGrant.prior_refresh_token_hash == presented)
+            .first()
+        )
+        if replayed is not None and replayed.revoked_at is None:
+            return _revoke_for_reuse(db, replayed)
         return _oauth_error("invalid_grant", "Unknown or rotated refresh token.")
     if grant.revoked_at is not None:
         return _oauth_error("invalid_grant", "This authorization was revoked.")
@@ -692,9 +781,32 @@ def _refresh(db, config: MCPConfig, form) -> Response:
     user = db.query(User).filter(User.id == grant.user_id).one_or_none()
     if user is None:
         return _oauth_error("invalid_grant", "Account no longer exists.")
-    # Rotation: _issue overwrites refresh_token_hash, so the presented value
-    # stops working the moment this returns.
-    return _issue(db, config, grant, user)
+    # Refused, not revoked: an empty or mistyped MCP_ALLOWED_USERS would
+    # otherwise destroy every grant on its first refresh. Fixing the list
+    # brings them back.
+    if not config.user_allowed(user):
+        logger.warning("refresh refused for user %s: not in MCP_ALLOWED_USERS", user.id)
+        return _oauth_error("invalid_grant", "This account may not connect.")
+    # A grant made before the password last changed was consented to with the
+    # old password. record_password_change revokes these already; this is the
+    # backstop for any path that changes a password without calling it, because
+    # a refresh would otherwise mint a token stamped with the NEW epoch and
+    # quietly undo the change.
+    epoch = password_epoch(user.password_changed_at)
+    if epoch is not None and epoch > calendar.timegm(grant.created_at.utctimetuple()):
+        grant.revoked_at = datetime.utcnow()
+        grant.refresh_token_hash = None
+        db.commit()
+        logger.info("grant %s revoked: password changed since it was made", grant.id)
+        return _oauth_error(
+            "invalid_grant", "The password changed since this was authorized."
+        )
+
+    issued = _issue(db, config, grant, user, presented_hash=presented)
+    if issued is None:
+        # Lost the race to another redemption of this same token.
+        return _revoke_for_reuse(db, grant)
+    return issued
 
 
 # ── Revocation ───────────────────────────────────────────────────────────────

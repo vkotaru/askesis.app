@@ -546,6 +546,19 @@ DNS-rebinding protection checks. `claude.ai` and `claude.com` are allowed by
 default; add others with `MCP_ALLOWED_ORIGINS` (comma-separated) in `.env`.
 Native clients send no Origin and are unaffected.
 
+**Name who may connect.** `MCP_ALLOWED_USERS` in `.env` lists the Askesis
+usernames that can sign in on the consent page, comma-separated. Empty means
+nobody: every other account gets "Incorrect username or password, or this
+account is not allowed to connect", at sign-in, at refresh and on every request.
+Taking a name off cuts that account off at its next call; putting it back
+restores the existing connection, because a refusal here does not revoke.
+
+**Changing a password disconnects every client** — from the app's settings or
+from `manage_users.py set-password` alike. Reconnect the connector afterwards.
+A refresh token presented twice (a copy is in someone else's hands) revokes
+that client's grants for the account, and the log says
+`refresh token reuse on grant ...`.
+
 Whichever client, you are redirected to a login/consent page served by the MCP
 node. It names the client from its own registration — so it says whatever that
 client called itself — and lists what you are sharing, free-text notes on daily

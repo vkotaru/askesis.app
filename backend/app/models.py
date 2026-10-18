@@ -687,7 +687,9 @@ class MCPGrant(Base):
 
     The refresh token is hashed and **rotating**: redeeming one issues a new
     value and invalidates the old, so a stolen refresh token is usable at most
-    once and its use is detectable.
+    once. `prior_refresh_token_hash` is the value it replaced, kept so that use
+    is *detected*: whoever presents the old one second -- thief or real client --
+    proves the token was copied, and the whole grant is revoked.
     """
 
     __tablename__ = "mcp_grants"
@@ -701,6 +703,7 @@ class MCPGrant(Base):
         String(64), unique=True, index=True
     )
     refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    prior_refresh_token_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime)

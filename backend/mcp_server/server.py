@@ -608,6 +608,9 @@ class AskesisTokenVerifier(TokenVerifier):
             user = db.query(User).filter(User.id == subject).one_or_none()
             if user is None:
                 return None
+            if not self._config.user_allowed(user):
+                logger.info("token refused: user %s not in MCP_ALLOWED_USERS", subject)
+                return None
             current = password_epoch(user.password_changed_at)
             if current is not None:
                 stamped = claims.get(PWD_EPOCH_CLAIM)

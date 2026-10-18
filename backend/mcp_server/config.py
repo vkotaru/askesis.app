@@ -173,6 +173,23 @@ class MCPConfig:
                     )
             self.allowed_redirects = frozenset(uris)
 
+        # Which Askesis accounts may connect a client at all, by username,
+        # comma-separated. Empty means NOBODY: a household app has accounts for
+        # people who never asked for an assistant to read their health data,
+        # and "every account with a password" is not a decision anyone made.
+        # Checked at sign-in, at refresh and on every request, so taking a name
+        # off the list cuts that account off at its next call.
+        self.allowed_users: frozenset[str] = frozenset(
+            u.strip().lower()
+            for u in os.environ.get("MCP_ALLOWED_USERS", "").split(",")
+            if u.strip()
+        )
+        if not self.allowed_users:
+            print(
+                "[MCP CONFIG] MCP_ALLOWED_USERS is empty: no account can connect.",
+                file=sys.stderr,
+            )
+
         # Two scopes, and `required_scopes` on the server must stay the READ
         # one alone. The SDK reads that list as "the token must carry all of
         # these", so naming write there would lock a read-only token out of the
@@ -182,6 +199,10 @@ class MCPConfig:
         self.write_scope = "askesis:write"
         #: Advertised in both metadata documents and accepted at /authorize.
         self.supported_scopes = (self.read_scope, self.write_scope)
+
+    def user_allowed(self, user) -> bool:
+        """Whether `user` (an app.models.User) may hold an MCP grant."""
+        return (user.username or "").lower() in self.allowed_users
 
     @property
     def scope(self) -> str:

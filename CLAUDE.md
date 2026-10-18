@@ -216,6 +216,12 @@ Key modules:
 - `app/routers/nutrition.py` — meal CRUD plus optional Gemini meal-photo analysis
   (`gemini-1.5-flash`). Without `GEMINI_API_KEY`, `/api/nutrition/analyze-photo` returns 503
   and nothing else changes. This is the only LLM call in the app.
+- **Who may connect is a list, and empty means nobody.** `MCP_ALLOWED_USERS`
+  (usernames) is checked at sign-in, refresh and per request. A password change
+  must go through `routers/auth.py::record_password_change`, which advances
+  the epoch *and* revokes MCP grants; `oauth._refresh` also refuses a grant older
+  than the last change, as a backstop. A rotated refresh token presented again
+  revokes that client's grants (`prior_refresh_token_hash`).
 - **The MCP connector is client-agnostic.** It is a standard remote MCP server
   (streamable HTTP `/mcp`, RFC 9728 discovery, RFC 7591 registration, PKCE S256,
   optional RFC 8707 audience), so Gemini CLI or any other client connects on the

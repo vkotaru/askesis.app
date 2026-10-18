@@ -28,6 +28,7 @@ from sqlalchemy import or_
 
 from app.database import SessionLocal
 from app.models import User, derive_username
+from app.routers.auth import record_password_change
 from app.security import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH, hash_password
 
 
@@ -180,8 +181,12 @@ def cmd_set_password(args) -> int:
         password = _prompt_password()
 
         user.password_hash = hash_password(password)
+        # Without this a reset from the shell signed nothing out: the epoch is
+        # what kills the old password's sessions and MCP tokens.
+        revoked = record_password_change(db, user)
         db.commit()
-        print("Password updated.")
+        print("Password updated. Signed out everywhere", end="")
+        print(f"; disconnected {revoked} MCP client(s)." if revoked else ".")
         return 0
     finally:
         db.close()

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.config import get_settings
-from app.models import User, DataShare, derive_username
+from app.models import MCPGrant, User, DataShare, derive_username
 from app.security import (
     MAX_PASSWORD_BYTES,
     MIN_PASSWORD_LENGTH,
@@ -75,6 +75,33 @@ def _advance_password_epoch(user: User) -> datetime:
     ):
         return previous + timedelta(seconds=1)
     return now
+
+
+def record_password_change(db: Session, user: User) -> int:
+    """Invalidate everything the old password let in. Caller commits.
+
+    Two halves, and both are needed. Advancing the epoch kills every app cookie
+    and every MCP access token issued before now. Revoking the MCP grants is what
+    stops the connector *reconnecting*: a refresh mints a fresh access token
+    stamped with the new epoch, so without this, Claude (or Gemini) would be
+    back within the hour as if nothing had changed. `oauth._refresh` also refuses
+    a grant older than the last change, so a path that forgets to call this
+    still cannot reconnect -- this is what makes it show as disconnected now.
+
+    Returns the number of grants revoked.
+    """
+    user.password_changed_at = _advance_password_epoch(user)
+    return (
+        db.query(MCPGrant)
+        .filter(MCPGrant.user_id == user.id, MCPGrant.revoked_at.is_(None))
+        .update(
+            {
+                MCPGrant.revoked_at: datetime.utcnow(),
+                MCPGrant.refresh_token_hash: None,
+            },
+            synchronize_session=False,
+        )
+    )
 
 
 def _token_claims(user: User) -> dict:
@@ -668,7 +695,8 @@ async def change_password(
     # other browser, the phone, the cookie someone copied. Including this
     # caller's own, which is why the response re-issues the cookie: the tab
     # that did the change stays signed in, everything else has to log in again.
-    current_user.password_changed_at = _advance_password_epoch(current_user)
+    # It also disconnects every MCP client; see record_password_change.
+    record_password_change(db, current_user)
     db.commit()
     db.refresh(current_user)
 
