@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-10-18
+
+Alembic head: `add_food_notes`
+
 ### Added
 
 - **A routine's plan shows up in the workout.** Starting a routine now puts
@@ -1769,7 +1773,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.18.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.19.0...HEAD
+[2.19.0]: https://github.com/vkotaru/askesis.app/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/vkotaru/askesis.app/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/vkotaru/askesis.app/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/vkotaru/askesis.app/compare/v2.15.1...v2.16.0
