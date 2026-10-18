@@ -212,6 +212,18 @@ function bumpDataVersion(): void {
  * navigation doesn't stack N identical fetches. Failures are silent — being
  * offline is the normal case — and never clear cached data.
  */
+/** Whether a cached last-session entry already says what the server says. */
+function sameHistory(
+  cached: { date: string | null; sets: unknown } | undefined,
+  fresh: LastSession
+): boolean {
+  return (
+    !!cached &&
+    cached.date === fresh.date &&
+    JSON.stringify(cached.sets) === JSON.stringify(fresh.sets)
+  );
+}
+
 function revalidate(key: string, task: () => Promise<boolean>): void {
   if (inFlight.has(key)) return;
   if (Date.now() - (lastRevalidated.get(key) ?? 0) < REVALIDATE_MIN_INTERVAL_MS) return;
@@ -1045,8 +1057,11 @@ export const offlineApi = {
     const cached = await db.exerciseHistory.get(key);
 
     // Revalidate in the background; the cached answer is returned immediately.
+    // Report a change only when there is one: the workout screen re-reads on
+    // `dataVersion`, so an unconditional `true` would re-fetch forever.
     revalidate(`lastSession:${key}`, async () => {
       const fresh = await api.getLastSession(catalogId);
+      const before = await db.exerciseHistory.get(key);
       await db.exerciseHistory.put({
         key,
         date: fresh.date,
@@ -1054,7 +1069,7 @@ export const offlineApi = {
         sets: fresh.sets,
         fetchedAt: now(),
       });
-      return true;
+      return !sameHistory(before, fresh);
     });
 
     if (cached) {
@@ -1087,11 +1102,14 @@ export const offlineApi = {
   async prefetchHistory(catalogIds: number[]): Promise<void> {
     const uid = currentUserId();
     if (!uid) return;
+    let changed = false;
     await Promise.allSettled(
       [...new Set(catalogIds)].filter(Boolean).map(async (id) => {
         const fresh = await api.getLastSession(id);
+        const key = `${uid}:${id}`;
+        if (!sameHistory(await db.exerciseHistory.get(key), fresh)) changed = true;
         await db.exerciseHistory.put({
-          key: `${uid}:${id}`,
+          key,
           date: fresh.date,
           activityId: fresh.activity_id,
           sets: fresh.sets,
@@ -1099,6 +1117,10 @@ export const offlineApi = {
         });
       })
     );
+    // This races the screen's own first read of the cache, and loses: the
+    // screen renders from whatever was cached when the PREVIOUS workout began,
+    // so "last" ran a session behind. The bump is what makes it re-read.
+    if (changed) bumpDataVersion();
   },
 
   /**

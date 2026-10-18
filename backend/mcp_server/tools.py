@@ -618,8 +618,12 @@ def get_exercise_history(
     `owned()`, so the catalogue being communal never leaks the other account's
     training.
 
-    Per session it reports the heaviest working set, total volume, and an
-    estimated one-rep max. The estimate is Epley (w x (1 + reps/30)), which is
+    Per session, by what a set of the movement is (`tracking_type`): for
+    weight and reps, the heaviest working set, total volume and an estimated
+    one-rep max (or best and total reps when every set was bodyweight); for
+    reps only, best and total reps; for time, the longest hold and the total;
+    for distance and time, the longest distance and the totals. The estimate is
+    Epley (w x (1 + reps/30)), which is
     reasonable up to about ten reps and increasingly optimistic beyond that --
     it is a trend line, not a number to load a bar with.
     """
@@ -641,23 +645,6 @@ def get_exercise_history(
             "note": "No exercise in the library matches that name.",
         }
 
-    # Top set and estimated 1RM are weight-and-reps arithmetic. For a plank or a
-    # treadmill interval they are not merely absent, they are meaningless — and
-    # an empty `sessions` list with no explanation reads as "you have never done
-    # this", which is a different and wrong answer. Say which it is.
-    if entry.tracking_type != "weight_reps":
-        return {
-            "exercise": entry.name,
-            "found": True,
-            "tracking_type": entry.tracking_type,
-            "sessions": [],
-            "note": (
-                f"{entry.name} is logged as {entry.tracking_type}, not weight and "
-                "reps, so there is no top set or estimated 1RM to track. Use "
-                "get_workouts to see what was logged."
-            ),
-        }
-
     rows = (
         owned(db, Activity, user_id)
         .join(Exercise, Exercise.activity_id == Activity.id)
@@ -668,42 +655,99 @@ def get_exercise_history(
         .all()
     )
 
+    # What "progress" means depends on what a set of this movement IS. Top set
+    # and estimated 1RM are weight-and-reps arithmetic; for a plank or a row
+    # interval they are meaningless, and returning nothing for those reads as
+    # "you have never done this" -- which is what this did until a timed
+    # movement was actually logged and asked about.
+    kind = entry.tracking_type or "weight_reps"
+    summarise = _HISTORY_SUMMARIES.get(kind, _weight_reps_summary)
     sessions = []
     for act in rows:
         for ex in act.exercises:
             if ex.catalog_id != entry.id:
                 continue
             work = [
-                st
-                for st in ex.sets_detail
-                if st.set_type not in ("warmup", "cooldown")
-                and st.weight_kg
-                and st.reps
+                st for st in ex.sets_detail if st.set_type not in ("warmup", "cooldown")
             ]
-            if not work:
+            summary = summarise(work)
+            if summary is None:
                 continue
-            top = max(work, key=lambda st: st.weight_kg or 0)
-            sessions.append(
-                {
-                    "date": iso(act.date),
-                    "sets": len(work),
-                    "top_set": {"weight_kg": top.weight_kg, "reps": top.reps},
-                    "volume_kg": round(
-                        sum((st.weight_kg or 0) * (st.reps or 0) for st in work), 1
-                    ),
-                    "estimated_1rm_kg": round(
-                        (top.weight_kg or 0) * (1 + (top.reps or 0) / 30), 1
-                    ),
-                    "notes": ex.notes,
-                }
-            )
+            sessions.append({"date": iso(act.date), **summary, "notes": ex.notes})
 
     return {
         "exercise": entry.name,
         "found": True,
+        "tracking_type": kind,
         "video_url": entry.video_url,
         "sessions": sessions,
     }
+
+
+def _weight_reps_summary(work: list) -> dict[str, Any] | None:
+    """Heaviest set, volume and Epley 1RM -- or, all bodyweight, the best reps.
+
+    A blank weight on a weight-and-reps movement reads as bodyweight (that is
+    why pull-ups stay `weight_reps`), so a set with reps and no weight is work,
+    not noise. It just has no volume and no 1RM.
+    """
+    work = [st for st in work if st.reps]
+    if not work:
+        return None
+    top = max(work, key=lambda st: (st.weight_kg or 0, st.reps or 0))
+    out: dict[str, Any] = {
+        "sets": len(work),
+        "top_set": {"weight_kg": top.weight_kg, "reps": top.reps},
+    }
+    if top.weight_kg:
+        out["volume_kg"] = round(
+            sum((st.weight_kg or 0) * (st.reps or 0) for st in work), 1
+        )
+        out["estimated_1rm_kg"] = round(top.weight_kg * (1 + top.reps / 30), 1)
+    else:
+        out["total_reps"] = sum(st.reps for st in work)
+    return out
+
+
+def _reps_summary(work: list) -> dict[str, Any] | None:
+    reps = [st.reps for st in work if st.reps]
+    if not reps:
+        return None
+    return {"sets": len(reps), "best_reps": max(reps), "total_reps": sum(reps)}
+
+
+def _time_summary(work: list) -> dict[str, Any] | None:
+    secs = [st.duration_seconds for st in work if st.duration_seconds]
+    if not secs:
+        return None
+    return {
+        "sets": len(secs),
+        "longest_seconds": max(secs),
+        "total_seconds": sum(secs),
+    }
+
+
+def _distance_time_summary(work: list) -> dict[str, Any] | None:
+    work = [st for st in work if st.distance_m or st.duration_seconds]
+    if not work:
+        return None
+    out: dict[str, Any] = {"sets": len(work)}
+    dist = [st.distance_m for st in work if st.distance_m]
+    secs = [st.duration_seconds for st in work if st.duration_seconds]
+    if dist:
+        out["longest_m"] = max(dist)
+        out["total_m"] = round(sum(dist), 1)
+    if secs:
+        out["total_seconds"] = sum(secs)
+    return out
+
+
+_HISTORY_SUMMARIES = {
+    "weight_reps": _weight_reps_summary,
+    "reps": _reps_summary,
+    "time": _time_summary,
+    "distance_time": _distance_time_summary,
+}
 
 
 # ── 6. measurements ──────────────────────────────────────────────────────────

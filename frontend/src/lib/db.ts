@@ -76,7 +76,22 @@ export interface DraftExercise {
   trackingType?: TrackingType | null;
   notes?: string | null;
   restSeconds?: number | null;
+  /**
+   * What the routine this came from asked for. Copied at start, like
+   * `trackingType`, so the session still says it offline and after the routine
+   * is edited. Never a claim: it is what an empty working set *shows*, and a
+   * tick on that set is what makes it what you did. `note` is the routine's,
+   * kept apart from `notes` (this session's) so it is never saved as if you
+   * had written it today. Absent on drafts older than the field.
+   */
+  target?: DraftTarget | null;
   sets: DraftSet[];
+}
+
+export interface DraftTarget {
+  reps?: number | null;
+  weightKg?: number | null;
+  note?: string | null;
 }
 
 export interface DraftSet {

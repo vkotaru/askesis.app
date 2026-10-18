@@ -21,6 +21,50 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-18 — A production end-to-end run, and what it found in the workout screen
+
+First end-to-end run against production: a throwaway account, the connector
+driven as a real remote MCP client (register, the consent page in headless
+Chrome, PKCE, tools over `/mcp`), then the app as that account. The connector
+passed everything it was asked. Three problems turned up, none of them
+visible to CI or to reading the code one file at a time.
+
+**What changed**
+- **A routine's targets reach the session.** `startSession` only ever copied
+  `target_sets`. Reps, weight and note now travel as `DraftExercise.target`.
+  It is a new field on the draft and is not indexed, so no Dexie version.
+- **The tick accepts what an empty field shows** (`hintFor` → `toggleLogged`):
+  the target for a working set, otherwise last session. The screen's header,
+  the changelog and the journal all said "one tap per set when repeating last
+  week", but the live logger never did that. Only the old activity form did, by
+  filling on focus. A tick on blank fields logged a contentless set, which
+  `isMeaningful` then discarded at finish.
+- **Exercise history per tracking type.** Timed movements returned no sessions
+  and pointed at `get_workouts`, which does not exist. A blank-weight
+  `weight_reps` set (a pull-up) was filtered out by `weight_kg and reps`.
+
+**What didn't work**
+- The "last" column on a routine's second run showed the session before last.
+  `loadHistory` read the Dexie cache once. `prefetchHistory`, started by the
+  same `startSession`, landed afterwards, and nothing re-read it.
+  `getLastSession`'s revalidate also returned `true` unconditionally, so making
+  the page re-read on `dataVersion` alone would have re-fetched every 2 s. Both
+  now compare with `sameHistory` and bump only on a real change.
+
+**Watch out**
+- The routine's note is kept apart from the session's `notes` on purpose. Using
+  it to pre-fill the session note would save the plan as if you had written it
+  that day.
+- A target beats last time in the field because it is the newer intention.
+  Last time still has its own column.
+- `manage_users.py` has no delete. The e2e account stays on the server, and
+  its library additions were archived (`ZZ Test …`). Foods were saved private.
+- The tool-call arguments for `get_exercise_history` are `exercise`, not
+  `name`. The pydantic error makes that obvious, but a hand-written test
+  client will trip on it.
+
+---
+
 ## 2026-10-07 — A food library for the connector, and a kJ bug hiding in USDA
 
 Follow-on to the screenshot logging: describe food instead of showing totals,

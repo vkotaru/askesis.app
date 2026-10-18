@@ -11,9 +11,10 @@
    *   the row into a sheet — a 20px delete next to two number fields is a trap.
    * - **"Last time" is a column, not a placeholder.** A placeholder vanishes the
    *   moment you type, which is exactly when you want to compare against it.
-   * - **A row is `planned` until ticked.** Numbers can be prefilled from last
-   *   session because there is now a moment of confirmation; the old form had
-   *   none, which is why it could only ever show them as hints.
+   * - **A row is `planned` until ticked.** An empty field shows a number — the
+   *   routine's target for a working set, else last session's — and the tick
+   *   accepts what is shown (`hintFor`, `toggleLogged`). The tick is the moment
+   *   of confirmation the old form never had, which is why it could only hint.
    *
    * Two things this screen got wrong on a real phone, fixed here and worth not
    * reintroducing:
@@ -45,7 +46,7 @@
   } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { settings } from '$lib/stores/settings';
-  import { offlineApi } from '$lib/stores/data';
+  import { offlineApi, dataVersion } from '$lib/stores/data';
   import {
     weightFromMetric,
     weightToMetric,
@@ -58,7 +59,7 @@
   import { describeSet } from '$lib/utils/sets';
   import { syncErrors } from '$lib/sync';
   import type { CatalogEntry, LastSession, SetType, TrackingType } from '$lib/api/client';
-  import type { DraftSet } from '$lib/db';
+  import type { DraftExercise, DraftSet } from '$lib/db';
   import {
     liveSession,
     liveSessionLoaded,
@@ -73,6 +74,7 @@
     setTrackingType,
     SET_TYPES,
     toggleLogged,
+    hintFor,
     setExerciseNotes,
     adjustRest,
     skipRest,
@@ -156,6 +158,15 @@
     }
   }
 
+  // Re-read when a background fetch lands. Without this the column showed
+  // whatever the cache held when the screen first asked — on the second session
+  // of a routine, the session before last.
+  let seenVersion = $dataVersion;
+  $: if ($dataVersion !== seenVersion) {
+    seenVersion = $dataVersion;
+    for (const id of requested) void loadHistory(id);
+  }
+
   async function loadHistory(id: number) {
     const last = await offlineApi.getLastSession(id);
     history = { ...history, [id]: last };
@@ -190,6 +201,23 @@
 
   const toDisplay = (kg: number | null) =>
     kg == null ? '' : String(Math.round(weightFromMetric(kg, unit) * 100) / 100);
+
+  /**
+   * "Plan: 10 reps @ 20 kg · slow down", or nothing. `label` is passed rather
+   * than read so the template re-renders when the unit setting arrives — the
+   * same trap `lastFor` documents.
+   */
+  function planLine(ex: DraftExercise, label: string): string {
+    const t = ex.target;
+    if (!t) return '';
+    const kind = kindOf(ex);
+    const parts: string[] = [];
+    if (t.reps != null && (kind === 'weight_reps' || kind === 'reps')) parts.push(`${t.reps} reps`);
+    if (t.weightKg != null && kind === 'weight_reps') parts.push(`${toDisplay(t.weightKg)} ${label}`);
+    const what = parts.join(' @ ');
+    const line = [what, t.note].filter(Boolean).join(' · ');
+    return line ? `Plan: ${line}` : '';
+  }
 
   function onWeight(exId: string, setId: string, raw: string) {
     const v = parseFloat(raw);
@@ -428,6 +456,15 @@
               <p class="text-[10px] text-gray-400 truncate">
                 {TRACKING_LABELS[kindOf(exercise)]}{#if last?.date}&nbsp;· last {last.date}{/if}
               </p>
+              <!-- The routine's plan, on the screen it was written for. Its own
+                   line rather than the session note: that one is what you say
+                   about today, and pre-filling it would save the plan as if you
+                   had written it. -->
+              {#if planLine(exercise, weightLabel)}
+                <p class="text-[11px] text-primary-600 dark:text-primary-400 break-words">
+                  {planLine(exercise, weightLabel)}
+                </p>
+              {/if}
             </div>
             <!-- The fix for "this plank is asking me for kilograms", put where
                  that gets noticed: in the session, not in a settings page two
@@ -491,6 +528,7 @@
 
           {#each exercise.sets as set, i (set.draftId)}
             {@const previous = lastFor(history, exercise.catalogId, exercise.sets, i)}
+            {@const shown = hintFor(exercise, set, previous)}
             {@const working = exercise.sets
               .slice(0, i + 1)
               .filter((s) => s.setType === set.setType).length}
@@ -524,7 +562,7 @@
                   aria-label="Set {working} weight in {weightLabel}"
                   value={toDisplay(set.weightKg)}
                   on:input={(e) => onWeight(exercise.draftId, set.draftId, e.currentTarget.value)}
-                  placeholder={previous?.weight_kg != null ? toDisplay(previous.weight_kg) : '—'}
+                  placeholder={shown.weightKg != null ? toDisplay(shown.weightKg) : '—'}
                   class={clsx(cellClass, logged && loggedClass)}
                 />
                 <input
@@ -534,7 +572,7 @@
                   aria-label="Set {working} reps"
                   value={set.reps ?? ''}
                   on:input={(e) => onReps(exercise.draftId, set.draftId, e.currentTarget.value)}
-                  placeholder={previous?.reps != null ? String(previous.reps) : '—'}
+                  placeholder={shown.reps != null ? String(shown.reps) : '—'}
                   class={clsx(cellClass, logged && loggedClass)}
                 />
               {:else if kind === 'reps'}
@@ -545,7 +583,7 @@
                   aria-label="Set {working} reps"
                   value={set.reps ?? ''}
                   on:input={(e) => onReps(exercise.draftId, set.draftId, e.currentTarget.value)}
-                  placeholder={previous?.reps != null ? String(previous.reps) : '—'}
+                  placeholder={shown.reps != null ? String(shown.reps) : '—'}
                   class={clsx(cellClass, logged && loggedClass)}
                 />
               {:else if kind === 'time'}
@@ -563,7 +601,7 @@
                   }}
                   on:blur={() => (durationFocus = null)}
                   on:input={(e) => onDuration(exercise.draftId, set.draftId, e.currentTarget.value)}
-                  placeholder={formatDuration(previous?.duration_seconds) || 'm:ss'}
+                  placeholder={formatDuration(shown.durationSeconds) || 'm:ss'}
                   class={clsx(cellClass, logged && loggedClass)}
                 />
               {:else}
@@ -575,7 +613,7 @@
                   aria-label="Set {working} distance in {distanceLabel}"
                   value={distanceDisplay(set.distanceM)}
                   on:input={(e) => onDistance(exercise.draftId, set.draftId, e.currentTarget.value)}
-                  placeholder={distanceDisplay(previous?.distance_m) || '—'}
+                  placeholder={distanceDisplay(shown.distanceM) || '—'}
                   class={clsx(cellClass, logged && loggedClass)}
                 />
                 <input
@@ -590,7 +628,7 @@
                   }}
                   on:blur={() => (durationFocus = null)}
                   on:input={(e) => onDuration(exercise.draftId, set.draftId, e.currentTarget.value)}
-                  placeholder={formatDuration(previous?.duration_seconds) || 'm:ss'}
+                  placeholder={formatDuration(shown.durationSeconds) || 'm:ss'}
                   class={clsx(cellClass, logged && loggedClass)}
                 />
               {/if}
@@ -604,7 +642,7 @@
               <button
                 type="button"
                 aria-label={logged ? `Set ${working} logged. Tap to undo.` : `Log set ${working}`}
-                on:click={() => toggleLogged(exercise.draftId, set.draftId)}
+                on:click={() => toggleLogged(exercise.draftId, set.draftId, shown)}
                 class={clsx(
                   'h-11 rounded-lg flex items-center justify-center transition-colors',
                   logged

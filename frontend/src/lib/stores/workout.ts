@@ -40,7 +40,13 @@
  */
 import { derived, get, writable } from 'svelte/store';
 import { browser } from '$app/environment';
-import { db, type DraftExercise, type DraftSet, type LiveSessionDraft } from '$lib/db';
+import {
+  db,
+  type DraftExercise,
+  type DraftSet,
+  type DraftTarget,
+  type LiveSessionDraft,
+} from '$lib/db';
 import { offlineApi } from '$lib/stores/data';
 import { currentUserId } from '$lib/stores/user';
 import type {
@@ -48,6 +54,7 @@ import type {
   CatalogEntry,
   Exercise,
   Routine,
+  RoutineExercise,
   RoutineInput,
   SetType,
   TrackingType,
@@ -203,6 +210,7 @@ export async function startSession(options: {
     catalogId: number | null;
     plannedSets?: number;
     trackingType?: TrackingType | null;
+    target?: DraftTarget | null;
   }[];
 } = {}): Promise<void> {
   const uid = currentUserId();
@@ -210,11 +218,15 @@ export async function startSession(options: {
 
   // A routine stores which movements, not what kind of set each one takes —
   // `resolveTrackingTypes` fills that in from the library once the draft exists.
+  // Its reps, weight and note travel as `target`: until 2026-10 only the set
+  // count did, so a routine built as "3 x 10 @ 20 kg" opened as three blank
+  // rows and the plan was nowhere on the screen it was written for.
   const fromRoutine = (options.routine?.exercises ?? []).map((r) => ({
     name: r.name,
     catalogId: r.catalog_id ?? null,
     plannedSets: r.target_sets ?? 1,
     trackingType: null as TrackingType | null,
+    target: targetFrom(r),
   }));
   const seed = options.exercises ?? fromRoutine;
 
@@ -231,6 +243,7 @@ export async function startSession(options: {
       catalogId: e.catalogId,
       name: e.name,
       trackingType: e.trackingType ?? null,
+      target: e.target ?? null,
       sets: Array.from({ length: Math.max(1, e.plannedSets ?? 1) }, () => blankSet()),
     })),
   };
@@ -248,6 +261,12 @@ export async function startSession(options: {
   if (ids.length) void offlineApi.prefetchHistory(ids);
   // A routine names movements but not what kind of set each one takes.
   void resolveTrackingTypes();
+}
+
+function targetFrom(r: RoutineExercise): DraftTarget | null {
+  const note = r.notes?.trim() || null;
+  if (r.target_reps == null && r.target_weight_kg == null && !note) return null;
+  return { reps: r.target_reps ?? null, weightKg: r.target_weight_kg ?? null, note };
 }
 
 function blankSet(setType: SetType = 'working'): DraftSet {
@@ -450,8 +469,16 @@ export function setSetType(exerciseId: string, setId: string, setType: SetType) 
  *
  * This is the claim, and it is what makes prefilling honest. Untick is one tap
  * with no dialog — it is reversible, so asking would be noise.
+ *
+ * `shown` is what the empty fields were displaying (the routine's target, else
+ * last session's numbers). Ticking accepts it: each field you left empty takes
+ * the number it showed, so repeating a plan is one tap per set — which is what
+ * this screen promised and, until 2026-10, did not do. A tick on blank fields
+ * logged a contentless set that the finish screen then discarded. A field you
+ * typed in is never overwritten. Unticking keeps the numbers; they are yours to
+ * edit now.
  */
-export function toggleLogged(exerciseId: string, setId: string) {
+export function toggleLogged(exerciseId: string, setId: string, shown?: SetHint) {
   touch((d) => {
     const set = d.exercises.find((e) => e.draftId === exerciseId)?.sets.find((s) => s.draftId === setId);
     if (!set) return;
@@ -460,11 +487,64 @@ export function toggleLogged(exerciseId: string, setId: string) {
       set.loggedAt = null;
       return;
     }
+    if (shown) {
+      if (set.weightKg == null && shown.weightKg != null) set.weightKg = shown.weightKg;
+      if (set.reps == null && shown.reps != null) set.reps = shown.reps;
+      if (set.durationSeconds == null && shown.durationSeconds != null)
+        set.durationSeconds = shown.durationSeconds;
+      if (set.distanceM == null && shown.distanceM != null) set.distanceM = shown.distanceM;
+    }
     set.state = 'logged';
     set.loggedAt = iso();
     const rest = d.exercises.find((e) => e.draftId === exerciseId)?.restSeconds ?? d.restSecondsDefault;
     d.restEndsAt = new Date(Date.now() + rest * 1000).toISOString();
   });
+}
+
+/** What an empty set row displays, field by field; `null` shows "—". */
+export interface SetHint {
+  weightKg: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
+  distanceM: number | null;
+}
+
+/**
+ * The numbers an empty row shows: the routine's target for a working set, and
+ * otherwise what you did last time. Only the fields this kind of movement has,
+ * so a stale weight never rides along onto a plank.
+ *
+ * Target beats last time because it is the newer intention — and last time is
+ * still on screen, in its own column, for the comparison.
+ */
+export function hintFor(
+  exercise: Pick<DraftExercise, 'trackingType' | 'target'>,
+  set: Pick<DraftSet, 'setType'>,
+  previous:
+    | {
+        weight_kg?: number | null;
+        reps?: number | null;
+        duration_seconds?: number | null;
+        distance_m?: number | null;
+      }
+    | undefined
+): SetHint {
+  const kind = exercise.trackingType ?? 'weight_reps';
+  const target = set.setType === 'working' ? exercise.target : null;
+  const has = (f: 'weight' | 'reps' | 'duration' | 'distance') =>
+    f === 'weight'
+      ? kind === 'weight_reps'
+      : f === 'reps'
+        ? kind === 'weight_reps' || kind === 'reps'
+        : f === 'duration'
+          ? kind === 'time' || kind === 'distance_time'
+          : kind === 'distance_time';
+  return {
+    weightKg: has('weight') ? (target?.weightKg ?? previous?.weight_kg ?? null) : null,
+    reps: has('reps') ? (target?.reps ?? previous?.reps ?? null) : null,
+    durationSeconds: has('duration') ? (previous?.duration_seconds ?? null) : null,
+    distanceM: has('distance') ? (previous?.distance_m ?? null) : null,
+  };
 }
 
 export function adjustRest(seconds: number) {

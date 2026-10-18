@@ -15,6 +15,30 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A routine's plan shows up in the workout.** Starting a routine now puts
+  each exercise's target reps and weight in the empty set fields, and its note
+  ("slow down", "60 s holds") on a "Plan:" line under the name. Until now only
+  the number of sets came across, so a routine Claude built as "3 × 10 @ 20 kg"
+  opened as three blank rows. Targets apply to working sets only, not warm-ups.
+
+### Fixed
+
+- **Ticking a set accepts the numbers it shows.** An empty field shows the
+  routine's target, or last session's numbers, and a tick now logs them, so
+  repeating a plan is one tap per set. Before, a tick on blank fields logged an
+  empty set, which the finish screen then threw away. Anything you typed is
+  kept as typed.
+- **The "last" column showed the session before last.** It read the device's
+  cache before the fresh history arrived and never looked again, so on the
+  second run of a routine it was a workout behind.
+- **Claude can see how timed, reps-only and distance movements are going.**
+  `get_exercise_history` returned nothing for a plank and pointed to a tool that
+  doesn't exist. It now reports, per session: the longest hold and total time,
+  best and total reps, or the longest distance and totals. A bodyweight pull-up
+  (reps, no weight) used to be dropped too; it now reports best and total reps.
+
 ## [2.18.0] - 2026-10-07
 
 Alembic head: `add_food_notes`

@@ -797,6 +797,97 @@ def main() -> int:
         [],
     )
 
+    print()
+    print("── exercise history follows how a movement is measured ──")
+    # Read-only, but it sits here because this is the harness that builds
+    # movements of every kind. A timed movement used to return no sessions and
+    # point at a tool that does not exist; a bodyweight pull-up (weight_reps,
+    # blank weight) was filtered out as if it were noise.
+    from datetime import date as _date
+
+    from app.models import Activity, ActivityType, Exercise, ExerciseSet
+
+    kinds = {
+        "History Plank": "time",
+        "History Pull-up": "weight_reps",
+        "History Goblet Squat": "weight_reps",
+        "History Row Erg": "distance_time",
+        "History Push-up": "reps",
+    }
+    for name, kind in kinds.items():
+        T.create_exercise(db, a, name, tracking_type=kind)
+    db.commit()
+    by_name = {
+        e.name: e
+        for e in db.query(ExerciseCatalog).filter(ExerciseCatalog.name.in_(list(kinds)))
+    }
+    act = Activity(
+        user_id=a,
+        date=_date(2026, 1, 5),
+        name="History check",
+        activity_type=ActivityType.STRENGTH,
+    )
+    db.add(act)
+    db.flush()
+    sets = {
+        "History Plank": [dict(duration_seconds=65), dict(duration_seconds=50)],
+        "History Pull-up": [dict(reps=8), dict(reps=6)],
+        "History Goblet Squat": [
+            dict(weight_kg=10, reps=10, set_type="warmup"),
+            dict(weight_kg=20, reps=10),
+            dict(weight_kg=22.5, reps=8),
+        ],
+        "History Row Erg": [dict(distance_m=500, duration_seconds=110)],
+        "History Push-up": [dict(reps=20), dict(reps=15)],
+    }
+    for pos, (name, rows) in enumerate(sets.items()):
+        ex = Exercise(
+            activity_id=act.id, catalog_id=by_name[name].id, name=name, position=pos
+        )
+        db.add(ex)
+        db.flush()
+        for i, row in enumerate(rows, 1):
+            db.add(ExerciseSet(exercise_id=ex.id, set_number=i, **row))
+    db.commit()
+
+    def first(name: str) -> dict:
+        sessions = T.get_exercise_history(db, a, name)["sessions"]
+        return sessions[0] if sessions else {}
+
+    r = first("History Plank")
+    check(
+        "timed: longest and total hold",
+        (r.get("longest_seconds"), r.get("total_seconds")),
+        (65, 115),
+    )
+    r = first("History Pull-up")
+    check(
+        "bodyweight: best and total reps, no 1RM",
+        (r.get("top_set"), r.get("total_reps"), "estimated_1rm_kg" in r),
+        ({"weight_kg": None, "reps": 8}, 14, False),
+    )
+    r = first("History Goblet Squat")
+    check(
+        "weighted: top set, volume, warm-up excluded",
+        (r.get("top_set"), r.get("volume_kg"), r.get("sets")),
+        ({"weight_kg": 22.5, "reps": 8}, 380.0, 2),
+    )
+    r = first("History Row Erg")
+    check(
+        "distance: longest, totals",
+        (r.get("longest_m"), r.get("total_seconds")),
+        (500, 110),
+    )
+    r = first("History Push-up")
+    check(
+        "reps only: best and total", (r.get("best_reps"), r.get("total_reps")), (20, 35)
+    )
+    check(
+        "  history for another account is empty",
+        T.get_exercise_history(db, b, "History Plank")["sessions"],
+        [],
+    )
+
     db.close()
     print()
     if fails:
