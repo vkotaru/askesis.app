@@ -21,6 +21,29 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-18 — Letting the Gemini app in, and a setting that never arrived
+
+The Gemini app's custom-app flow failed with "The Google redirect URL was rejected
+by the server": the redirect allow-list in `mcp_server/oauth.py` was Claude's
+callback plus loopback, in code. Google registers **six** callbacks at once
+(`oauth-redirect{,-test,-sandbox}.googleusercontent.com`, paths `/r/` and `/a/`),
+and registration refuses the lot if any one is unlisted.
+
+- **Exact URLs from `.env`, not a pattern.** `MCP_ALLOWED_REDIRECTS` holds whole
+  URLs. A rule like `*.googleusercontent.com` was considered and rejected: that
+  domain serves arbitrary user content, so a host pattern would let anyone hosting
+  there receive codes. Google's URLs embed the account id and the server's
+  hostname, which is also why they belong in `.env` and not in this public repo.
+- **Bad entries stop the container** (wildcard, query, non-https), same rule as the
+  rest of `config.py`.
+- **Trap: `MCP_ALLOWED_ORIGINS` never reached the container.** The MCP service
+  deliberately has no `env_file`, so a variable only arrives if
+  `docker-compose.yml` names it, and this one was never named. Any new
+  `MCP_*` setting needs a line there too, or it does nothing and nobody notices.
+- **Not yet known:** whether Gemini asks for `askesis:write`. If its consent page
+  says read-only, the server granted exactly what Gemini asked for, and Gemini
+  asked for read only.
+
 ## 2026-10-18 — A production end-to-end run, and what it found in the workout screen
 
 First end-to-end run against production: a throwaway account, the connector

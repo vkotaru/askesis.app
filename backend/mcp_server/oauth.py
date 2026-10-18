@@ -49,7 +49,9 @@ logger = logging.getLogger("askesis.mcp.oauth")
 
 #: Where an authorization code may be sent. Anything outside this is refused at
 #: registration, which is the single most valuable control on this surface: it
-#: makes a stolen code unredirectable rather than merely hard to steal.
+#: makes a stolen code unredirectable rather than merely hard to steal. Any
+#: other hosted client (the Gemini app) is added by exact URL with
+#: MCP_ALLOWED_REDIRECTS -- see config.allowed_redirects.
 ALLOWED_REDIRECT_HOSTS = {"claude.ai", "claude.com"}
 ALLOWED_REDIRECT_PATHS = {"/api/mcp/auth_callback"}
 
@@ -65,7 +67,9 @@ ALLOW_LOOPBACK_REDIRECTS = True
 MAX_CLIENTS = 50
 
 
-def _redirect_allowed(uri: str) -> bool:
+def _redirect_allowed(uri: str, extra: frozenset[str] = frozenset()) -> bool:
+    if uri in extra:
+        return True
     try:
         p = urlparse(uri)
     except ValueError:
@@ -187,7 +191,9 @@ def register(config: MCPConfig):
                 "invalid_redirect_uri",
                 "redirect_uris must be a non-empty array of strings.",
             )
-        rejected = [u for u in uris if not _redirect_allowed(u)]
+        rejected = [
+            u for u in uris if not _redirect_allowed(u, config.allowed_redirects)
+        ]
         if rejected:
             logger.warning("registration refused for redirect_uris=%s", rejected)
             return _oauth_error(

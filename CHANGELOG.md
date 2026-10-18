@@ -15,6 +15,17 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **The connector can be added to the Gemini app.** `MCP_ALLOWED_REDIRECTS` in
+  `.env` lists extra OAuth callback URLs, matched exactly, so a hosted client
+  other than Claude is a config change. `SELF_HOSTING.md` has the steps.
+
+### Fixed
+
+- `MCP_ALLOWED_ORIGINS` was documented but never passed to the MCP container,
+  so setting it did nothing. It is now.
+
 ## [2.19.0] - 2026-10-18
 
 Alembic head: `add_food_notes`

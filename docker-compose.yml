@@ -179,6 +179,12 @@ services:
       SECRET_KEY: ${MCP_APP_SECRET_KEY:-}
       # Must match the connector URL character for character, no trailing slash.
       MCP_PUBLIC_ORIGIN: ${MCP_PUBLIC_ORIGIN:-}
+      # Extra browser origins and exact OAuth redirect URLs for hosted clients
+      # other than Claude (the Gemini app). Not secrets. Both were read by
+      # config.py; MCP_ALLOWED_ORIGINS was documented for a long time without
+      # being passed through here, so setting it in .env did nothing.
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      MCP_ALLOWED_REDIRECTS: ${MCP_ALLOWED_REDIRECTS:-}
       # Total auth bypass; the config guard refuses to start if this is true.
       DEV_MODE: "false"
       MCP_SOCKET: /run/askesis-mcp/mcp.sock

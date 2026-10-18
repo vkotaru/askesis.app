@@ -58,6 +58,13 @@ os.environ.setdefault("SECRET_KEY", "check-oauth-flow-throwaway-" + "s" * 32)
 os.environ.setdefault("MCP_PUBLIC_ORIGIN", "https://askesis-mcp.example.ts.net")
 os.environ.setdefault("MCP_TOKEN_SECRET", "t" * 32)
 os.environ.setdefault("MCP_APP_SECRET_KEY", "a" * 32)
+#: A hosted client's callback, shaped like the Gemini app's, added by config
+#: rather than by code. Exact-match is what is being asserted below.
+HOSTED_REDIRECT = "https://oauth-redirect.googleusercontent.com/r/user_bound_example"
+os.environ["MCP_ALLOWED_REDIRECTS"] = (
+    HOSTED_REDIRECT
+    + ", https://oauth-redirect.googleusercontent.com/a/user_bound_example"
+)
 
 import httpx  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
@@ -67,7 +74,7 @@ from app.database import SessionLocal  # noqa: E402
 from app.models import User  # noqa: E402
 from app.security import hash_password  # noqa: E402
 from mcp_server import oauth  # noqa: E402
-from mcp_server.config import MCPConfig  # noqa: E402
+from mcp_server.config import MCPConfig, MCPConfigError  # noqa: E402
 from mcp_server.tokens import decode_access_token  # noqa: E402
 
 PASSWORD = "correct horse battery staple"  # noqa: S105 - a fixture, not a secret
@@ -207,6 +214,52 @@ async def main() -> int:  # noqa: PLR0915 - a linear script; splitting it hides 
     )
     check("an off-site redirect is refused", bad.status_code, 400)
     check("  and says why", bad.json()["error"], "invalid_redirect_uri")
+    hosted = await client.post(
+        "/register",
+        json={
+            "client_name": "Hosted",
+            "redirect_uris": [
+                HOSTED_REDIRECT,
+                "https://oauth-redirect.googleusercontent.com/a/user_bound_example",
+            ],
+        },
+    )
+    check(
+        "a redirect listed in MCP_ALLOWED_REDIRECTS registers", hosted.status_code, 201
+    )
+    for near in (
+        HOSTED_REDIRECT + "x",
+        HOSTED_REDIRECT + "/more",
+        HOSTED_REDIRECT.replace("oauth-redirect.", "oauth-redirect.evil."),
+    ):
+        miss = await client.post(
+            "/register",
+            json={"client_name": "Near miss", "redirect_uris": [near]},
+        )
+        check(f"  but not a near miss ({near[-24:]})", miss.status_code, 400)
+    mixed = await client.post(
+        "/register",
+        json={
+            "client_name": "Mixed",
+            "redirect_uris": [HOSTED_REDIRECT, "https://evil.test/cb"],
+        },
+    )
+    check(
+        "  and one unlisted uri refuses the whole registration", mixed.status_code, 400
+    )
+    for value in (
+        "https://*.googleusercontent.com/r/x",
+        "http://example.com/cb",
+        "https://e.com/cb?x=1",
+    ):
+        os.environ["MCP_ALLOWED_REDIRECTS"] = value
+        try:
+            MCPConfig()
+            refused = False
+        except MCPConfigError:
+            refused = True
+        check(f"MCP_ALLOWED_REDIRECTS={value} stops the container", refused, True)
+    os.environ["MCP_ALLOWED_REDIRECTS"] = HOSTED_REDIRECT
 
     print()
     print("── consent ──")

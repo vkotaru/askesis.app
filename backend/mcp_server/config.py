@@ -146,6 +146,35 @@ class MCPConfig:
                 o.strip().rstrip("/") for o in extra_origins.split(",") if o.strip()
             ]
 
+        # OAuth redirect URIs allowed at registration beyond the built-in ones
+        # (claude.ai's callback and any loopback). This is what a hosted client
+        # other than Claude needs -- the Gemini app registers a set of
+        # oauth-redirect*.googleusercontent.com callbacks, one per environment.
+        #
+        # Matched as WHOLE STRINGS, never as a prefix or a pattern: the redirect
+        # allow-list is what makes a stolen authorization code unredirectable,
+        # and a pattern loose enough to be convenient is loose enough to be
+        # useful to someone else. So anything that looks like a pattern, or is
+        # not https, stops the container instead of being quietly accepted.
+        # Comma-separated. Google's URIs embed an account id -- they belong in
+        # .env, never in this repository.
+        self.allowed_redirects: frozenset[str] = frozenset()
+        extra_redirects = os.environ.get("MCP_ALLOWED_REDIRECTS", "").strip()
+        if extra_redirects:
+            uris = [u.strip() for u in extra_redirects.split(",") if u.strip()]
+            for uri in uris:
+                parsed = urlsplit(uri)
+                if parsed.scheme != "https" or not parsed.hostname:
+                    raise MCPConfigError(
+                        f"MCP_ALLOWED_REDIRECTS entries must be https URLs, got {uri!r}"
+                    )
+                if "*" in uri or parsed.query or parsed.fragment:
+                    raise MCPConfigError(
+                        "MCP_ALLOWED_REDIRECTS entries are exact URLs: no "
+                        f"wildcards, query or fragment, got {uri!r}"
+                    )
+            self.allowed_redirects = frozenset(uris)
+
         # Two scopes, and `required_scopes` on the server must stay the READ
         # one alone. The SDK reads that list as "the token must carry all of
         # these", so naming write there would lock a read-only token out of the
