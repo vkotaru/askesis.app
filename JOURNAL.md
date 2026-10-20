@@ -21,6 +21,35 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-20 — Macros per meal, without moving the day's source of truth
+
+**What changed.** `meals` gained `protein_g`/`carbs_g`/`fat_g`, written by a new
+connector tool `log_meal`. Before, macros existed only as one row per day, and
+`log_day_nutrition` in its default replace mode *set* that row: "log lunch, 40 g
+protein" quietly overwrote breakfast's 30 g. Calories never had the problem,
+because they were per meal already.
+
+**The decision.** `DailyNutrition` stays the day's total and the only number
+anything reads (dashboard, Daily Log, reports, the read tools). A meal's macros
+are a breakdown, and logging one moves the day by *new minus old* for that meal.
+The alternative, deriving the day as the sum of its meals, was rejected: the user
+types whole-day macros in the Daily Log and never per meal, so a derived total
+would either ignore what they typed or need a second "unassigned" number in
+every reader. With the delta rule the typed total stays authoritative and the
+gap is simply "not broken out".
+
+**Watch out.**
+- Every path that deletes a meal must call `intake_log.release_meal_macros`, or
+  the day keeps a deleted meal's protein. There are two today, the REST delete
+  and `sync._handle_delete`; `check_mcp_writes.py` asserts both by inspection.
+- `MealCreate` deliberately has **no** macro fields. `PUT /meals/{id}` sets every
+  field of that model, so adding them there would make each calorie edit in the
+  Daily Log wipe the meal's macros without touching the day total.
+- A day lowered by hand below what its meals add up to can be pushed negative by
+  a delete. It is held at 0 and the tool result says so.
+- The consent page had never listed the intake or food-library writes. Fixed.
+  A new write tool must add its line to `_WRITE_GRANTS` too.
+
 ## 2026-10-18 — Who may connect an assistant, and what a password change must cut
 
 A review of the connector against unprocastinate's found three gaps, all now closed.

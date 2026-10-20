@@ -323,8 +323,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "log_day_nutrition": (
         "Log one day's food intake: calories for Breakfast, Lunch, Dinner and "
-        "Snack, and the day's protein/carbs/fat in grams. This is the one tool "
-        "that writes logged history, so: BEFORE calling it, read the day "
+        "Snack, and the day's protein/carbs/fat in grams. For a whole day at "
+        "once (a screenshot of the day). To log ONE meal with its macros -- "
+        "'log my lunch' -- use log_meal instead: here, macros in replace mode "
+        "set the whole day's total and would erase the other meals'. This and "
+        "log_meal are the tools that write logged history, so: BEFORE calling it, read the day "
         "(get_meals for each meal's calories, get_daily_summary for the "
         "macros), then show the user the numbers you will write and any "
         "existing values they replace, and get a yes. When reading a "
@@ -340,6 +343,20 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "yourself. When the user describes food rather than showing totals, "
         "look each item up with search_foods first and scale it to the amount "
         "eaten; say what you assumed (portion, brand) if you had to estimate."
+    ),
+    "log_meal": (
+        "Log one meal -- Breakfast, Lunch, Dinner or Snack -- with its "
+        "calories and protein/carbs/fat in grams. The macros are stored on that "
+        "meal, and the day's totals move by exactly this meal's change, so "
+        "other meals are never touched and logging lunch again replaces lunch "
+        "instead of adding a second one. mode='replace' (default) sets the "
+        "meal's numbers; mode='add' adds to them ('I also had a banana at "
+        "lunch') -- pass only the new food's numbers. Omitted fields are left "
+        "as they are. Creating a meal needs its calories. Before calling it, "
+        "read the meal with get_meals, show the user what you will write, and "
+        "get a yes. When the user describes food rather than giving numbers, "
+        "look each item up with search_foods and scale it to the amount eaten; "
+        "say what you assumed."
     ),
     "search_foods": (
         "Look a food up before estimating it. Returns the user's saved foods "
@@ -371,8 +388,8 @@ def build_server(config: MCPConfig, verifier: TokenVerifier) -> MCPServer:
             "Personal health and training history: daily logs, nutrition, "
             "activities, measurements and training plans. Reads everything; "
             "writes plans — the shared exercise library, routines, and "
-            "daily/weekly targets — plus the food library and one day's food "
-            "intake (meal calories and macros). Logged workouts and the rest "
+            "daily/weekly targets — plus the food library and food intake "
+            "(meal calories and macros, per meal or per day). Logged workouts and the rest "
             "of the daily log are read-only."
         ),
         version="0.1.0",

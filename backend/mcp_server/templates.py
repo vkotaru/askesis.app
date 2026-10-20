@@ -53,8 +53,8 @@ button:hover { background:#15803d; }
 #: Written for a person, not for a scope registry. Each line is something the
 #: connector can actually read back.
 #: What a write-scoped connection may change. Deliberately narrow, and the
-#: narrowness is the point: plans and preferences, never the record of what you
-#: actually did.
+#: narrowness is the point: plans and preferences, and of the record of what you
+#: actually did only food intake -- never workouts or the rest of the daily log.
 _WRITE_GRANTS = [
     "The <b>shared exercise library</b> — add movements, edit their video links "
     "and form notes, archive ones you no longer use. Shared, so this changes "
@@ -63,6 +63,11 @@ _WRITE_GRANTS = [
     "sets, reps and weights",
     "Your <b>targets</b> — daily steps, calories, protein, and the weekly "
     "run/bike/discipline plan",
+    # The one write to logged history (app/intake_log.py). It was missing from
+    # this list from the day it shipped; this page is the only place it is said.
+    "Your <b>food intake</b> — each meal's calories and macros, and the day's "
+    "totals. Never deletes a meal.",
+    "The <b>food library</b> — save foods and recipes, shared unless private",
 ]
 
 _GRANTS = [

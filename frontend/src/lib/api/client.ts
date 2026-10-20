@@ -120,6 +120,11 @@ export interface Meal {
   label: string;
   time?: string;
   calories?: number;
+  /** This meal's share of the day's macros, when logged per meal (the MCP
+   *  connector). The day's total lives on DailyNutrition, not here. */
+  protein_g?: number | null;
+  carbs_g?: number | null;
+  fat_g?: number | null;
   description?: string;
   photo_path?: string;
   ai_analysis?: string;

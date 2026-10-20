@@ -247,6 +247,9 @@ Key modules:
   never DELETE, on exactly those two tables (`scripts/mcp_db_role.sql` asserts
   it). Its rules mirror the Daily Log's quick entry — change one, change both.
   `mode="add"` adds on the server, so a model never read-modify-writes a total.
+  `log_meal` writes one meal's macros (columns on `meals`) and moves the day's
+  `DailyNutrition` total by that meal's change. The day total stays the only
+  number readers use. Every meal delete must call `release_meal_macros`.
 - `app/food_library.py` — `save_food` / `search_foods` for the MCP connector:
   labels and home recipes (ingredients in `food_items.notes`), matched on
   name + brand case-insensitively, shared unless private. Library data, so the

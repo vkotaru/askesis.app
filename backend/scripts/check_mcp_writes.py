@@ -404,6 +404,14 @@ def main() -> int:
 
     d = (local_today() - timedelta(days=3)).isoformat()
 
+    def meals_on_day(uid, day, label):
+        return (
+            db.query(Meal)
+            .filter(Meal.user_id == uid, Meal.date == day)
+            .filter(Meal.label == label, Meal.deleted_at.is_(None))
+            .all()
+        )
+
     def meals_on(uid, label):
         return (
             db.query(Meal)
@@ -608,6 +616,107 @@ def main() -> int:
     )
 
     print()
+    print("── log_meal: macros per meal, the day moved by the difference ──")
+    d3 = local_today() - timedelta(days=5)
+    ds = d3.isoformat()
+
+    def day_protein(uid):
+        n = (
+            db.query(DailyNutrition)
+            .filter(DailyNutrition.user_id == uid, DailyNutrition.date == d3)
+            .first()
+        )
+        return n.protein_g if n else None
+
+    T.log_meal(db, a, ds, "Breakfast", kcal=420, protein_g=30, carbs_g=50, fat_g=12)
+    db.commit()
+    r = T.log_meal(db, a, ds, "lunch", kcal=650, protein_g=40, carbs_g=70)
+    db.commit()
+    check("lunch created", r["result"], "created")
+    check("  breakfast + lunch protein", day_protein(a), 70.0)
+    check("  carbs summed too", r["day_macros"]["carbs_g"]["value"], 120.0)
+    check(
+        "  fat only from breakfast (lunch gave none)",
+        r["day_macros"].get("fat_g"),
+        None,
+    )
+    r = T.log_meal(db, a, ds, "Lunch", kcal=600, protein_g=35)
+    db.commit()
+    check("lunch again replaces lunch, not stacks", day_protein(a), 65.0)
+    check("  and its calories", (r["before"]["kcal"], r["after"]["kcal"]), (650, 600))
+    check("  breakfast untouched", meals_on_day(a, d3, "Breakfast")[0].protein_g, 30.0)
+    check("  still one lunch row", len(meals_on_day(a, d3, "Lunch")), 1)
+    r = T.log_meal(db, a, ds, "Lunch", mode="add", kcal=105, protein_g=1.3)
+    db.commit()
+    check(
+        "add: a banana at lunch",
+        (r["after"]["kcal"], r["after"]["protein_g"]),
+        (705, 36.3),
+    )
+    check("  day moved by the banana only", day_protein(a), 66.3)
+
+    # The user types a whole-day number in the Daily Log; it stays the truth.
+    n = (
+        db.query(DailyNutrition)
+        .filter(DailyNutrition.user_id == a, DailyNutrition.date == d3)
+        .one()
+    )
+    n.protein_g = 120
+    db.commit()
+    T.log_meal(db, a, ds, "Dinner", kcal=700, protein_g=45)
+    db.commit()
+    check("a hand-typed day total moves by the meal", day_protein(a), 165.0)
+    check("  and another account is untouched", day_protein(b), None)
+
+    refuses(
+        "creating a meal without calories refused",
+        T.log_meal,
+        db,
+        a,
+        ds,
+        "Snack",
+        protein_g=5,
+    )
+    refuses("an unknown meal refused", T.log_meal, db, a, ds, "Brunch", kcal=300)
+    refuses("nothing to log refused", T.log_meal, db, a, ds, "Lunch")
+    refuses(
+        "an impossible macro refused", T.log_meal, db, a, ds, "Lunch", protein_g=1500
+    )
+    refuses(
+        "a future date refused",
+        T.log_meal,
+        db,
+        a,
+        (local_today() + timedelta(days=1)).isoformat(),
+        "Lunch",
+        kcal=1,
+    )
+    db.rollback()
+    check("  refusals changed nothing", day_protein(a), 165.0)
+
+    # Deleting a meal takes its share back out, on both delete paths.
+    from app.intake_log import release_meal_macros
+
+    dinner = meals_on_day(a, d3, "Dinner")[0]
+    release_meal_macros(db, dinner)
+    dinner.deleted_at = local_today()
+    db.commit()
+    check("deleting dinner takes its protein out", day_protein(a), 120.0)
+    import inspect as _inspect
+
+    from app.routers import nutrition as _nutrition
+    from app.routers import sync as _sync
+
+    check(
+        "  both delete paths release macros",
+        [
+            "release_meal_macros(" in _inspect.getsource(_nutrition.delete_meal),
+            "release_meal_macros(" in _inspect.getsource(_sync._handle_delete),
+        ],
+        [True, True],
+    )
+
+    print()
     print("── the food library: save_food / search_foods ──")
     r = T.save_food(
         db,
@@ -733,12 +842,13 @@ def main() -> int:
     # the assertion is that the list still says what we think it says.
     # `log_day_nutrition` is the one deliberate exception (app/intake_log.py).
     check(
-        "write tools: planning + save_food + log_day_nutrition",
+        "write tools: planning + save_food + the intake writes",
         sorted(T.WRITE_TOOLS),
         [
             "archive_exercise",
             "create_exercise",
             "log_day_nutrition",
+            "log_meal",
             "save_food",
             "save_routine",
             "set_targets",
@@ -777,6 +887,7 @@ def main() -> int:
         and (
             any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
             or "intake_log.log_day(" in inspect.getsource(fn)
+            or "intake_log.log_meal(" in inspect.getsource(fn)
             or "food_library.save(" in inspect.getsource(fn)
         )
     )

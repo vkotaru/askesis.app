@@ -114,13 +114,14 @@
         mealCals[label] = rows.length ? rows.reduce((s, m) => s + (m.calories ?? 0), 0) : undefined;
         mealRowId[label] = rows.length === 1 ? rows[0].id : undefined;
         mealLocked[label] = rows.length > 1;
+        mealMacros[label] = rows.length === 1 ? macroLine(rows[0]) : '';
       }
-      mealCals = mealCals; mealRowId = mealRowId; mealLocked = mealLocked;
+      mealCals = mealCals; mealRowId = mealRowId; mealLocked = mealLocked; mealMacros = mealMacros;
     } catch {
       for (const label of QUICK_MEALS) {
-        mealCals[label] = undefined; mealRowId[label] = undefined; mealLocked[label] = false;
+        mealCals[label] = undefined; mealRowId[label] = undefined; mealLocked[label] = false; mealMacros[label] = '';
       }
-      mealCals = mealCals; mealRowId = mealRowId; mealLocked = mealLocked;
+      mealCals = mealCals; mealRowId = mealRowId; mealLocked = mealLocked; mealMacros = mealMacros;
     }
 
     try {
@@ -131,6 +132,17 @@
     } catch {
       protein_g = undefined; carbs_g = undefined; fat_g = undefined;
     }
+  }
+
+  // A meal's own macros, shown read-only. Only the assistant logs them per
+  // meal; what is typed here is the whole day's total, below.
+  let mealMacros: Record<string, string> = {};
+  function macroLine(m: { protein_g?: number | null; carbs_g?: number | null; fat_g?: number | null }): string {
+    const parts: string[] = [];
+    if (m.protein_g != null) parts.push(`P ${m.protein_g}`);
+    if (m.carbs_g != null) parts.push(`C ${m.carbs_g}`);
+    if (m.fat_g != null) parts.push(`F ${m.fat_g}`);
+    return parts.join(' · ');
   }
 
   async function saveMeal(label: string) {
@@ -491,6 +503,9 @@
                 fieldSaved[`meal:${label}`] && 'ring-2 ring-primary-300'
               )}
             />
+            {#if mealMacros[label]}
+              <p class="text-[10px] text-gray-400 tabular-nums leading-tight">{mealMacros[label]} g</p>
+            {/if}
             {#if mealLocked[label]}
               <!-- Several rows share this label, so which one a typed number
                    belongs to is genuinely ambiguous. Showing the sum and

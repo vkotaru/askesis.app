@@ -20,6 +20,15 @@ protein/carbs/fat on the day's single `DailyNutrition` row. The rules mirror
 * no zero-calorie row is ever created;
 * nothing is deleted. `None` means "leave as is".
 
+**Macros per meal** (`log_meal`). A meal row can carry its own protein/carbs/
+fat, but the day's total on `DailyNutrition` stays the one number everything
+reads -- the dashboard, the Daily Log, reports, the read tools. Logging a meal
+moves that total by *the meal's change* (new minus old), never sets it. So
+lunch logged twice replaces lunch rather than stacking, breakfast is never
+touched, and a whole-day number typed into the Daily Log stays authoritative:
+whatever it holds beyond the logged meals is simply not broken out. Deleting a
+meal takes its share back out (`release_meal_macros`).
+
 **Plain SQLAlchemy, no FastAPI, and nothing here commits** -- same contract as
 `planning.py`, so the MCP image can import it and the caller owns the
 transaction.
@@ -257,3 +266,168 @@ def log_day(
         "macros": macro_report,
         "day_total_kcal": total,
     }
+
+
+MACRO_FIELDS = ("protein_g", "carbs_g", "fat_g")
+
+
+def _shift_day(
+    db: Session, user_id: int, day: date, deltas: dict[str, float]
+) -> dict[str, dict[str, Any]]:
+    """Move the day's macro totals by `deltas`, and report each one.
+
+    A total that would go below zero is held at zero and says so: that only
+    happens when the day was lowered by hand below what its meals add up to,
+    and a negative gram count would be a worse lie than the clamp.
+    """
+    deltas = {k: v for k, v in deltas.items() if v}
+    if not deltas:
+        return {}
+    nutrition = (
+        db.query(DailyNutrition)
+        .filter(DailyNutrition.user_id == user_id, DailyNutrition.date == day)
+        .first()
+    )
+    if nutrition is None:
+        nutrition = DailyNutrition(user_id=user_id, date=day)
+        db.add(nutrition)
+    report: dict[str, dict[str, Any]] = {}
+    for field, delta in deltas.items():
+        before = getattr(nutrition, field)
+        raw = round((before or 0) + delta, 1)
+        after = max(raw, 0.0)
+        if after > MAX_MACRO_G:
+            raise IntakeError(
+                f"{field} would become {after} g for the day, over "
+                f"{MAX_MACRO_G:g} -- check the amount."
+            )
+        setattr(nutrition, field, after)
+        report[field] = {"before": before, "value": after}
+        if raw < 0:
+            report[field]["note"] = "held at 0; the day was below its meals"
+    return report
+
+
+def log_meal(
+    db: Session,
+    user_id: int,
+    day: date,
+    label: str,
+    kcal: float | None = None,
+    protein_g: float | None = None,
+    carbs_g: float | None = None,
+    fat_g: float | None = None,
+    mode: str = "replace",
+) -> dict[str, Any]:
+    """Write one meal's calories and macros, and move the day's totals to match.
+
+    `mode="replace"` sets this meal's numbers ("lunch was 650 kcal, 40 g
+    protein"); `mode="add"` adds to them ("I also had a banana at lunch").
+    Either way only the given fields change, and the day's macros move by
+    exactly this meal's difference, so other meals are never touched.
+
+    Validates before writing anything, like `log_day`.
+    """
+    if mode not in ("replace", "add"):
+        raise IntakeError(f"mode must be 'replace' or 'add', got {mode!r}.")
+    adding = mode == "add"
+    label = normalise_label(label)
+    new_kcal = None if kcal is None else _check_kcal(label, kcal)
+    given = {
+        "protein_g": _check_grams("protein_g", protein_g),
+        "carbs_g": _check_grams("carbs_g", carbs_g),
+        "fat_g": _check_grams("fat_g", fat_g),
+    }
+    given = {k: v for k, v in given.items() if v is not None}
+    if new_kcal is None and not given:
+        raise IntakeError("Nothing to log: pass the meal's calories or a macro.")
+
+    rows = (
+        db.query(Meal)
+        .filter(
+            Meal.user_id == user_id,
+            Meal.date == day,
+            Meal.label == label,
+            Meal.deleted_at.is_(None),
+        )
+        .all()
+    )
+    if len(rows) > 1:
+        raise IntakeError(
+            f"{len(rows)} {label} entries already exist on {day}; edit them in "
+            "the app so the day isn't double-counted."
+        )
+    meal = rows[0] if rows else None
+    if meal is not None and meal.food_items:
+        raise IntakeError(
+            f"{label} on {day} has itemised foods logged in the app; its "
+            "numbers come from those foods, so they are not changed here."
+        )
+    if meal is None and not new_kcal:
+        raise IntakeError(
+            f"No {label} logged on {day} yet: pass its calories (more than 0) "
+            "to create it."
+        )
+
+    before = {
+        "kcal": meal.calories if meal else None,
+        **{f: (getattr(meal, f) if meal else None) for f in MACRO_FIELDS},
+    }
+    after = dict(before)
+    if new_kcal is not None:
+        after["kcal"] = (before["kcal"] or 0) + new_kcal if adding else new_kcal
+        if after["kcal"] > MAX_MEAL_KCAL:
+            raise IntakeError(
+                f"{label} would become {after['kcal']} kcal, over {MAX_MEAL_KCAL} "
+                "-- check the amount, or whether it was already logged."
+            )
+    for field, value in given.items():
+        after[field] = round((before[field] or 0) + value, 1) if adding else value
+        if after[field] > MAX_MACRO_G:
+            raise IntakeError(
+                f"{label} {field} would become {after[field]} g, over "
+                f"{MAX_MACRO_G:g} -- check the amount."
+            )
+
+    if meal is None:
+        meal = Meal(user_id=user_id, date=day, label=label)
+        db.add(meal)
+    meal.calories = after["kcal"]
+    for field in given:
+        setattr(meal, field, after[field])
+    day_macros = _shift_day(
+        db,
+        user_id,
+        day,
+        {f: after[f] - (before[f] or 0) for f in given},
+    )
+
+    db.flush()
+    total = sum(
+        r.calories or 0
+        for r in db.query(Meal).filter(
+            Meal.user_id == user_id, Meal.date == day, Meal.deleted_at.is_(None)
+        )
+    )
+    return {
+        "date": day.isoformat(),
+        "meal": label,
+        "mode": mode,
+        "result": "updated" if rows else "created",
+        "before": before,
+        "after": after,
+        "day_macros": day_macros,
+        "day_total_kcal": total,
+    }
+
+
+def release_meal_macros(db: Session, meal: Meal) -> None:
+    """Take a deleted meal's macros back out of its day's total.
+
+    Called by every path that deletes a meal. Without it a removed lunch would
+    leave its protein counted in the day forever. Nothing to do for a meal that
+    was never broken out.
+    """
+    deltas = {f: -(getattr(meal, f) or 0) for f in MACRO_FIELDS}
+    if any(deltas.values()):
+        _shift_day(db, meal.user_id, meal.date, deltas)

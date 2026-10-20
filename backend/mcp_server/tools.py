@@ -340,9 +340,11 @@ def get_daily_summary(
         ),
         "_note": (
             "calories_kcal is summed from logged meals. protein_g/carbs_g/fat_g "
-            "come from the separate daily-nutrition record, which is entered by "
-            "hand -- they are null for days the user logged meals but no macros, "
-            "which is not the same as zero."
+            "are the day's totals from the separate daily-nutrition record -- "
+            "they are null for days the user logged meals but no macros, which "
+            "is not the same as zero. get_meals shows any per-meal breakdown; "
+            "the day total can exceed it when the user entered a whole-day "
+            "number by hand."
         ),
     }
 
@@ -838,6 +840,11 @@ def get_meals(
                 "time": m.time,
                 "calories_kcal": _meal_calories(m),
                 "calories_are_computed": m.calories is None,
+                # This meal's share of the day's macros, if it was logged per
+                # meal; null means not broken out, not zero.
+                "protein_g": m.protein_g,
+                "carbs_g": m.carbs_g,
+                "fat_g": m.fat_g,
                 "description": m.description,
                 "food_items": [
                     {
@@ -1360,6 +1367,39 @@ def log_day_nutrition(
         raise ToolError(str(exc)) from None
 
 
+def log_meal(
+    db: Session,
+    user_id: int,
+    date: str,
+    meal: str,
+    kcal: float | None = None,
+    protein_g: float | None = None,
+    carbs_g: float | None = None,
+    fat_g: float | None = None,
+    mode: str = "replace",
+) -> dict[str, Any]:
+    """Log one meal's calories and macros; the day's totals move to match.
+
+    Other meals are never touched: the day's protein/carbs/fat change by
+    exactly this meal's difference, so logging lunch twice replaces lunch.
+    """
+    try:
+        day = intake_log.parse_day(date)
+        return intake_log.log_meal(
+            db,
+            user_id,
+            day,
+            meal,
+            kcal=kcal,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+            mode=mode,
+        )
+    except intake_log.IntakeError as exc:
+        raise ToolError(str(exc)) from None
+
+
 def search_foods(
     db: Session, user_id: int, query: str, include_online: bool = True
 ) -> dict[str, Any]:
@@ -1475,6 +1515,7 @@ TOOLS = {
     "set_targets": set_targets,
     "set_weekly_plan": set_weekly_plan,
     "log_day_nutrition": log_day_nutrition,
+    "log_meal": log_meal,
     "save_food": save_food,
 }
 
@@ -1491,6 +1532,7 @@ WRITE_TOOLS: frozenset[str] = frozenset(
         "set_targets",
         "set_weekly_plan",
         "log_day_nutrition",
+        "log_meal",
         "save_food",
     }
 )

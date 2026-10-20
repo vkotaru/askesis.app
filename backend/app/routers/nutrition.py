@@ -36,6 +36,7 @@ from app.models import (
 )
 from app.routers.auth import get_current_user, check_view_permission
 from app import storage
+from app.intake_log import release_meal_macros
 
 router = APIRouter()
 
@@ -86,6 +87,9 @@ class MealResponse(BaseModel):
     label: str
     time: str | None = None
     calories: int | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
     description: str | None = None
     photo_path: str | None = None
     ai_analysis: str | None = None
@@ -256,6 +260,9 @@ def meal_to_response(meal: Meal) -> dict:
         "label": meal.label,
         "time": meal.time,
         "calories": meal.calories,
+        "protein_g": meal.protein_g,
+        "carbs_g": meal.carbs_g,
+        "fat_g": meal.fat_g,
         "description": meal.description,
         "photo_path": meal.photo_path,
         "ai_analysis": meal.ai_analysis,
@@ -658,6 +665,7 @@ def delete_meal(
         raise HTTPException(status_code=404, detail="Meal not found")
 
     meal.deleted_at = datetime.utcnow()
+    release_meal_macros(db, meal)
     db.commit()
     return {"ok": True}
 

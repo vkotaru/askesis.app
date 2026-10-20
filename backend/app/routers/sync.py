@@ -15,6 +15,7 @@ from sqlalchemy import Date, or_
 from pydantic import BaseModel, ValidationError
 
 from app.database import get_db
+from app.intake_log import release_meal_macros
 from app.models import (
     User,
     DailyLog,
@@ -803,6 +804,9 @@ def _handle_delete(db: Session, model: type, change: SyncChange, user: User) -> 
     # raise, on a model with __slots__), leaving the row silently alive. Hard
     # delete those instead: with no deleted_at there is nothing for
     # /api/sync/changes to hand clients as a tombstone anyway.
+    if model == Meal and obj.deleted_at is None:
+        # Its macros come back out of the day's total (app/intake_log.py).
+        release_meal_macros(db, obj)
     if hasattr(type(obj), "deleted_at"):
         obj.deleted_at = datetime.utcnow()
         obj.updated_at = datetime.utcnow()

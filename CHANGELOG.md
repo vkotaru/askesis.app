@@ -15,6 +15,22 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **Each meal keeps its own protein, carbs and fat.** A new connector tool,
+  `log_meal`, logs one meal ("log my lunch: 650 kcal, 40 g protein"). The
+  day's totals move by exactly that meal's change, so logging lunch can no
+  longer erase breakfast's macros, and logging lunch again replaces it rather
+  than counting it twice. The Daily Log shows each meal's macros under its
+  calories; the macro boxes you type in are still the whole day's total.
+
+### Fixed
+
+- **Deleting a meal takes its macros back out of the day.** Both delete
+  paths (online and offline sync) do it.
+- **The connector's consent page now says it can write food intake and the
+  food library.** Both were possible before; neither was listed.
+
 ## [2.21.0] - 2026-10-18
 
 Alembic head: `add_mcp_refresh_reuse`

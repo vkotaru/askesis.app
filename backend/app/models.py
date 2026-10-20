@@ -197,6 +197,13 @@ class Meal(Base):
     label: Mapped[str] = mapped_column(String(50))  # Breakfast, Lunch, etc.
     time: Mapped[str | None] = mapped_column(String(10))  # HH:MM format
     calories: Mapped[int | None] = mapped_column(Integer)
+    # This meal's share of the day's macros, when it was logged per meal (the
+    # MCP connector's log_meal). A breakdown, not the source of truth: the
+    # day's total stays on DailyNutrition, and app/intake_log.py moves it by
+    # each meal's change. NULL means "not broken out", not zero.
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
     description: Mapped[str | None] = mapped_column(Text)
     photo_path: Mapped[str | None] = mapped_column(String(500))  # Path under uploads/
     ai_analysis: Mapped[str | None] = mapped_column(Text)  # Gemini analysis result
