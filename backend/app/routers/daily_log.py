@@ -7,10 +7,10 @@ from app.database import get_db
 from app.models import User, DailyLog
 from app.provenance import (
     EDITED_FIELDS_KEY,
-    MANUAL,
     claimed_fields,
     mark_manual,
     parse_sources,
+    writable_fields,
 )
 from app.routers.auth import get_current_user, check_view_permission
 
@@ -163,14 +163,11 @@ def create_or_update_log(
         # own reading for good.
         sources = parse_sources(existing.sources)
         edited = claimed_fields(claim, touched, lambda f: sources.get(f))
-        for key in touched:
-            # A field an importer owns and the user did not claim is not ours to
-            # overwrite either: the value in the payload is whatever the client
-            # happened to be holding, which may predate the importer's latest
-            # reading. Writing it would undo a correction and then, on the next
-            # sync, look like the importer had drifted.
-            if key not in edited and sources.get(key) not in (None, MANUAL):
-                continue
+        # The rest of the payload is whatever the client happened to be
+        # holding, which may predate the server's copy -- an importer's
+        # correction, or a value written from another device. See
+        # provenance.writable_fields for which of it may land.
+        for key in writable_fields(claim, touched, edited, lambda f: sources.get(f)):
             setattr(existing, key, data[key])
         if edited:
             existing.sources = mark_manual(existing.sources, edited)

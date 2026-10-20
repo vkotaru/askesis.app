@@ -32,6 +32,16 @@
 -- with this is overwrite calorie and macro numbers -- it still cannot touch an
 -- account, delete a row, or reach any other history table.
 --
+-- TWO MORE, NARROWER STILL (log_weight / log_workout, app/history_log.py):
+--   * daily_logs: INSERT a day's row, and UPDATE only `weight`, `sources` and
+--     `updated_at`. Column-level on purpose -- sleep, steps, notes and the rest
+--     of the day stay unwritable. (Unlike `users` below, the fragility of a
+--     column list is acceptable here: a new column simply is not writable,
+--     which fails closed.)
+--   * activities, exercises, exercise_sets: INSERT only. A session can be
+--     added; no existing one can be edited or deleted. The worst a compromised
+--     container can do is add fake sessions or set a fake weight.
+--
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Run once, on the server, as the database owner:
 --
@@ -156,6 +166,32 @@ GRANT USAGE, SELECT ON SEQUENCE
     food_items_id_seq
 TO askesis_mcp;
 
+-- 3d. Weight: INSERT a day's row, UPDATE its weight and nothing else on it.
+--     The INSERT column list is exactly what history_log.log_weight's Core
+--     insert emits: the columns it names, plus `ate_outside`, which SQLAlchemy
+--     adds from its Python-side default (False). An ORM insert lists every
+--     column, so it would be refused; that is why that function does not use
+--     one. Every other daily_logs column stays NULL on a row it creates and
+--     unwritable on a row it finds. Verified against Postgres, not SQLite --
+--     SQLite has no column grants, so nothing local would catch a mismatch.
+GRANT INSERT (user_id, date, weight, sources, ate_outside, created_at, updated_at)
+    ON daily_logs TO askesis_mcp;
+GRANT UPDATE (weight, sources, updated_at) ON daily_logs TO askesis_mcp;
+
+-- 3e. New workout sessions: INSERT only, never UPDATE or DELETE.
+GRANT INSERT ON
+    activities,
+    exercises,
+    exercise_sets
+TO askesis_mcp;
+
+GRANT USAGE, SELECT ON SEQUENCE
+    daily_logs_id_seq,
+    activities_id_seq,
+    exercises_id_seq,
+    exercise_sets_id_seq
+TO askesis_mcp;
+
 -- 4. Read-write: the connector's own OAuth bookkeeping.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     mcp_clients,
@@ -177,8 +213,9 @@ TO askesis_mcp;
 --      progress_photos -- image paths; the tools expose no photos
 --      meal_templates  -- no tool reads or writes them
 --    And SELECT-only, deliberately, on everything else that records what
---    happened: activities, exercises, exercise_sets, daily_logs,
---    meal_food_items, body_measurements, training_plans, planned_workouts.
+--    happened: meal_food_items, body_measurements, training_plans,
+--    planned_workouts -- plus every daily_logs column but weight, and any
+--    UPDATE or DELETE of a logged session.
 --    No ALTER DEFAULT PRIVILEGES either: a table added by a future migration is
 --    unreadable until someone grants it here, on purpose. Fail closed.
 
@@ -193,8 +230,9 @@ TO askesis_mcp;
 -- ─────────────────────────────────────────────────────────────────────────────
 \echo ''
 \echo '== writable tables (expect: the three mcp_*, exercise_catalog, user_settings,'
-\echo '   workout_templates, routine_exercises, food_items, and only INSERT,UPDATE on'
-\echo '   meals and daily_nutrition -- and NOTHING else) =='
+\echo '   workout_templates, routine_exercises, food_items, only INSERT,UPDATE on'
+\echo '   meals and daily_nutrition, only INSERT on activities, exercises and'
+\echo '   exercise_sets -- and NOTHING else; daily_logs is column-level, below) =='
 SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
 FROM information_schema.table_privileges
 WHERE grantee = 'askesis_mcp' AND privilege_type <> 'SELECT'
@@ -206,10 +244,17 @@ DECLARE
     -- Everything that records what actually happened. The role may read these
     -- and must never write them; this is the "plans, not history" line.
     history text[] := ARRAY[
-        'activities', 'exercises', 'exercise_sets', 'daily_logs',
         'meal_food_items', 'body_measurements',
         'training_plans', 'planned_workouts'
     ];
+    -- Sessions: may be added, never changed or removed.
+    sessions text[] := ARRAY['activities', 'exercises', 'exercise_sets'];
+    -- daily_logs columns that must stay unwritable: everything but weight.
+    day_cols text[] := ARRAY[
+        'sleep_hours', 'steps', 'water_ml', 'feelings', 'caffeine_mg',
+        'ate_outside', 'notes', 'deleted_at', 'user_id', 'date'
+    ];
+    c text;
     -- The one exception: insert/update, never delete.
     intake text[] := ARRAY['meals', 'daily_nutrition'];
     -- The planning tables the write tools need.
@@ -236,6 +281,32 @@ BEGIN
                 RAISE EXCEPTION 'askesis_mcp can % % -- that is logged history, not a plan', priv, t;
             END IF;
         END LOOP;
+    END LOOP;
+
+    FOREACH t IN ARRAY sessions LOOP
+        IF NOT has_table_privilege('askesis_mcp', t, 'INSERT') THEN
+            RAISE EXCEPTION 'askesis_mcp cannot INSERT into %; log_workout will fail at runtime', t;
+        END IF;
+        -- DELETE has no column form; UPDATE does, so check both levels.
+        IF has_any_column_privilege('askesis_mcp', t, 'UPDATE')
+           OR has_table_privilege('askesis_mcp', t, 'DELETE') THEN
+            RAISE EXCEPTION 'askesis_mcp can UPDATE or DELETE % -- a logged session may be added, never changed', t;
+        END IF;
+    END LOOP;
+
+    -- daily_logs: weight writable, nothing else, never DELETE.
+    IF NOT has_column_privilege('askesis_mcp', 'daily_logs', 'weight', 'UPDATE')
+       OR NOT has_column_privilege('askesis_mcp', 'daily_logs', 'weight', 'INSERT') THEN
+        RAISE EXCEPTION 'askesis_mcp cannot write daily_logs.weight; log_weight will fail at runtime';
+    END IF;
+    IF has_table_privilege('askesis_mcp', 'daily_logs', 'UPDATE')
+       OR has_table_privilege('askesis_mcp', 'daily_logs', 'DELETE') THEN
+        RAISE EXCEPTION 'askesis_mcp has table-wide UPDATE/DELETE on daily_logs -- only weight may be written';
+    END IF;
+    FOREACH c IN ARRAY day_cols LOOP
+        IF has_column_privilege('askesis_mcp', 'daily_logs', c, 'UPDATE') THEN
+            RAISE EXCEPTION 'askesis_mcp can UPDATE daily_logs.% -- only weight may be written', c;
+        END IF;
     END LOOP;
 
     FOREACH t IN ARRAY intake LOOP
@@ -270,7 +341,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    RAISE NOTICE 'grants verified: plans writable, intake insert/update only, other history read-only, users untouchable';
+    RAISE NOTICE 'grants verified: plans writable, intake insert/update only, weight only on daily_logs, sessions insert-only, other history read-only, users untouchable';
 END $$;
 
 \echo ''
@@ -300,8 +371,10 @@ SELECT has_table_privilege('askesis_mcp', 'exercise_catalog',  'UPDATE') AS cata
 \echo '== it still cannot write what actually HAPPENED (expect all f) =='
 \echo '   -- this is the line that separates changing a plan from rewriting history'
 SELECT has_table_privilege('askesis_mcp', 'activities',        'UPDATE') AS activities,
+       has_table_privilege('askesis_mcp', 'activities',        'DELETE') AS delete_activities,
        has_table_privilege('askesis_mcp', 'exercise_sets',     'UPDATE') AS sets,
-       has_table_privilege('askesis_mcp', 'daily_logs',        'UPDATE') AS daily_logs,
+       has_table_privilege('askesis_mcp', 'daily_logs',        'UPDATE') AS daily_logs_all,
+       has_column_privilege('askesis_mcp', 'daily_logs', 'steps', 'UPDATE') AS daily_logs_steps,
        has_table_privilege('askesis_mcp', 'meals',             'DELETE') AS delete_meals,
        has_table_privilege('askesis_mcp', 'body_measurements', 'UPDATE') AS measurements;
 

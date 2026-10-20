@@ -54,7 +54,7 @@ from app.models import (
     User,
     UserSettings,
 )
-from app import food_library, intake_log, planning
+from app import food_library, history_log, intake_log, planning
 from app.models import RoutineExercise, WorkoutTemplate  # noqa: F401
 from app.provenance import parse_sources
 from mcp_server.queries import (
@@ -1400,6 +1400,52 @@ def log_meal(
         raise ToolError(str(exc)) from None
 
 
+def log_weight(
+    db: Session, user_id: int, date: str, weight_kg: float
+) -> dict[str, Any]:
+    """Set one day's body weight, in kilograms. Replaces that day's weight."""
+    try:
+        day = intake_log.parse_day(date)
+        return history_log.log_weight(db, user_id, day, weight_kg)
+    except (intake_log.IntakeError, history_log.HistoryError) as exc:
+        raise ToolError(str(exc)) from None
+
+
+def log_workout(
+    db: Session,
+    user_id: int,
+    date: str,
+    name: str,
+    activity_type: str = "strength",
+    exercises: list[dict[str, Any]] | None = None,
+    duration_mins: int | None = None,
+    time_of_day: str | None = None,
+    notes: str | None = None,
+    allow_duplicate: bool = False,
+) -> dict[str, Any]:
+    """Add one finished session with its exercises and sets. Never edits one.
+
+    Each exercise is {"name", "notes"?, "sets": [{"reps"?, "weight_kg"?,
+    "duration_seconds"?, "distance_m"?, "set_type"?, "rpe"?, "notes"?}]}.
+    """
+    try:
+        day = intake_log.parse_day(date)
+        return history_log.log_workout(
+            db,
+            user_id,
+            day,
+            name,
+            activity_type=activity_type,
+            exercises=exercises,
+            duration_mins=duration_mins,
+            time_of_day=time_of_day,
+            notes=notes,
+            allow_duplicate=allow_duplicate,
+        )
+    except (intake_log.IntakeError, history_log.HistoryError) as exc:
+        raise ToolError(str(exc)) from None
+
+
 def search_foods(
     db: Session, user_id: int, query: str, include_online: bool = True
 ) -> dict[str, Any]:
@@ -1516,6 +1562,8 @@ TOOLS = {
     "set_weekly_plan": set_weekly_plan,
     "log_day_nutrition": log_day_nutrition,
     "log_meal": log_meal,
+    "log_weight": log_weight,
+    "log_workout": log_workout,
     "save_food": save_food,
 }
 
@@ -1533,6 +1581,8 @@ WRITE_TOOLS: frozenset[str] = frozenset(
         "set_weekly_plan",
         "log_day_nutrition",
         "log_meal",
+        "log_weight",
+        "log_workout",
         "save_food",
     }
 )

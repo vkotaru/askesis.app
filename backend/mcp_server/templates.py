@@ -54,7 +54,8 @@ button:hover { background:#15803d; }
 #: connector can actually read back.
 #: What a write-scoped connection may change. Deliberately narrow, and the
 #: narrowness is the point: plans and preferences, and of the record of what you
-#: actually did only food intake -- never workouts or the rest of the daily log.
+#: actually did only food intake, body weight and *new* workouts -- it can never
+#: edit or delete a logged session, or touch the rest of the daily log.
 _WRITE_GRANTS = [
     "The <b>shared exercise library</b> — add movements, edit their video links "
     "and form notes, archive ones you no longer use. Shared, so this changes "
@@ -68,6 +69,9 @@ _WRITE_GRANTS = [
     "Your <b>food intake</b> — each meal's calories and macros, and the day's "
     "totals. Never deletes a meal.",
     "The <b>food library</b> — save foods and recipes, shared unless private",
+    "Your <b>body weight</b> for a day — nothing else on that day's log",
+    "<b>New workout sessions</b> — add one with its exercises and sets. It "
+    "cannot edit or delete a session already logged.",
 ]
 
 _GRANTS = [

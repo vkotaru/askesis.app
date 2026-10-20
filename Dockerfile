@@ -132,13 +132,14 @@ RUN pip install --upgrade pip && \
 # `intake_log.py` is the one write to logged history (log_day_nutrition), kept
 # separate from planning.py so "everything in planning" stays plans-only.
 # `food_library.py` + `food_search.py` are the food library and its online
-# lookup (save_food / search_foods).
+# lookup (save_food / search_foods). `history_log.py` is weight and new
+# workout sessions (log_weight / log_workout).
 COPY backend/app/__init__.py     backend/app/config.py \
      backend/app/database.py     backend/app/disciplines.py \
      backend/app/models.py       backend/app/planning.py \
      backend/app/provenance.py   backend/app/security.py \
      backend/app/intake_log.py   backend/app/food_library.py \
-     backend/app/food_search.py  ./app/
+     backend/app/food_search.py  backend/app/history_log.py ./app/
 COPY backend/mcp_server/ ./mcp_server/
 
 # Fail the BUILD if the isolation ever stops holding, rather than discovering it

@@ -430,7 +430,11 @@ docker compose exec -T db psql -U askesis -d askesis \
 
 The role may write plans and the food library (`food_items`, for `save_food`),
 plus INSERT/UPDATE (never DELETE) on `meals` and `daily_nutrition` for
-`log_day_nutrition`. Without those grants the tools fail with a generic error.
+`log_day_nutrition` and `log_meal`. For `log_weight` it may add a day's row and
+update **only** the `weight` column on `daily_logs`. For `log_workout` it may
+INSERT into `activities`, `exercises` and `exercise_sets`, but never UPDATE or
+DELETE them, so a logged session can be added but not changed. Without those
+grants the tools fail with a generic error.
 
 `search_foods` makes outbound requests to USDA FoodData Central and Open Food
 Facts from the MCP container. `USDA_API_KEY` (free, from api.data.gov) is the

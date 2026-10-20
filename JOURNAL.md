@@ -21,6 +21,43 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-10-20 — Weight and workouts from the connector, and an echo that erased data
+
+**What changed.** Two new write tools in `app/history_log.py`: `log_weight` (one
+column of `daily_logs`) and `log_workout` (adds a session with its exercises
+and sets). The role grants are the real boundary. `daily_logs` gets
+**column-level** INSERT and UPDATE(weight, sources, updated_at), and sessions
+get INSERT only. A compromised container can add a fake session or set a fake
+weight, but not rewrite sleep or steps, or touch a past workout.
+
+**Found on the way, and worse than the feature.** `_edited` decided which
+fields were *claimed* as hand-entered, but the write loop still set every
+unowned field in the payload. The Daily Log pushes its whole row on each blur,
+so any value written elsewhere since the page loaded was reset to the page's
+stale copy. A weight from another device or the connector became `null` the
+moment you changed your sleep. `provenance.writable_fields` now writes only the
+fields named in `_edited`, on the REST path and both sync branches.
+`check_steps_paths.py` case 10 fails on the old code and passes now.
+Possibly the strength-to-full "weight disappeared" report, though not
+confirmed.
+
+**What didn't work.**
+- `db.add(DailyLog(...))` against the column-level grant: the ORM INSERT lists
+  every column, NULLs included, and Postgres checks the list, not the values.
+  It is a Core `insert()` now. Even that sends `ate_outside`, from its
+  Python-side default, so that column is in the grant too.
+- **SQLite can't catch any of this**, because it has no grants. Both failures
+  only appeared against a throwaway `postgres:16-alpine` running the role
+  script and the tools as `askesis_mcp`. Do that again after changing a grant
+  or a model default on a granted table.
+
+**Watch out.**
+- The MCP image copies an explicit module list (`Dockerfile`, `mcp` stage).
+  A new `app/` module the connector imports must be added there, or the
+  container fails at boot. The build's import check catches it, but only if
+  you run the build.
+- `has_any_column_privilege` takes no `DELETE`, since that has no column form.
+
 ## 2026-10-20 — Macros per meal, without moving the day's source of truth
 
 **What changed.** `meals` gained `protein_g`/`carbs_g`/`fat_g`, written by a new

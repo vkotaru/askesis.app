@@ -110,6 +110,30 @@ def claimed_fields(
     return [f for f in touched if owner_of(f) is None]
 
 
+def writable_fields(
+    payload: dict[str, Any],
+    touched: Iterable[str],
+    edited: Iterable[str],
+    owner_of: Callable[[str], str | None],
+) -> list[str]:
+    """Which of `touched` this write may set at all, as opposed to claim.
+
+    When the client names its edits (`_edited`), **only those are written**.
+    Everything else in the payload is the client's echo of a row it loaded
+    earlier, and writing it puts that old copy over anything newer on the
+    server. That erased real data: the Daily Log pushes its whole row on every
+    blur, so a weight logged elsewhere -- another device, or the MCP connector
+    -- was reset to the page's empty field the moment you changed your sleep.
+
+    Without `_edited` (an older client, the form's Save button) the old rule
+    stands: write what is unowned or hand-entered, skip an importer's field.
+    """
+    edited = set(edited)
+    if isinstance(payload.get(EDITED_FIELDS_KEY), (list, tuple, set)):
+        return [f for f in touched if f in edited]
+    return [f for f in touched if f in edited or owner_of(f) in (None, MANUAL)]
+
+
 def mark_manual(raw: str | None, fields: Iterable[str]) -> str | None:
     """A person set these fields -- including setting them to empty."""
     return mark(raw, fields, MANUAL)

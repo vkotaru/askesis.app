@@ -358,6 +358,30 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "look each item up with search_foods and scale it to the amount eaten; "
         "say what you assumed."
     ),
+    "log_weight": (
+        "Set one day's body weight in KILOGRAMS (convert pounds first: "
+        "lb x 0.4536). Replaces any weight already on that day, so read it "
+        "with get_daily_summary first and say what you are replacing. Only the "
+        "weight changes; the rest of the day's log is untouched. It counts as "
+        "entered by the user, so a watch sync will not overwrite it."
+    ),
+    "log_workout": (
+        "Log one finished session -- a stretching routine, a gym workout, a "
+        "run -- with what was done in it. ADDS a new session; it cannot edit "
+        "or delete one (that is done in the app), so show the user the full "
+        "session and get a yes before calling. activity_type is 'strength' "
+        "(also for stretching, yoga, mobility) or 'cardio'. Put the kind in "
+        "the name ('Morning stretch', 'Upper body') -- that is how the app "
+        "counts it toward weekly targets. Each exercise is {name, notes?, "
+        "sets: [...]}, and each set gives what applies: duration_seconds for "
+        "a held stretch or plank, reps and weight_kg for lifting, distance_m "
+        "for distance; set_type is warmup|working|drop|failure|cooldown. One "
+        "set per side or per hold. Use the library's exercise names "
+        "(list_exercises) so progress is tracked; names not in it are still "
+        "logged and listed back in not_in_library -- offer to add them with "
+        "create_exercise (tracking_type 'time' for holds). Refuses a second "
+        "session with the same name that day unless allow_duplicate=true. " + _UNITS
+    ),
     "search_foods": (
         "Look a food up before estimating it. Returns the user's saved foods "
         "first (their own labels and home recipes, each with its own serving "
@@ -388,9 +412,10 @@ def build_server(config: MCPConfig, verifier: TokenVerifier) -> MCPServer:
             "Personal health and training history: daily logs, nutrition, "
             "activities, measurements and training plans. Reads everything; "
             "writes plans — the shared exercise library, routines, and "
-            "daily/weekly targets — plus the food library and food intake "
-            "(meal calories and macros, per meal or per day). Logged workouts and the rest "
-            "of the daily log are read-only."
+            "daily/weekly targets — plus the food library, food intake "
+            "(meal calories and macros, per meal or per day), body weight, and "
+            "new workout sessions. Existing workouts and the rest of the daily "
+            "log are read-only."
         ),
         version="0.1.0",
         token_verifier=verifier,

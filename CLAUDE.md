@@ -250,6 +250,14 @@ Key modules:
   `log_meal` writes one meal's macros (columns on `meals`) and moves the day's
   `DailyNutrition` total by that meal's change. The day total stays the only
   number readers use. Every meal delete must call `release_meal_macros`.
+- `app/history_log.py` — `log_weight` and `log_workout` for the connector.
+  Weight writes go through a Core insert because the role's `daily_logs`
+  grant is column-level and an ORM insert names every column. Sessions are
+  INSERT-only at the role. Test grant changes against real Postgres; SQLite
+  has none.
+- **A Daily Log save writes only the fields named in `_edited`**
+  (`provenance.writable_fields`). The rest of the payload is the page's stale
+  echo, and writing it erased values saved elsewhere.
 - `app/food_library.py` — `save_food` / `search_foods` for the MCP connector:
   labels and home recipes (ingredients in `food_items.notes`), matched on
   name + brand case-insensitively, shared unless private. Library data, so the

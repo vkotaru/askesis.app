@@ -34,10 +34,10 @@ from app.models import (
 )
 from app.provenance import (
     EDITED_FIELDS_KEY,
-    MANUAL,
     claimed_fields,
     mark_manual,
     parse_sources,
+    writable_fields,
 )
 from app.routers.activities import SET_TYPES, ExerciseCreate, ExerciseSetCreate
 from app.routers.auth import get_current_user
@@ -611,13 +611,17 @@ def _handle_create(db: Session, model: type, change: SyncChange, user: User) -> 
                 if model == DailyLog
                 else touched
             )
-            for key in touched:
-                if (
-                    model == DailyLog
-                    and key not in edited
-                    and existing_sources.get(key) not in (None, MANUAL)
-                ):
-                    continue
+            writable = (
+                writable_fields(
+                    change.data or {},
+                    touched,
+                    edited,
+                    lambda f: existing_sources.get(f),
+                )
+                if model == DailyLog
+                else touched
+            )
+            for key in writable:
                 setattr(existing, key, data[key])
             if model == DailyLog and edited:
                 existing.sources = mark_manual(existing.sources, edited)
@@ -759,17 +763,21 @@ def _handle_update(
         else []
     )
 
+    # A field the user did not edit keeps the server's value. The payload's
+    # copy of it is whatever the client was holding, which may predate an
+    # importer's correction or a write from another device -- see
+    # provenance.writable_fields.
+    if model == DailyLog:
+        writable = set(
+            writable_fields(
+                change.data or {},
+                [k for k in touched if k != "date"],
+                edited,
+                lambda f: sources.get(f),
+            )
+        )
+        touched = [k for k in touched if k == "date" or k in writable]
     for key in touched:
-        # An importer's field that the user did not claim keeps the importer's
-        # value. The payload's copy of it is whatever the client was holding,
-        # which may predate the importer's latest reading — writing it would
-        # undo a correction, and the next sync would look like drift.
-        if (
-            model == DailyLog
-            and key not in edited
-            and sources.get(key) not in (None, MANUAL)
-        ):
-            continue
         setattr(obj, key, data[key])
 
     if edited:

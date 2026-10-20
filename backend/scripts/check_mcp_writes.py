@@ -19,8 +19,8 @@ Exits non-zero on any failure. Point it at a throwaway database.
 The cases that matter most are not the happy paths. They are:
   * ownership  -- one account cannot read or change another's routines
   * refusal    -- bad input is rejected rather than half-written
-  * isolation  -- the tools cannot reach logged history, except the one
-                  narrow intake write (log_day_nutrition)
+  * isolation  -- the tools cannot reach logged history, except the narrow
+                  writes: food intake, a day's weight, and adding a session
 
 The scope gate and the commit live in `server.py`, not in the tools, so they are
 asserted here by inspection of `WRITE_TOOLS` rather than by calling them.
@@ -717,6 +717,139 @@ def main() -> int:
     )
 
     print()
+    print("── log_weight: one column of the day, stamped as the user's ──")
+    from app.models import Activity, DailyLog
+    from app.provenance import parse_sources
+
+    d4 = local_today() - timedelta(days=6)
+    db.add(DailyLog(user_id=a, date=d4, sleep_hours=7.5, steps=4000))
+    db.commit()
+    r = T.log_weight(db, a, d4.isoformat(), 81.25)
+    db.commit()
+    log = db.query(DailyLog).filter_by(user_id=a, date=d4).one()
+    check("weight set on the existing day", (r["result"], log.weight), ("set", 81.25))
+    check("  sleep and steps untouched", (log.sleep_hours, log.steps), (7.5, 4000))
+    check(
+        "  marked as the user's own", parse_sources(log.sources).get("weight"), "manual"
+    )
+    r = T.log_weight(db, a, d4.isoformat(), 80.9)
+    db.commit()
+    check("  a second call updates it", (r["before_kg"], r["weight_kg"]), (81.25, 80.9))
+    d5 = (local_today() - timedelta(days=7)).isoformat()
+    T.log_weight(db, a, d5, 82)
+    db.commit()
+    check(
+        "a day with no log gets one",
+        db.query(DailyLog)
+        .filter_by(user_id=a, date=d4 - timedelta(days=1))
+        .one()
+        .weight,
+        82.0,
+    )
+    check(
+        "  and the other account has no row",
+        db.query(DailyLog).filter_by(user_id=b, date=d4).count(),
+        0,
+    )
+    refuses("pounds passed as kg refused (>500)", T.log_weight, db, a, d5, 650)
+    refuses("an impossible weight refused", T.log_weight, db, a, d5, 5)
+    refuses("a non-number refused", T.log_weight, db, a, d5, "80kg")
+    db.rollback()
+
+    print()
+    print("── log_workout: add a session, never edit one ──")
+    T.create_exercise(db, a, "Check Hamstring Hold", tracking_type="time")
+    db.commit()
+    stretches = [
+        {
+            "name": "check hamstring hold",
+            "sets": [
+                {"duration_seconds": 30, "notes": "left"},
+                {"duration_seconds": 30, "notes": "right"},
+            ],
+        },
+        {"name": "Check Unlisted Twist", "sets": [{"duration_seconds": 45}]},
+    ]
+    r = T.log_workout(
+        db, a, d4.isoformat(), "Check stretch", exercises=stretches, duration_mins=12
+    )
+    db.commit()
+    check("session added", r["name"], "Check stretch")
+    check(
+        "  library name resolved case-insensitively",
+        r["exercises"][0],
+        {"name": "Check Hamstring Hold", "sets": 2, "in_library": True},
+    )
+    check(
+        "  an unknown movement is logged and listed",
+        r["not_in_library"],
+        ["Check Unlisted Twist"],
+    )
+    got = T.get_activity(db, a, r["id"])
+    check(
+        "  reads back with its sets",
+        [(e["name"], len(e["sets"])) for e in got["exercises"]],
+        [("Check Hamstring Hold", 2), ("Check Unlisted Twist", 1)],
+    )
+    check(
+        "  and counts in exercise history",
+        len(T.get_exercise_history(db, a, "Check Hamstring Hold")["sessions"]),
+        1,
+    )
+    refuses(
+        "the same session twice refused",
+        T.log_workout,
+        db,
+        a,
+        d4.isoformat(),
+        "Check stretch",
+        exercises=stretches,
+    )
+    db.rollback()
+    r2 = T.log_workout(
+        db,
+        a,
+        d4.isoformat(),
+        "Check stretch",
+        exercises=stretches,
+        allow_duplicate=True,
+    )
+    db.commit()
+    check("  unless allow_duplicate", r2["id"] != r["id"], True)
+    refuses("  invisible to the other account", T.get_activity, db, b, r["id"])
+    for label, kwargs in (
+        ("an empty set refused", {"exercises": [{"name": "x", "sets": [{}]}]}),
+        (
+            "a bad set_type refused",
+            {"exercises": [{"name": "x", "sets": [{"reps": 5, "set_type": "max"}]}]},
+        ),
+        (
+            "a 25-hour hold refused",
+            {"exercises": [{"name": "x", "sets": [{"duration_seconds": 90000}]}]},
+        ),
+        (
+            "an unknown set field refused",
+            {"exercises": [{"name": "x", "sets": [{"reps": 5, "weight": 20}]}]},
+        ),
+        (
+            "fractional reps refused",
+            {"exercises": [{"name": "x", "sets": [{"reps": 5.5}]}]},
+        ),
+        (
+            "an unknown activity_type refused",
+            {"activity_type": "yoga", "duration_mins": 20},
+        ),
+        ("nothing to log refused", {}),
+    ):
+        refuses(label, T.log_workout, db, a, d4.isoformat(), "Check refused", **kwargs)
+    db.rollback()
+    check(
+        "  refusals added nothing",
+        db.query(Activity).filter_by(user_id=a, name="Check refused").count(),
+        0,
+    )
+
+    print()
     print("── the food library: save_food / search_foods ──")
     r = T.save_food(
         db,
@@ -849,6 +982,8 @@ def main() -> int:
             "create_exercise",
             "log_day_nutrition",
             "log_meal",
+            "log_weight",
+            "log_workout",
             "save_food",
             "save_routine",
             "set_targets",
@@ -888,6 +1023,7 @@ def main() -> int:
             any(f"planning.{m}(" in inspect.getsource(fn) for m in mutators)
             or "intake_log.log_day(" in inspect.getsource(fn)
             or "intake_log.log_meal(" in inspect.getsource(fn)
+            or "history_log." in inspect.getsource(fn)
             or "food_library.save(" in inspect.getsource(fn)
         )
     )

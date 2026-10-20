@@ -15,6 +15,31 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+**After deploying, re-run `backend/scripts/mcp_db_role.sql` with your existing
+`MCP_DB_PASSWORD`** (the command is in SELF_HOSTING.md). The two new tools need
+new grants, and until then they fail with a generic error.
+
+### Added
+
+- **The assistant can log your weight.** `log_weight` sets one day's weight in
+  kg, and nothing else on that day. It counts as entered by you, so a Garmin
+  sync won't overwrite it.
+- **The assistant can log a workout session**: a stretching routine, a gym
+  session, a run, with each exercise and its sets (holds in seconds, reps,
+  weight, distance). `log_workout` only *adds* sessions. It can't edit or
+  delete one, and the database role enforces that. It refuses the same
+  session name twice on one day unless told it really is a second session,
+  and it lists any exercise that isn't in your library so it can offer to
+  add it.
+
+### Fixed
+
+- **Editing one field in the Daily Log could erase a value saved elsewhere.**
+  Each save sent the whole day as the page had loaded it. A weight logged
+  from another device, or by the assistant, was set back to empty the next
+  time you changed your sleep or steps. A save now writes only the field you
+  edited, on every save path, including offline sync.
+
 ## [2.22.0] - 2026-10-20
 
 Alembic head: `add_meal_macros`

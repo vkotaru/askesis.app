@@ -171,6 +171,21 @@ check(
     200,
 )
 
+# 10. A page loaded before a weight was logged elsewhere (another device, the
+#     MCP connector) edits a different field. Its whole-row echo carries
+#     weight=None; that must not erase the newer weight -- on any path.
+for label, send in (
+    ("REST", lambda d: rest(d)),
+    ("sync update", lambda d: push({"date": DAY.isoformat(), **d})),
+    ("sync create-upsert", lambda d: push({"date": DAY.isoformat(), **d}, op="create")),
+):
+    reset()
+    rest({"sleep_hours": 7.0, "_edited": ["sleep_hours"]})  # the page loads this
+    rest({"weight": 80.4, "_edited": ["weight"]})  # logged elsewhere
+    send({"weight": None, "sleep_hours": 7.5, "_edited": ["sleep_hours"]})
+    check(f"stale echo of weight ignored ({label})", row().weight, 80.4)
+    check("  ...while the edited field lands", row().sleep_hours, 7.5)
+
 print()
 print(
     "  "
