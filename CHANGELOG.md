@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-10-20
+
+Alembic head: `add_meal_macros`
+
 **After deploying, re-run `backend/scripts/mcp_db_role.sql` with your existing
 `MCP_DB_PASSWORD`** (the command is in SELF_HOSTING.md). The two new tools need
 new grants, and until then they fail with a generic error.
@@ -1861,7 +1865,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.22.0...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.23.0...HEAD
+[2.23.0]: https://github.com/vkotaru/askesis.app/compare/v2.22.0...v2.23.0
 [2.22.0]: https://github.com/vkotaru/askesis.app/compare/v2.21.0...v2.22.0
 [2.21.0]: https://github.com/vkotaru/askesis.app/compare/v2.20.1...v2.21.0
 [2.20.1]: https://github.com/vkotaru/askesis.app/compare/v2.20.0...v2.20.1
