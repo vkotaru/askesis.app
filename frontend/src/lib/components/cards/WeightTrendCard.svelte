@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { format, subDays, subMonths } from 'date-fns';
+  import { format, parseISO, subDays, subMonths } from 'date-fns';
   import { TrendingUp, TrendingDown } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import { weightFromMetric, formatWeight, getWeightLabel } from '$lib/utils/units';
@@ -35,7 +35,10 @@
   }
 
   $: rangeCutoff = showRangeSelector ? getRangeCutoff(selectedRange) : null;
-  $: filteredData = weightPoints.filter(p => !rangeCutoff || new Date(p.date) >= rangeCutoff);
+  // parseISO, not `new Date(...)`: a bare 'yyyy-MM-dd' through the Date
+  // constructor is UTC midnight, which west of Greenwich is the evening
+  // before, so every label and tooltip was a day early.
+  $: filteredData = weightPoints.filter(p => !rangeCutoff || parseISO(p.date) >= rangeCutoff);
 
   $: weightChange = filteredData.length >= 2
     ? filteredData[filteredData.length - 1].weight - filteredData[0].weight
@@ -57,7 +60,15 @@
   $: weightMax = filteredData.length > 0 ? Math.max(...filteredData.map(p => p.weight)) + 1 : 100;
   $: weightRange = weightMax - weightMin || 1;
 
-  $: xScale = (i: number) => padding.left + (i / Math.max(filteredData.length - 1, 1)) * innerWidth;
+  // The x axis is time, not point count. Weigh-ins are irregular — a gap of
+  // three weeks and a gap of one day are both "the next point" — and spacing
+  // by index drew them the same width, so the axis read Oct 5 · Oct 29 · Nov 3
+  // at equal intervals and the trend's shape was whatever the gaps made it.
+  $: times = filteredData.map(p => parseISO(p.date).getTime());
+  $: t0 = times.length ? Math.min(...times) : 0;
+  $: tSpan = times.length ? Math.max(...times) - t0 : 0;
+  $: xScale = (i: number) =>
+    padding.left + (tSpan > 0 ? (times[i] - t0) / tSpan : 0.5) * innerWidth;
   $: yScale = (w: number) => padding.top + innerHeight - ((w - weightMin) / weightRange) * innerHeight;
 
   $: weightPath = filteredData.length > 1
@@ -74,6 +85,10 @@
     weight: p.weight,
     date: p.date,
   }));
+
+  // Axis labels at the ends and the middle OF THE SPAN, so the middle one is
+  // the date under the middle of the chart, not whichever point is median.
+  $: midLabel = tSpan > 0 ? format(new Date(t0 + tSpan / 2), 'MMM d') : '';
 
   $: yTicks = Array.from({ length: 5 }, (_, i) => ({
     value: weightMin + (weightRange * i) / 4,
@@ -166,15 +181,15 @@
 
         {#if filteredData.length > 0}
           <text x={padding.left} y={chartHeight - 8} text-anchor="start" class="fill-gray-400 text-[10px]">
-            {format(new Date(filteredData[0].date), 'MMM d')}
+            {format(parseISO(filteredData[0].date), 'MMM d')}
           </text>
-          {#if filteredData.length > 2}
+          {#if filteredData.length > 2 && midLabel}
             <text x={chartWidth / 2} y={chartHeight - 8} text-anchor="middle" class="fill-gray-400 text-[10px]">
-              {format(new Date(filteredData[Math.floor(filteredData.length / 2)].date), 'MMM d')}
+              {midLabel}
             </text>
           {/if}
           <text x={chartWidth - padding.right} y={chartHeight - 8} text-anchor="end" class="fill-gray-400 text-[10px]">
-            {format(new Date(filteredData[filteredData.length - 1].date), 'MMM d')}
+            {format(parseISO(filteredData[filteredData.length - 1].date), 'MMM d')}
           </text>
         {/if}
       </svg>
@@ -185,7 +200,7 @@
           style="left: {(hoveredPoint.x / chartWidth) * 100}%; top: {(hoveredPoint.y / chartHeight) * 100 - 15}%; transform: translateX(-50%);"
         >
           <div class="font-medium">{formatWeight(hoveredPoint.weight, weightUnit)}</div>
-          <div class="text-gray-300">{format(new Date(hoveredPoint.date), 'MMM d, yyyy')}</div>
+          <div class="text-gray-300">{format(parseISO(hoveredPoint.date), 'MMM d, yyyy')}</div>
         </div>
       {/if}
     </div>

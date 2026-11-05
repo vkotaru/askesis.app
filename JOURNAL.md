@@ -21,6 +21,42 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-11-04 — Five phone-screenshot bugs, and what each one really was
+
+**What changed.** Five fixes from one set of iPhone screenshots. Two are worth
+remembering past the diff.
+
+- **The sideways scroll was a date input.** `main` already has
+  `overflow-x-hidden` (see the comment on it), yet the fixed header and rail
+  were pushed off the left edge again. Measuring the screenshots: every
+  `<input type="date">` was ~32px wider than its box — the `.input` padding —
+  on both the date nav (`max-w-[160px]`, rendered ~190px) and the form grid.
+  iOS draws a date input as a native control that sizes itself, and then
+  Safari widens the layout viewport to fit the content, which is what drags
+  fixed elements. `:where(input[type=date]) { -webkit-appearance: none;
+  min-width: 0; max-width: 100% }` in `app.css`, with the WebKit inner
+  value element given a `min-height` so an empty one does not collapse.
+  `:where()` is not decoration: `input[type=date]` outranks a utility class,
+  and with it the rule's `max-width: 100%` silently beat `max-w-[160px]` in
+  Chrome — found only because the headless shot measured 233px.
+- **Sticky hover.** A chart column tapped on a phone keeps `:hover` until
+  the next tap elsewhere. `future.hoverOnlyWhenSupported` in
+  `tailwind.config.js` wraps every `hover:` in `@media (hover: hover)`;
+  there are ~150 of them, and this is the one place to fix all of them.
+
+**Watch out.**
+- The date-input fix is from reading screenshots and from Chrome: there is
+  no iOS device here. If the header still clips on the phone, the next
+  suspects are the Time-of-Day button row in the form (four `flex-1` buttons
+  whose labels cannot wrap) and the exercises table under an expanded
+  session.
+- The Weight Trend "7-day avg" is a 7-*point* average and always was; with
+  the axis now on real time, that mismatch is visible. Left alone, deliberately.
+- Headless Chrome's `--screenshot` captures before the SPA has loaded
+  (spinner, or blank). Driving it over the DevTools protocol with
+  `Emulation.setDeviceMetricsOverride` (393×852, mobile) and a 6–7 s wait
+  does work; `websockets` is in the backend venv.
+
 ## 2026-10-20 — Weight and workouts from the connector, and an echo that erased data
 
 **What changed.** Two new write tools in `app/history_log.py`: `log_weight` (one

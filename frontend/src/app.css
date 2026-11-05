@@ -74,6 +74,27 @@ body {
            focus:outline-none focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-800;
   }
 
+  /* iOS Safari draws a date input as a native control that sizes itself and
+     refuses `max-width` and `box-sizing`: on the Activities page it came out
+     about 32px (the .input padding) wider than the box it was in, and Safari
+     then widened the whole page to fit it, dragging the fixed header and nav
+     rail off the left edge. Resetting the appearance makes it an ordinary
+     field that honours its box. The inner value element is what WebKit
+     renders the text in; without a height it collapses when the input is
+     empty, and it ignores the input's own text-align.
+     `:where()` keeps the selector at zero specificity, so a utility such as
+     `max-w-[160px]` on one input still beats the `max-width` here. */
+  :where(input[type='date'], input[type='time'], input[type='datetime-local']) {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  :where(input[type='date'], input[type='time'], input[type='datetime-local'])::-webkit-date-and-time-value {
+    min-height: 1.5em;
+    text-align: inherit;
+  }
+
   /* Used by any horizontally scrolling chip row. It previously existed only
      inside Layout.svelte's scoped <style>, so every other use of the class
      silently did nothing and showed a scrollbar. */

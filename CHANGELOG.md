@@ -15,6 +15,31 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Activities page no longer scrolls sideways on a phone.** iOS drew the
+  date boxes wider than the space they were given, and Safari widened the
+  whole page to fit, pushing the header and the nav rail off the left edge.
+  Every date box in the app is now an ordinary field that stays inside its
+  box.
+- **Recent Activities fits a phone.** The table squeezed each column to one
+  word and still overflowed: "Duration" was clipped, Distance and Calories
+  were off-screen, and the date split from its weekday. On a narrow screen
+  the name takes the room and those two columns are left to the wider view.
+- **The Weight Trend chart spaces weigh-ins by date.** It had placed each
+  point one step after the last, so a three-week gap and a one-day gap were
+  the same width and the axis read Oct 5 · Oct 29 · Nov 3 at even intervals.
+  Dates west of Greenwich also showed a day early in the labels and tooltip.
+- **One target line on the Calories & Protein chart.** Calories and protein
+  each had a target line and an average line on their own scale, and all four
+  sat a few pixels apart near the top. Now both series are scaled so their
+  target is the same height and one dashed line marks it; the averages stay
+  in the text above the chart.
+- **A tapped chart column no longer stays grey.** On a touch screen a tap set
+  the hover shade and nothing cleared it, so a future Friday on the dashboard
+  looked marked. Hover styles now apply only where there is a pointer to
+  hover with.
+
 ## [2.23.0] - 2026-10-20
 
 Alembic head: `add_meal_macros`

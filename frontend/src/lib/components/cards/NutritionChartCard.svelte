@@ -11,8 +11,30 @@
 
   const dispatch = createEventDispatcher<{ dayClick: string }>();
 
-  $: maxCalories = Math.max(...data.map(d => d.calories), (calorieTarget || 0) * 1.2, 1);
-  $: maxProtein = Math.max(...data.map(d => d.protein) , (proteinTarget || 0) * 1.2, 1);
+  // Calories and protein share one chart on two scales, so each series that
+  // has a target is scaled so that the target sits at the SAME height, and one
+  // line is drawn there. With a line per target they were a few pixels apart
+  // (2,100 cal and 140 g both landed near 80% of their own scale), and with
+  // the weekly averages ruled on top of that there were four dashed lines in
+  // the chart's top quarter and no way to say which was which. The averages
+  // are in the summary text above; they are not drawn. A series with no
+  // target is scaled to its own largest day, as before.
+  //
+  // `headroom` is the chart top as a multiple of target: at least 1.2 so a day
+  // on target is not a bar touching the ceiling, and as much more as the
+  // biggest day over target needs.
+  $: headroom = Math.max(
+    1.2,
+    ...(calorieTarget ? data.map((d) => d.calories / calorieTarget) : []),
+    ...(proteinTarget ? data.map((d) => d.protein / proteinTarget) : [])
+  );
+  $: maxCalories = calorieTarget
+    ? calorieTarget * headroom
+    : Math.max(...data.map((d) => d.calories), 1);
+  $: maxProtein = proteinTarget
+    ? proteinTarget * headroom
+    : Math.max(...data.map((d) => d.protein), 1);
+  $: targetPct = calorieTarget || proteinTarget ? 100 / headroom : null;
   $: hasBurned = data.some(d => (d.burnedCalories || 0) > 0);
 
   // Averages over the days that HAVE a figure, never over the calendar week.
@@ -60,14 +82,10 @@
         <span class="inline-block w-2 h-2 rounded-sm bg-red-400"></span> Burned (active)
       </span>
     {/if}
-    {#if calorieTarget}
+    {#if targetPct !== null}
       <span class="flex items-center gap-1 text-[10px] text-gray-400">
-        <span class="inline-block w-4 h-0 border-t-2 border-dashed border-amber-400"></span> Cal Target
-      </span>
-    {/if}
-    {#if proteinTarget}
-      <span class="flex items-center gap-1 text-[10px] text-gray-400">
-        <span class="inline-block w-4 h-0 border-t-2 border-dashed border-blue-400"></span> Pro Target
+        <span class="inline-block w-4 h-0 border-t-2 border-dashed border-gray-400"></span>
+        {calorieTarget && proteinTarget ? 'Targets' : calorieTarget ? 'Cal target' : 'Protein target'}
       </span>
     {/if}
   </div>
@@ -107,39 +125,12 @@
       class="flex items-end gap-2 relative"
       style="height: {intakeHeight + labelSpace + 16}px;"
     >
-      <!-- Calorie target line -->
-      {#if calorieTarget && maxCalories > 0}
-        {@const targetPct = (calorieTarget / maxCalories) * 100}
+      <!-- The one target line: every series with a target reaches it at this
+           height (see `headroom`). -->
+      {#if targetPct !== null}
         <div
-          class="absolute left-0 right-0 border-t-2 border-dashed border-amber-400/60 pointer-events-none z-10"
+          class="absolute left-0 right-0 border-t-2 border-dashed border-gray-400/70 pointer-events-none z-10"
           style="bottom: {labelSpace + (targetPct / 100) * intakeHeight}px;"
-        ></div>
-      {/if}
-
-      <!-- Protein target line -->
-      {#if proteinTarget && maxProtein > 0}
-        {@const proTargetPct = (proteinTarget / maxProtein) * 100}
-        <div
-          class="absolute left-0 right-0 border-t-2 border-dashed border-blue-400/60 pointer-events-none z-10"
-          style="bottom: {labelSpace + (proTargetPct / 100) * intakeHeight}px;"
-        ></div>
-      {/if}
-
-      <!-- Weekly calorie average line -->
-      {#if avgCalories > 0 && maxCalories > 0}
-        {@const avgPct = (avgCalories / maxCalories) * 100}
-        <div
-          class="absolute left-0 right-0 border-t-2 border-dashed border-orange-400/60 pointer-events-none z-10"
-          style="bottom: {labelSpace + (avgPct / 100) * intakeHeight}px;"
-        ></div>
-      {/if}
-
-      <!-- Weekly protein average line -->
-      {#if avgProtein > 0 && maxProtein > 0}
-        {@const avgProPct = (avgProtein / maxProtein) * 100}
-        <div
-          class="absolute left-0 right-0 border-t border-dotted border-blue-400/50 pointer-events-none z-10"
-          style="bottom: {labelSpace + (avgProPct / 100) * intakeHeight}px;"
         ></div>
       {/if}
 

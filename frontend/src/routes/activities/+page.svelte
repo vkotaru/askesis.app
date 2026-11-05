@@ -276,7 +276,7 @@
         type="date"
         value={selectedDate}
         on:change={handleDateChange}
-        class="input max-w-[160px] text-center flex-shrink"
+        class="input min-w-0 max-w-[160px] text-center flex-shrink"
       />
       <button
         type="button"
@@ -650,22 +650,30 @@
 
 <!-- Recent Activities -->
   {#if recentActivities.length > 0}
-    <div class="card p-6 mt-6">
+    <div class="card p-4 md:p-6 mt-6">
       <div class="flex items-center gap-2 mb-4">
         <History size={20} class="text-primary-500" />
         <h2 class="text-lg font-semibold">Recent Activities</h2>
         <span class="text-sm text-gray-400 ml-auto">Last 10 entries</span>
       </div>
+      <!-- Six columns do not fit a phone. The table is `w-full`, so it shrank
+           each column to its longest word, then overflowed anyway: "Duration"
+           was clipped at the card edge, Distance and Calories were off-screen
+           with nothing to say so, and the name column was down to one word a
+           line. Below `sm` the two columns that are blank for most strength
+           sessions are dropped and the cells that must stay on one line say
+           so; the name takes what is left. -->
       <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-xs sm:text-sm">
           <thead>
             <tr class="text-left border-b border-gray-200 dark:border-gray-700">
-              <th class="pb-3 font-medium text-gray-500">Date</th>
-              <th class="pb-3 font-medium text-gray-500">Activity</th>
-              <th class="pb-3 font-medium text-gray-500">Type</th>
-              <th class="pb-3 font-medium text-gray-500">Duration</th>
-              <th class="pb-3 font-medium text-gray-500">Distance</th>
-              <th class="pb-3 font-medium text-gray-500">Calories</th>
+              <th class="pb-3 pr-3 font-medium text-gray-500">Date</th>
+              <!-- w-full: the name column takes every pixel the others do not need. -->
+              <th class="pb-3 pr-3 font-medium text-gray-500 w-full">Activity</th>
+              <th class="pb-3 pr-3 font-medium text-gray-500">Type</th>
+              <th class="pb-3 pr-3 font-medium text-gray-500">Duration</th>
+              <th class="pb-3 pr-3 font-medium text-gray-500 hidden sm:table-cell">Distance</th>
+              <th class="pb-3 font-medium text-gray-500 hidden sm:table-cell">Calories</th>
             </tr>
           </thead>
           <tbody>
@@ -677,14 +685,14 @@
                 )}
                 on:click={() => goToDate(activity.date)}
               >
-                <td class="py-3">
+                <td class="py-3 pr-3 whitespace-nowrap">
                   <div class="flex items-center gap-2">
-                    <Calendar size={14} class="text-gray-400" />
+                    <Calendar size={14} class="text-gray-400 hidden sm:block" />
                     <span class="font-medium">{format(parseISO(activity.date), 'MMM d')}</span>
                     <span class="text-gray-400 text-xs">{format(parseISO(activity.date), 'EEE')}</span>
                   </div>
                 </td>
-                <td class="py-3">
+                <td class="py-3 pr-3">
                   <span class="font-medium">{activity.name}</span>
                   {#if activity.tags}
                     <div class="flex gap-1 mt-1">
@@ -696,7 +704,7 @@
                     </div>
                   {/if}
                 </td>
-                <td class="py-3">
+                <td class="py-3 pr-3 whitespace-nowrap">
                   <span
                     class={clsx(
                       'text-xs px-2 py-0.5 rounded-full font-medium',
@@ -708,21 +716,21 @@
                     {activity.activity_type}
                   </span>
                 </td>
-                <td class="py-3">
+                <td class="py-3 pr-3 whitespace-nowrap">
                   {#if activity.duration_mins}
                     {activity.duration_mins} min
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
                 </td>
-                <td class="py-3">
+                <td class="py-3 pr-3 whitespace-nowrap hidden sm:table-cell">
                   {#if activity.distance_km}
                     {formatDistance(activity.distance_km, $settings.distance_unit)}
                   {:else}
                     <span class="text-gray-400">—</span>
                   {/if}
                 </td>
-                <td class="py-3">
+                <td class="py-3 whitespace-nowrap hidden sm:table-cell">
                   {#if activity.calories}
                     {activity.calories} cal
                   {:else}

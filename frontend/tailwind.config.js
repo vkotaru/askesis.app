@@ -2,6 +2,13 @@
 export default {
   content: ['./src/**/*.{html,js,svelte,ts}'],
   darkMode: 'class',
+  // Every `hover:` style is wrapped in `@media (hover: hover)`. On a touch
+  // screen a tap sets the hover state and nothing clears it until the next
+  // tap somewhere else, so a chart column you tapped (or brushed while
+  // scrolling) stayed grey: on the dashboard a future Friday read as marked.
+  // A phone has no pointer to hover with; the active/selected styles still
+  // apply there.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     extend: {
       fontFamily: {
