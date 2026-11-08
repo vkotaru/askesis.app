@@ -21,6 +21,18 @@ if is_sqlite:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+        # Let SQLAlchemy own the transaction, not pysqlite. The driver's legacy
+        # mode delays BEGIN until the first INSERT/UPDATE, so a SAVEPOINT issued
+        # before any write (`Session.begin_nested()`, which mfp_ingest uses per
+        # meal) opens its own implicit transaction and RELEASE then COMMITS it
+        # -- a dry run's rollback silently kept the rows. This is the recipe
+        # from SQLAlchemy's SQLite dialect docs ("Serializable isolation /
+        # Savepoints / Transactional DDL"); Postgres needs none of it.
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine, "begin")
+    def begin_sqlite_transaction(conn):
+        conn.exec_driver_sql("BEGIN")
 else:
     # PostgreSQL with connection pool settings
     engine = create_engine(

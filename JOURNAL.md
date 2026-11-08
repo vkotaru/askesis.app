@@ -21,6 +21,65 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-11-08 — MyFitnessPal screenshots by OCR, and three things the review caught
+
+**What changed.** `POST /api/ingest/mfp`: Tesseract + a strict regex read the
+Meals screen, `mfp_ingest.write_day` logs each meal through
+`intake_log.log_meal(mode="replace")`, a static bearer token guards it, and
+an iPhone Shortcut drives it. Three layers on purpose: `mfp_ocr.py`
+(image → numbers, Pillow + pytesseract only), `mfp_ingest.py` (numbers →
+rows, no HTTP), `routers/ingest.py` (HTTP, auth, transaction). Each is
+tested alone; the parser tests need the `tesseract` binary and skip
+without it. First test suite in the repo (`backend/tests`, pytest, in CI).
+
+- **Fixtures are synthetic.** Real screenshots are health data and the repo
+  is public, so `tests/fixtures/mfp/make_fixtures.py` draws the layout with
+  made-up numbers. Real ones go in `fixtures/mfp/private/` (gitignored) and
+  a parametrised test reads whatever is there, asserting only "four meals,
+  no notes". Fonts matter: DejaVu Sans's `1` OCRs as `l` ("P 12g" → "Pl2g");
+  Liberation Sans does not. A light "Log" pill on a dark card inverts into a
+  black block and swallows the title next to it -- that was the fixture
+  lying, not the parser failing, but it earned the parser a note for "a
+  calories line with no title" instead of silence.
+- **The adversarial review found a real bug in catch-and-continue.**
+  `log_meal` validates before it mutates *except* the day-total bound inside
+  `_shift_day`, which fires after the meal row is set. The MCP path never
+  noticed: the whole call rolls back. `write_day` catches a meal's error and
+  goes on to the next, whose flush persisted the half-written one. Each meal
+  is now a `begin_nested()` savepoint.
+- **…which exposed the pysqlite SAVEPOINT trap.** pysqlite delays BEGIN
+  until the first write, so a SAVEPOINT issued before any DML opens its own
+  transaction and RELEASE commits it: the dry run's rollback kept the rows.
+  Fixed where SQLAlchemy's docs say to, in `app/database.py`: on SQLite,
+  `isolation_level = None` on connect and an explicit `BEGIN` on the engine's
+  `begin` event. Postgres is unaffected. Side effect worth knowing: a SQLite
+  session that has run a SELECT now holds a WAL snapshot until it ends, so a
+  test that reads after the app wrote must `db.rollback()` first --
+  `expire_all()` re-reads inside the frozen snapshot and sees nothing new.
+- **`force` was not "write anyway".** With day-level macros and no meal
+  macros, writing meals on top double counts, so `force` first sets the
+  day's totals to the sum of its meals. The review's point: the dropped
+  grams are real data (an itemised breakfast's protein typed into the day; a
+  partial resend of only Lunch), and the warning must say how many, not
+  "rebased". It does now. And the guard skips when the request changes
+  nothing, or a day nudged by hand after an import would refuse every resend.
+
+**What didn't work.** `--psm 11` (sparse text) splits "640 cal" from its
+macros onto separate lines; `--psm 6` keeps each card's summary on one line
+and is what the regexes assume. Running two Bash calls in parallel that each
+`cd` races on the shared shell cwd; one call's trailing `cd ..` made the
+other "can't read" a file that was there. Absolute paths, no `cd`.
+
+**Watch out.**
+- "Nov 9" read on Nov 8 is *last year's* Nov 9, by the Dec 30 / Jan 2 rule;
+  only an explicit year can land a day in the future. Not a bug.
+- Snacks' macros often "explain" far fewer kcal than the line says (alcohol;
+  net carbs drop fibre and sugar alcohols). That is a flag in the alert,
+  not a skip, and it is expected on real data.
+- The app is tailnet-only, so the Shortcut needs Tailscale up on the phone.
+  Putting this on the Funnel'd MCP container was considered and rejected: it
+  would mean a static-token auth path on the one public service.
+
 ## 2026-11-04 — Five phone-screenshot bugs, and what each one really was
 
 **What changed.** Five fixes from one set of iPhone screenshots. Two are worth

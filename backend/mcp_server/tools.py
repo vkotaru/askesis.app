@@ -1567,6 +1567,12 @@ TOOLS = {
     "save_food": save_food,
 }
 
+#: Read-only tools that leave this server: `search_foods` queries USDA and Open
+#: Food Facts. Every other read is answered from the database alone. Drives the
+#: `openWorldHint` annotation in `server.py`, which a client may use to decide
+#: whether a call needs confirmation or can be retried freely.
+OPEN_WORLD_TOOLS: frozenset[str] = frozenset({"search_foods"})
+
 #: The tools that change data. Drives three things in `server.py`: the
 #: `askesis:write` scope check, the commit, and the write rate limit. A tool
 #: missing from here would be callable with a read-only token AND would silently

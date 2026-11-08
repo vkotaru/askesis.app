@@ -15,6 +15,26 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **MyFitnessPal screenshots can be logged without an AI.** `POST
+  /api/ingest/mfp` takes screenshots of MyFitnessPal's Meals view, reads each
+  meal's calories and macros with Tesseract and a strict pattern, and logs
+  them through the same code the assistant's `log_meal` tool uses. Built for
+  an iPhone Shortcut: a dry run returns a short plain-text preview, the real
+  run writes, and sending the same screenshot twice changes nothing. A meal
+  whose line does not read cleanly is skipped and named, never guessed. Days
+  whose macros were typed in as a whole are refused until `force=true`, so
+  nothing is counted twice. Guarded by `MFP_INGEST_TOKEN`; without it the
+  route does not exist. Tesseract is now in the app image.
+- **The backend has a test suite.** `pytest` under `backend/tests/`, run in
+  CI: the OCR parser against fixture screenshots and the ingest endpoint
+  against SQLite.
+- **MCP read tools declare themselves.** Every read-only tool now carries
+  `readOnlyHint`, `idempotentHint` and `openWorldHint` (true only for
+  `search_foods`, which asks USDA and Open Food Facts), so a client can batch
+  or retry them without asking.
+
 ### Fixed
 
 - **The Activities page no longer scrolls sideways on a phone.** iOS drew the

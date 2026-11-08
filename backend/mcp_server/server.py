@@ -34,6 +34,7 @@ from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError as SDKToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -204,7 +205,20 @@ def _register(
         for n, p in sig.parameters.items()
         if n not in ("db", "user_id") and p.annotation is not inspect.Parameter.empty
     }
-    mcp.tool(name=fn.__name__)(handler)
+    # Hints, not enforcement: the scope gate above is what actually stops a
+    # read-only token from writing. These tell a client that a read may be
+    # retried or batched without asking, and which one reaches the open web.
+    # Write tools carry none -- the SDK's defaults (destructive, non-idempotent)
+    # are the honest ones for them, and `log_workout` really does add a row
+    # per call.
+    annotations = None
+    if not writes:
+        annotations = ToolAnnotations(
+            read_only_hint=True,
+            idempotent_hint=True,
+            open_world_hint=fn.__name__ in T.OPEN_WORLD_TOOLS,
+        )
+    mcp.tool(name=fn.__name__, annotations=annotations)(handler)
 
 
 #: One sentence per tool telling the model the unit rule, because a tool

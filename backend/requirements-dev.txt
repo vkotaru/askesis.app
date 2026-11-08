@@ -1,0 +1,6 @@
+# Test-only dependencies. Not installed in the image; CI and a dev machine add
+# them on top of requirements.txt:
+#     pip install -r requirements.txt -r requirements-dev.txt
+#     python -m pytest
+# The parser tests also need the `tesseract` binary (apt: tesseract-ocr).
+pytest==8.3.4

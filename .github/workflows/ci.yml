@@ -102,6 +102,16 @@ jobs:
           DATABASE_URL: "sqlite:///./ci.db"
         run: python -c "import app.main"
 
+      # The test suite: the MyFitnessPal OCR parser against fixture screenshots
+      # and the ingest endpoint against SQLite. Tesseract is the binary the
+      # parser shells out to; the Dockerfile installs the same package.
+      - name: Tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends tesseract-ocr
+          pip install -r requirements-dev.txt
+          python -m pytest
+
       # Catches batch_alter_table mistakes on SQLite before they reach the
       # production Postgres, and proves every migration is reversible.
       - name: Migration round-trip

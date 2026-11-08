@@ -49,3 +49,7 @@ backend/static/
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+
+# Real MyFitnessPal screenshots used to check the OCR parser by hand. They are
+# health data; only the synthetic fixtures beside them are committed.
+backend/tests/fixtures/mfp/private/

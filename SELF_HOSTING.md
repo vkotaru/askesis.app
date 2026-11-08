@@ -307,6 +307,47 @@ match no known pattern land in `_inbox/_unparseable/`. Neither is deleted.
 user, date and view — the whole row); it will never synthesize a *meal* row,
 because a meal needs a date and a label that the filename doesn't carry.
 
+## MyFitnessPal screenshot import
+
+Optional. If you log food in MyFitnessPal, a screenshot of its **Meals** view
+(Breakfast/Lunch/Dinner/Snacks, each with a `640 cal • NC 58g F 24g P 35g` line) can be
+sent straight to Askesis from an iPhone Shortcut. The server reads it with
+Tesseract — plain OCR and a strict regex, no AI call, so it costs nothing per
+day — and logs each meal's calories and macros through the same code the MCP
+connector's `log_meal` tool uses. Resending the same screenshot changes nothing.
+
+**Turn it on** with two lines in `.env`:
+
+```bash
+MFP_INGEST_TOKEN=$(openssl rand -hex 32)   # the ONLY guard on the route; treat as a password
+MFP_INGEST_USER=                           # username the meals belong to; needed with >1 account
+```
+
+Unset, the route is not mounted. The token travels as `Authorization: Bearer`
+from the Shortcut, over the tailnet only — the app is never Funnel'd, so the
+phone needs Tailscale connected. Tesseract is in the app image; the startup log
+says if the binary is missing, and the route answers 503 until it is there.
+
+**The endpoint.** `POST /api/ingest/mfp`, multipart: one or more `images`,
+`today` as `YYYY-MM-DD` **from the phone** (the server never uses its own
+clock — "Today"/"Yesterday" in a screenshot resolve against this), `dry_run`
+(`true` previews, `false` writes) and `force`. The response is plain text, short
+enough for a Shortcut alert:
+
+```bash
+curl -sS https://askesis.<your-tailnet>.ts.net/api/ingest/mfp \
+  -H "Authorization: Bearer $MFP_INGEST_TOKEN" \
+  -F images=@meals.png -F today=$(date +%F) -F dry_run=true
+```
+
+**The double-count guard.** Days logged before meals carried their own macros
+hold the whole day's protein/carbs/fat on the day with nothing on the meals.
+Writing per-meal macros on top of that would count those grams twice, so when
+a day's totals don't match the sum of its meals the dry run says so and the
+write refuses. `-F force=true` first sets the day's totals to its meals' sum,
+then writes — the screenshot wins. A meal that has itemised foods in the app,
+or two rows with the same label, is skipped and reported, never overwritten.
+
 ## Gotchas / migration notes
 
 - **Importing an existing Postgres database:**

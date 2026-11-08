@@ -86,11 +86,14 @@ of which is a comment where it matters:
 
 ```bash
 cd backend  && ruff check . && ruff format --check .
+cd backend  && ./venv/bin/python -m pytest                  # needs tesseract for the OCR tests
 cd frontend && ./npm.sh run check && ./npm.sh run build   # svelte-check, then vite build
 ```
 
-There is no test suite in this repo. `npm run check` + `npm run build` is the only frontend
-safety net, so run both.
+The backend has a small pytest suite (`backend/tests/`: the MyFitnessPal OCR parser and
+the ingest endpoint); `pip install -r requirements-dev.txt && python -m pytest`, and the
+parser tests skip without the `tesseract` binary. The frontend has none: `npm run check` +
+`npm run build` is its only safety net, so run both.
 
 CI (`.github/workflows/ci.yml`) runs two backend checks that lint can't stand in for, and
 both catch failures that only appear at container boot. Run them locally after deleting a
@@ -255,6 +258,18 @@ Key modules:
   grant is column-level and an ORM insert names every column. Sessions are
   INSERT-only at the role. Test grant changes against real Postgres; SQLite
   has none.
+- `app/mfp_ocr.py` + `app/mfp_ingest.py` + `routers/ingest.py` — the
+  MyFitnessPal screenshot import (`POST /api/ingest/mfp`). Three layers:
+  image → numbers (Tesseract, strict regex, Pillow only), numbers → rows
+  (through `intake_log.log_meal`, never a direct `Meal` write), HTTP. A
+  static bearer token (`MFP_INGEST_TOKEN`) is the whole access control and
+  the router is mounted only when it is set. **The double-count guard**:
+  a day whose `DailyNutrition` macros are not the sum of its meals' refuses
+  unless `force=true`, which first sets the day to its meals. Dates come
+  from the client's `today` field, never the server clock. Each meal is a
+  savepoint, which is why `database.py` makes SQLAlchemy issue BEGIN on
+  SQLite -- and why a SQLite test session must `rollback()` before it can
+  see what the app committed.
 - **A Daily Log save writes only the fields named in `_edited`**
   (`provenance.writable_fields`). The rest of the payload is the page's stale
   echo, and writing it erased values saved elsewhere.

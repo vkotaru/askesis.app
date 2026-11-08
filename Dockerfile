@@ -26,6 +26,16 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 WORKDIR /app/backend
 
+# The one apt package in the image: Tesseract, for the MyFitnessPal screenshot
+# import (app/mfp_ocr.py, POST /api/ingest/mfp). `tesseract-ocr` depends on the
+# English data it needs; about 33 MB to download and 105 MB installed, most of
+# it shared libraries (cairo, glib, libcurl). app/main.py checks for the binary at
+# startup and the route answers 503 without it, so a build that lost this line
+# degrades to "the importer is down", not "the app is down".
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
 # psycopg2-binary and Pillow/pillow-heif ship manylinux wheels, so no apt build deps needed.
 COPY backend/requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt

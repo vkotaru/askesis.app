@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     garmin_sync_days: int = 3  # overlapping window catches late device uploads
     garmin_sync_user: str = ""  # required only when >1 account exists
 
+    # MyFitnessPal screenshot import (app/mfp_ingest.py, routers/ingest.py).
+    # The token is the whole access control on POST /api/ingest/mfp: an iPhone
+    # Shortcut sends it as a Bearer header, there is no cookie and no user in
+    # the request. Empty (the default) means the route is not mounted at all.
+    # Generate one: openssl rand -hex 32
+    mfp_ingest_token: str = ""
+    # Whose meals the screenshots are. A token names no account, so this does;
+    # same rule as GARMIN_SYNC_USER -- optional while there is one account,
+    # required once there are two, never guessed.
+    mfp_ingest_user: str = ""
+
     # Where progress/meal photos are written. Override with UPLOADS_DIR when the
     # container mounts storage elsewhere. app/storage.py resolves this once at
     # import and every stored path is relative to it.
