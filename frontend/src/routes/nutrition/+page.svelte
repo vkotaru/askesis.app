@@ -3,6 +3,7 @@
   import { format, addDays, subDays, parseISO } from 'date-fns';
   import { Plus, Trash2, Copy, ChevronLeft, ChevronRight, Camera, Sparkles, X, Image, Upload, Flame, Beef, Wheat, Droplet, Pencil, Check, UtensilsCrossed, ChevronDown, ChevronUp } from 'lucide-svelte';
   import ImportModal from '$lib/components/ImportModal.svelte';
+  import MfpImportModal from '$lib/components/MfpImportModal.svelte';
   import FoodSearch from '$lib/components/FoodSearch.svelte';
   import FoodItemForm from '$lib/components/FoodItemForm.svelte';
   import AuthImage from '$lib/components/AuthImage.svelte';
@@ -18,6 +19,7 @@
   let dailyNutrition: DailyNutrition | null = null;
   let showForm = false;
   let showImportModal = false;
+  let showMfpImport = false;
   let loading = true;
   let uploadingMealId: number | null = null;
   let analyzingPhoto = false;
@@ -704,8 +706,15 @@
     </button>
   {/if}
 
-  <!-- Import Button -->
-    <div class="mt-6">
+  <!-- Import Buttons -->
+    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <button
+        on:click={() => (showMfpImport = true)}
+        class="btn-secondary w-full flex items-center justify-center gap-2"
+      >
+        <Image size={20} />
+        Import MyFitnessPal
+      </button>
       <button
         on:click={() => (showImportModal = true)}
         class="btn-secondary w-full flex items-center justify-center gap-2"
@@ -722,6 +731,8 @@
   title="Import Meals"
   on:success={() => loadData()}
 />
+
+<MfpImportModal bind:show={showMfpImport} on:success={() => loadData()} />
 
 <FoodItemForm
   bind:show={showFoodItemForm}

@@ -634,6 +634,33 @@ async function fetchFormData<T>(url: string, formData: FormData): Promise<T> {
   return res.json();
 }
 
+/**
+ * Multipart POST whose response is plain text meant to be shown as-is. Unlike
+ * fetchFormData it surfaces the server's `detail` (every error on the ingest
+ * route is a sentence written for a person) and retries once after a refresh,
+ * since a stale cookie on the first upload of the day is the common case.
+ */
+async function fetchFormText(url: string, formData: FormData): Promise<string> {
+  const send = () =>
+    fetch(apiUrl(url), { method: 'POST', body: formData, credentials: 'include' });
+  let res = await send();
+  if (res.status === 401 && (await tryRefreshToken())) {
+    res = await send();
+  }
+  if (!res.ok) {
+    if (res.status === 401) throw new ApiError('Unauthorized', 401);
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (typeof body.detail === 'string') detail = body.detail;
+    } catch {
+      // not JSON; fall through to the status
+    }
+    throw new ApiError(detail || `HTTP ${res.status}`, res.status);
+  }
+  return res.text();
+}
+
 export const api = {
   // Auth
   getMe: () => fetchJSON<User>('/auth/me'),
@@ -748,6 +775,22 @@ export const api = {
     return fetchFormData<FoodAnalysis>('/api/nutrition/analyze-photo', formData);
   },
   getMealPhotoUrl: (mealId: number) => `/api/nutrition/meals/${mealId}/photo`,
+  // MyFitnessPal "Meals" screenshots, read on the server with OCR (no AI).
+  // `today` is THIS device's date: "Today"/"Yesterday" in a screenshot resolve
+  // against it, never the server clock. dryRun previews; a 409 is the
+  // double-count guard, which `force` overrides. Returns the server's text.
+  importMfpScreenshots: (
+    files: File[],
+    today: string,
+    opts: { dryRun: boolean; force?: boolean },
+  ) => {
+    const formData = new FormData();
+    for (const f of files) formData.append('images', f);
+    formData.append('today', today);
+    formData.append('dry_run', String(opts.dryRun));
+    formData.append('force', String(opts.force ?? false));
+    return fetchFormText('/api/ingest/mfp', formData);
+  },
 
   // Food Items
   searchFoods: (q?: string, category?: string, userOnly = false, limit = 50) => {

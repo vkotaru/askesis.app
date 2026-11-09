@@ -18,7 +18,8 @@ from fastapi.testclient import TestClient
 from app import intake_log, mfp_ingest, mfp_ocr
 from app.main import app
 from app.mfp_ocr import DayRead, MealRead
-from app.models import DailyNutrition, Meal
+from app.models import DailyNutrition, Meal, User
+from app.routers.auth import _token_claims, create_access_token
 
 FIX = Path(__file__).parent / "fixtures" / "mfp"
 TOKEN = "tests-only-ingest-token"  # what conftest put in MFP_INGEST_TOKEN
@@ -85,26 +86,57 @@ def _day(db, user_id):
 # ── auth ─────────────────────────────────────────────────────────────────────
 
 
-def test_401_without_token(client, user, stub_parser):
+def _sign_in(client, user):
+    """The web app's session: the same cookie /auth/login sets."""
+    client.cookies.set("access_token", create_access_token(_token_claims(user)))
+
+
+def test_401_without_token_or_cookie(client, user, stub_parser):
     r = _post(client, dry_run=True, headers={})
     assert r.status_code == 401
-    assert r.headers["www-authenticate"] == "Bearer"
 
 
 def test_401_with_wrong_token(client, user, stub_parser):
     r = _post(client, dry_run=True, headers={"Authorization": "Bearer nope"})
     assert r.status_code == 401
+    assert r.headers["www-authenticate"] == "Bearer"
     r = _post(client, dry_run=True, headers={"Authorization": f"Basic {TOKEN}"})
     assert r.status_code == 401
 
 
-def test_route_is_absent_when_token_unset():
-    """main.py mounts the router only when MFP_INGEST_TOKEN is set."""
-    import app.main as main_mod
+def test_wrong_token_is_refused_even_with_a_valid_cookie(client, user, stub_parser):
+    """A request that carries the header is judged on the header alone."""
+    _sign_in(client, user)
+    r = _post(client, dry_run=True, headers={"Authorization": "Bearer nope"})
+    assert r.status_code == 401
 
-    assert any(getattr(r, "path", "") == "/api/ingest/mfp" for r in main_mod.app.routes)
-    # The guard itself: an empty configured token can never match.
+
+def test_empty_configured_token_never_matches():
     assert not mfp_ingest.token_matches(TOKEN, "")
+    assert not mfp_ingest.token_matches("", "")
+
+
+def test_session_cookie_logs_to_the_signed_in_user(client, db, user, stub_parser):
+    """The web app's path: no token, no MFP_INGEST_USER, two accounts."""
+    other = User(email="two@example.test", username="two", name="Two")
+    db.add(other)
+    db.commit()
+    _sign_in(client, user)
+
+    r = _post(client, dry_run=False, headers={})
+    assert r.status_code == 200, r.text
+    assert r.text.splitlines()[-1] == "Wrote 4."
+    db.rollback()  # end the read snapshot; see conftest
+    assert {k: m.calories for k, m in _meals(db, user.id).items()} == {
+        "Breakfast": 610,
+        "Lunch": 740,
+        "Dinner": 520,
+        "Snack": 210,
+    }
+    assert _meals(db, other.id) == {}
+    # The token path, by contrast, cannot choose between two accounts.
+    r = _post(client, dry_run=True)
+    assert r.status_code == 503
 
 
 # ── the flow ─────────────────────────────────────────────────────────────────

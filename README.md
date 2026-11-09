@@ -95,8 +95,8 @@ Tailscale sidecar, and the gotchas.
 | `UPLOADS_DIR` | Where photos are written (defaults to `backend/uploads`) |
 | `USDA_API_KEY` | Optional — food-database lookups |
 | `GEMINI_API_KEY` | Optional — AI meal-photo analysis |
-| `MFP_INGEST_TOKEN` | Optional — enables `POST /api/ingest/mfp`, the MyFitnessPal screenshot import (Tesseract OCR, no AI) |
-| `MFP_INGEST_USER` | Which account those screenshots belong to; needed only with more than one account |
+| `MFP_INGEST_TOKEN` | Optional — lets an iPhone Shortcut call `POST /api/ingest/mfp` (the MyFitnessPal screenshot import) without a login; the web app's import button needs no token |
+| `MFP_INGEST_USER` | Which account a Shortcut's screenshots belong to; needed only with more than one account |
 
 ### Creating accounts
 

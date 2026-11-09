@@ -309,27 +309,33 @@ because a meal needs a date and a label that the filename doesn't carry.
 
 ## MyFitnessPal screenshot import
 
-Optional. If you log food in MyFitnessPal, a screenshot of its **Meals** view
+If you log food in MyFitnessPal, a screenshot of its **Meals** view
 (Breakfast/Lunch/Dinner/Snacks, each with a `640 cal • NC 58g F 24g P 35g` line) can be
-sent straight to Askesis from an iPhone Shortcut. The server reads it with
-Tesseract — plain OCR and a strict regex, no AI call, so it costs nothing per
-day — and logs each meal's calories and macros through the same code the MCP
-connector's `log_meal` tool uses. Resending the same screenshot changes nothing.
+uploaded to Askesis. The server reads it with Tesseract — plain OCR and a strict
+regex, no AI call, so it costs nothing per day — and logs each meal's calories
+and macros through the same code the MCP connector's `log_meal` tool uses.
+Resending the same screenshot changes nothing.
 
-**Turn it on** with two lines in `.env`:
+**From the web app, nothing to configure.** The Nutrition page has an
+*Import MyFitnessPal* button: pick the screenshot(s), read the preview, confirm.
+It uploads over your login like every other page. Tesseract is in the app
+image; the startup log says if the binary is missing, and the import answers
+503 until it is there.
+
+**From an iPhone Shortcut, optionally.** A Shortcut has no login cookie, so it
+authenticates with a static token instead, two lines in `.env`:
 
 ```bash
-MFP_INGEST_TOKEN=$(openssl rand -hex 32)   # the ONLY guard on the route; treat as a password
+MFP_INGEST_TOKEN=$(openssl rand -hex 32)   # the ONLY guard on that path; treat as a password
 MFP_INGEST_USER=                           # username the meals belong to; needed with >1 account
 ```
 
-Unset, the route is not mounted. The token travels as `Authorization: Bearer`
-from the Shortcut, over the tailnet only — the app is never Funnel'd, so the
-phone needs Tailscale connected. Tesseract is in the app image; the startup log
-says if the binary is missing, and the route answers 503 until it is there.
+Unset, token requests are refused and only the signed-in path works. The token
+travels as `Authorization: Bearer`, over the tailnet only — the app is never
+Funnel'd, so the phone needs Tailscale connected.
 
 **The endpoint.** `POST /api/ingest/mfp`, multipart: one or more `images`,
-`today` as `YYYY-MM-DD` **from the phone** (the server never uses its own
+`today` as `YYYY-MM-DD` **from the client** (the server never uses its own
 clock — "Today"/"Yesterday" in a screenshot resolve against this), `dry_run`
 (`true` previews, `false` writes) and `force`. The response is plain text, short
 enough for a Shortcut alert:

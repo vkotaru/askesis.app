@@ -1,16 +1,20 @@
 """POST /api/ingest/mfp -- MyFitnessPal screenshots in, meals logged, plain text out.
 
-Built for an iPhone Shortcut: share the screenshots, the Shortcut POSTs them
-twice -- once with `dry_run=true` and shows the text in an alert, then, if you
-tap on, with `dry_run=false`. So the response is short plain text, not JSON,
-and the same code path produces both: the dry run makes the real writes and
-rolls them back.
+Called twice: once with `dry_run=true`, whose text the caller shows as a
+preview, then, on confirmation, with `dry_run=false`. So the response is short
+plain text, not JSON, and the same code path produces both: the dry run makes
+the real writes and rolls them back.
 
-**Auth is a single static token** (`MFP_INGEST_TOKEN`), compared in constant
-time. There is no cookie and no user in the request; the account is
-`MFP_INGEST_USER`, or the only account. `app/main.py` mounts this router only
-when the token is set, so with it unset the path does not exist. Nothing here
-goes through `get_current_user`, which means `DEV_MODE` does not bypass it.
+**Two ways in, told apart by the Authorization header.** The web app's
+Nutrition page sends none and rides on the session cookie like every other
+route, so the meals go to whoever is signed in. An iPhone Shortcut has no
+cookie and sends `Authorization: Bearer <MFP_INGEST_TOKEN>` instead, compared
+in constant time; that token names no account, so the meals go to
+`MFP_INGEST_USER`, or the only account. A request that carries the header is
+judged on the header alone -- a wrong token is 401 even beside a valid cookie,
+so a misconfigured Shortcut fails loudly rather than quietly logging as
+somebody. The token is optional: unset, only the cookie path works, and
+`token_matches` refuses an empty configured token as a second line.
 
 The three layers, each testable alone: `app/mfp_ocr.py` (image -> numbers),
 `app/mfp_ingest.py` (numbers -> rows, through `intake_log.log_meal`), and
@@ -31,6 +35,8 @@ from app.config import get_settings
 from app.database import get_db
 from app.intake_log import normalise_label
 from app.mfp_ingest import DayWrite, IngestRefused, MealNumbers
+from app.models import User
+from app.routers.auth import get_current_user
 
 logger = logging.getLogger("askesis.ingest")
 router = APIRouter()
@@ -39,21 +45,35 @@ MAX_IMAGES = 10
 
 
 def _text_error(status: int, text: str) -> HTTPException:
-    # The Shortcut shows whatever comes back; a JSON {"detail": ...} wrapper
-    # is noise in an alert, so the handler below unwraps it to plain text.
+    # Errors arrive as FastAPI's {"detail": "<text>"}; the text is written to
+    # be shown to a person as-is, and the web app unwraps it.
     return HTTPException(status_code=status, detail=text)
 
 
-def require_token(request: Request) -> None:
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+def ingest_account(request: Request, db: Session = Depends(get_db)) -> User:
+    """Whose meals these are: the signed-in user, or the token's account."""
+    auth = request.headers.get("authorization")
+    if auth is None:
+        return get_current_user(request, db)
+    settings = get_settings()
+    scheme, _, token = auth.partition(" ")
     if scheme.lower() != "bearer" or not mfp_ingest.token_matches(
-        token.strip(), get_settings().mfp_ingest_token
+        token.strip(), settings.mfp_ingest_token
     ):
         raise HTTPException(
             status_code=401,
             detail="Missing or wrong token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    user = mfp_ingest.resolve_user(db, settings.mfp_ingest_user)
+    if user is None:
+        raise _text_error(
+            503,
+            "No account to log to. Set MFP_INGEST_USER to a username."
+            if settings.mfp_ingest_user == ""
+            else "MFP_INGEST_USER matches no account.",
+        )
+    return user
 
 
 def _as_numbers(meal: mfp_ocr.MealRead) -> MealNumbers:
@@ -66,19 +86,18 @@ def _as_numbers(meal: mfp_ocr.MealRead) -> MealNumbers:
     )
 
 
-@router.post(
-    "/mfp", response_class=PlainTextResponse, dependencies=[Depends(require_token)]
-)
+@router.post("/mfp", response_class=PlainTextResponse)
 async def ingest_mfp(
     images: list[UploadFile] = File(...),
     today: str = Form(...),
     dry_run: bool = Form(True),
     force: bool = Form(False),
     db: Session = Depends(get_db),
+    user: User = Depends(ingest_account),
 ) -> PlainTextResponse:
     """Read the screenshots and log their meals (or preview, with dry_run).
 
-    `today` is the PHONE's date as YYYY-MM-DD; "Today"/"Yesterday" in a
+    `today` is the CLIENT's date as YYYY-MM-DD; "Today"/"Yesterday" in a
     screenshot resolve against it and the server clock is never consulted.
     """
     settings = get_settings()
@@ -99,15 +118,6 @@ async def ingest_mfp(
         if len(blob) > settings.max_image_size:
             raise _text_error(413, f"{up.filename or 'image'} is too large.")
         blobs.append(blob)
-
-    user = mfp_ingest.resolve_user(db, settings.mfp_ingest_user)
-    if user is None:
-        raise _text_error(
-            503,
-            "No account to log to. Set MFP_INGEST_USER to a username."
-            if settings.mfp_ingest_user == ""
-            else "MFP_INGEST_USER matches no account.",
-        )
 
     try:
         days = mfp_ocr.parse_screenshots(blobs, today_d)

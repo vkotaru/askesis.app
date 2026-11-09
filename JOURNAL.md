@@ -21,6 +21,28 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-11-09 — The screenshot import is a button, not a token
+
+**What changed.** The MyFitnessPal import was built token-first for an iPhone
+Shortcut, and that missed the point: the user wanted to upload the screenshot
+to the website with no token and no AI in the loop. `POST /api/ingest/mfp` now
+takes the session cookie like every other route (meals go to the signed-in
+user), the router is always mounted, and the Nutrition page has an *Import
+MyFitnessPal* button that previews, then writes. The token path stays for a
+Shortcut but is optional.
+
+- **One dependency, two ways in, header first.** `ingest_account` reads the
+  `Authorization` header: absent → `get_current_user`; present → it must be
+  the right bearer token, and a wrong one is 401 even beside a valid cookie.
+  Judging on the header alone means a misconfigured Shortcut fails loudly
+  instead of quietly logging as whoever is signed in on that device.
+- **The web app does not need `MFP_INGEST_USER`.** The cookie names the
+  account. The 503 "no account" branch moved into the dependency and only the
+  token path can reach it.
+- **Watch out:** the response is plain text sized for a phone alert
+  (`render(max_lines=12)`); the web modal shows the same text in a `<pre>`,
+  so a multi-day upload gets its meal lines cut there too. Fine for now.
+
 ## 2026-11-08 — MyFitnessPal screenshots by OCR, and three things the review caught
 
 **What changed.** `POST /api/ingest/mfp`: Tesseract + a strict regex read the

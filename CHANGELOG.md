@@ -20,13 +20,14 @@ does not roll the database back — that head is what you would need to
 - **MyFitnessPal screenshots can be logged without an AI.** `POST
   /api/ingest/mfp` takes screenshots of MyFitnessPal's Meals view, reads each
   meal's calories and macros with Tesseract and a strict pattern, and logs
-  them through the same code the assistant's `log_meal` tool uses. Built for
-  an iPhone Shortcut: a dry run returns a short plain-text preview, the real
-  run writes, and sending the same screenshot twice changes nothing. A meal
-  whose line does not read cleanly is skipped and named, never guessed. Days
-  whose macros were typed in as a whole are refused until `force=true`, so
-  nothing is counted twice. Guarded by `MFP_INGEST_TOKEN`; without it the
-  route does not exist. Tesseract is now in the app image.
+  them through the same code the assistant's `log_meal` tool uses. The
+  Nutrition page has an **Import MyFitnessPal** button: pick the
+  screenshot(s), read the preview, confirm. Sending the same screenshot twice
+  changes nothing. A meal whose line does not read cleanly is skipped and
+  named, never guessed. Days whose macros were typed in as a whole are
+  refused until you choose to overwrite them, so nothing is counted twice.
+  An iPhone Shortcut can call the same endpoint with `MFP_INGEST_TOKEN`
+  instead of a login. Tesseract is now in the app image.
 - **The backend has a test suite.** `pytest` under `backend/tests/`, run in
   CI: the OCR parser against fixture screenshots and the ingest endpoint
   against SQLite.

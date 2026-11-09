@@ -15,6 +15,7 @@ from app.routers import (
     daily_log,
     export,
     import_router,
+    ingest,
     integrations,
     measurements,
     nutrition,
@@ -80,14 +81,13 @@ async def lifespan(app: FastAPI):
     from app.scheduler import shutdown_scheduler, start_scheduler
 
     start_scheduler()
-    if app_settings.mfp_ingest_token:
-        # One clear line at boot beats a stack trace on the first upload. The
-        # route stays mounted and answers 503 until the binary is there.
-        from app.mfp_ingest import tesseract_problem
+    # One clear line at boot beats a stack trace on the first upload. The
+    # route stays mounted and answers 503 until the binary is there.
+    from app.mfp_ingest import tesseract_problem
 
-        problem = tesseract_problem()
-        if problem:
-            logger.error("MyFitnessPal import: %s", problem)
+    problem = tesseract_problem()
+    if problem:
+        logger.error("MyFitnessPal import: %s", problem)
     try:
         yield
     finally:
@@ -148,16 +148,11 @@ app.include_router(
     integrations.router, prefix="/api/integrations", tags=["integrations"]
 )
 
-# The MyFitnessPal screenshot import exists only when its token does. A static
-# bearer token is the whole access control on that route, so "unset" must mean
-# "no route" rather than "a route that lets everyone in" -- and the module's
-# `token_matches` refuses an empty token as a second line.
-if app_settings.mfp_ingest_token:
-    from app.routers import ingest
-
-    app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
-else:
-    logger.info("MFP_INGEST_TOKEN unset: POST /api/ingest/mfp is not mounted")
+app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+if not app_settings.mfp_ingest_token:
+    logger.info(
+        "MFP_INGEST_TOKEN unset: POST /api/ingest/mfp takes the session cookie only"
+    )
 
 
 @app.get("/health")

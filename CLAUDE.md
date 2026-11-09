@@ -261,9 +261,12 @@ Key modules:
 - `app/mfp_ocr.py` + `app/mfp_ingest.py` + `routers/ingest.py` — the
   MyFitnessPal screenshot import (`POST /api/ingest/mfp`). Three layers:
   image → numbers (Tesseract, strict regex, Pillow only), numbers → rows
-  (through `intake_log.log_meal`, never a direct `Meal` write), HTTP. A
-  static bearer token (`MFP_INGEST_TOKEN`) is the whole access control and
-  the router is mounted only when it is set. **The double-count guard**:
+  (through `intake_log.log_meal`, never a direct `Meal` write), HTTP. Two
+  ways in, told apart by the `Authorization` header: the Nutrition page's
+  import button sends none and rides on the session cookie (meals go to
+  the signed-in user); an iPhone Shortcut sends `Bearer MFP_INGEST_TOKEN`
+  (meals go to `MFP_INGEST_USER` or the only account). A request with the
+  header is judged on the header alone. **The double-count guard**:
   a day whose `DailyNutrition` macros are not the sum of its meals' refuses
   unless `force=true`, which first sets the day to its meals. Dates come
   from the client's `today` field, never the server clock. Each meal is a
