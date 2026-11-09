@@ -246,6 +246,11 @@ export interface LocalMeal {
   label: string;
   time?: string;
   calories?: number;
+  // This meal's own macros, when logged per meal (MyFitnessPal import, the
+  // MCP connector). Not indexed, so no schema version bump.
+  protein_g?: number | null;
+  carbs_g?: number | null;
+  fat_g?: number | null;
   description?: string;
   photo_path?: string;
   ai_analysis?: string;

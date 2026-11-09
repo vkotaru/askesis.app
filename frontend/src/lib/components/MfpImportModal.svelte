@@ -1,9 +1,10 @@
 <script lang="ts">
-  // Import MyFitnessPal "Meals" screenshots. Two round trips to the same
-  // endpoint: a dry run whose text is the preview, then the real write on
-  // confirmation. The server's text is shown as-is -- it is written for a
-  // person and already short -- and the only decision made here is whether
-  // the "refused" line (the double-count guard) gets overridden with force.
+  // Import MyFitnessPal "Meals" screenshots. Round trips to one endpoint: a
+  // dry run whose text is the preview, then the real write on confirmation.
+  // The server's text is shown as-is -- it is written for a person -- and
+  // the only decision made here is whether the double-count guard's refusal
+  // is overridden with `force`. Ticking that re-runs the preview WITH force,
+  // so what the overwrite would do is on screen before it happens.
   import { createEventDispatcher } from 'svelte';
   import { format } from 'date-fns';
   import { X, Image, AlertCircle, CheckCircle } from 'lucide-svelte';
@@ -18,18 +19,32 @@
   let text = '';
   let error = '';
   let force = false;
-  let fileInput: HTMLInputElement | null = null;
+  // "Today"/"Yesterday" in a screenshot mean the day on the device that took
+  // it, so the server is told this device's date and never consults its own.
+  // Captured once, at preview: a confirm after midnight must write the day
+  // the user was shown.
+  let today = '';
+  // Bumped by every new request and by close(); a response whose generation
+  // is stale (the modal was closed or re-driven meanwhile) is dropped, so a
+  // reopened modal never shows a previous run's result.
+  let generation = 0;
 
-  $: refused = step === 'preview' && /^\s*! refused:/m.test(text);
+  // The guard tripped: the preview says "refused" (force off) or lists what
+  // "forced" would drop (force on). Either way the checkbox belongs on screen.
+  $: guardTripped = step === 'preview' && /^\s*! (refused|forced):/m.test(text);
   $: nothingToWrite = step === 'preview' && /^Would write 0\b/m.test(text);
+  $: canWrite = step === 'preview' && !nothingToWrite && !(guardTripped && !force);
 
   function close() {
+    if (step === 'writing') return; // the write is committing; closing would only hide the result
+    generation += 1;
     show = false;
     step = 'pick';
     files = [];
     text = '';
     error = '';
     force = false;
+    today = '';
     dispatch('close');
   }
 
@@ -38,39 +53,55 @@
     if (!input.files?.length) return;
     files = Array.from(input.files);
     input.value = '';
+    force = false;
+    today = format(new Date(), 'yyyy-MM-dd');
     preview();
   }
 
   async function preview() {
+    const mine = ++generation;
     step = 'previewing';
     error = '';
-    force = false;
     try {
-      text = await api.importMfpScreenshots(files, todayOnThisDevice(), { dryRun: true });
+      const result = await api.importMfpScreenshots(files, today, { dryRun: true, force });
+      if (mine !== generation) return;
+      text = result;
       step = 'preview';
     } catch (err) {
+      if (mine !== generation) return;
       error = describe(err);
-      step = 'pick';
+      step = files.length && text ? 'preview' : 'pick';
     }
   }
 
   async function write() {
+    const mine = ++generation;
     step = 'writing';
     error = '';
     try {
-      text = await api.importMfpScreenshots(files, todayOnThisDevice(), { dryRun: false, force });
+      const result = await api.importMfpScreenshots(files, today, { dryRun: false, force });
+      if (mine !== generation) return;
+      text = result;
       step = 'done';
       dispatch('success');
     } catch (err) {
+      if (mine !== generation) return;
       error = describe(err);
+      if (err instanceof ApiError && err.status === 409) {
+        // The guard tripped between preview and write (or the preview's
+        // refusal was for a different day). A fresh preview shows the
+        // refusal next to the checkbox instead of a dead end.
+        error += ' The preview below has been refreshed.';
+        await preview();
+        return;
+      }
       step = 'preview';
     }
   }
 
-  // "Today"/"Yesterday" in a screenshot mean the day on the phone that took
-  // it, so the server is told this device's date and never consults its own.
-  function todayOnThisDevice(): string {
-    return format(new Date(), 'yyyy-MM-dd');
+  function toggleForce() {
+    // bind:checked has already flipped `force`; the preview must reflect it.
+    preview();
   }
 
   function describe(err: unknown): string {
@@ -88,7 +119,12 @@
           <Image size={24} class="text-primary-500" />
           <h2 class="text-lg font-semibold">Import MyFitnessPal</h2>
         </div>
-        <button on:click={close} class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" aria-label="Close">
+        <button
+          on:click={close}
+          disabled={step === 'writing'}
+          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-40"
+          aria-label="Close"
+        >
           <X size={20} />
         </button>
       </div>
@@ -111,17 +147,11 @@
             </p>
             <label class="btn-primary cursor-pointer inline-block">
               Choose screenshots
-              <input
-                bind:this={fileInput}
-                type="file"
-                accept="image/*"
-                multiple
-                on:change={handleFiles}
-                class="hidden"
-              />
+              <input type="file" accept="image/*" multiple on:change={handleFiles} class="hidden" />
             </label>
             <p class="text-xs text-gray-500 mt-4">
               Read on the server with OCR. Nothing is written until you confirm.
+              "Today" and "Yesterday" are taken relative to this device's date.
             </p>
           </div>
 
@@ -145,13 +175,14 @@
             </p>
           {/if}
           <pre class="text-sm bg-gray-50 dark:bg-gray-900 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words">{text}</pre>
-          {#if refused}
+          {#if guardTripped}
             <label class="mt-4 flex items-start gap-2 text-sm">
-              <input type="checkbox" bind:checked={force} class="mt-1" />
+              <input type="checkbox" bind:checked={force} on:change={toggleForce} class="mt-1" />
               <span>
                 <strong>Overwrite this day's totals.</strong> Its protein, carbs and fat were
                 typed in for the whole day, so logging meals with their own macros would count
-                them twice. Ticking this sets the day to what the screenshot says.
+                them twice. Ticking this sets the day to what the screenshot says; the preview
+                updates to show exactly what that drops.
               </span>
             </label>
           {/if}
@@ -160,13 +191,11 @@
 
       <div class="flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
         {#if step === 'preview'}
-          <button on:click={() => { step = 'pick'; text = ''; }} class="btn-secondary">Other screenshots</button>
-          <button
-            on:click={write}
-            disabled={(refused && !force) || (nothingToWrite && !force)}
-            class="btn-primary"
-          >
-            {refused && force ? 'Overwrite and log' : 'Log these meals'}
+          <button on:click={() => { generation += 1; step = 'pick'; text = ''; error = ''; force = false; }} class="btn-secondary">
+            Other screenshots
+          </button>
+          <button on:click={write} disabled={!canWrite} class="btn-primary">
+            {guardTripped && force ? 'Overwrite and log' : 'Log these meals'}
           </button>
         {:else if step === 'done'}
           <button on:click={close} class="btn-primary">Done</button>

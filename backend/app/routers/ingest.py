@@ -53,6 +53,7 @@ def _text_error(status: int, text: str) -> HTTPException:
 def ingest_account(request: Request, db: Session = Depends(get_db)) -> User:
     """Whose meals these are: the signed-in user, or the token's account."""
     auth = request.headers.get("authorization")
+    request.state.via_token = auth is not None
     if auth is None:
         return get_current_user(request, db)
     settings = get_settings()
@@ -86,8 +87,15 @@ def _as_numbers(meal: mfp_ocr.MealRead) -> MealNumbers:
     )
 
 
+#: The Shortcut shows the response in an iOS alert, which truncates silently
+#: at about this many lines. The web app shows it in a scrolling box.
+ALERT_LINES = 12
+PAGE_LINES = 200
+
+
 @router.post("/mfp", response_class=PlainTextResponse)
 async def ingest_mfp(
+    request: Request,
     images: list[UploadFile] = File(...),
     today: str = Form(...),
     dry_run: bool = Form(True),
@@ -146,7 +154,10 @@ async def ingest_mfp(
                 r.unchanged,
                 r.skipped,
             )
-    return PlainTextResponse(mfp_ingest.render(results))
+    compact = getattr(request.state, "via_token", False)
+    return PlainTextResponse(
+        mfp_ingest.render(results, max_lines=ALERT_LINES if compact else PAGE_LINES)
+    )
 
 
 def _write_one(
@@ -154,9 +165,10 @@ def _write_one(
 ) -> DayWrite:
     """One day: the parser's notes become warnings, its meals go to `write_day`.
 
-    In a dry run a refusal is a warning line, so the alert shows the problem
-    next to the numbers; in a real run it propagates and the whole request
-    is rolled back, because writing some days and refusing others would leave
+    In a dry run a refusal is a warning line and the screenshot's meals are
+    listed plainly, so the preview shows the problem next to the numbers that
+    `force` would write; in a real run it propagates and the whole request is
+    rolled back, because writing some days and refusing others would leave
     the user guessing which happened.
     """
     meals = [_as_numbers(m) for m in read.meals.values()]
@@ -176,7 +188,13 @@ def _write_one(
         except IngestRefused as exc:
             if not dry_run:
                 raise
-            out = DayWrite(day=read.day, dry_run=True, skipped=len(meals))
+            out = DayWrite(
+                day=read.day,
+                dry_run=True,
+                skipped=len(meals),
+                day_total_kcal=sum(m.kcal for m in meals),
+                lines=[mfp_ingest.plain_meal_line(m) for m in meals],
+            )
             out.warnings.append(f"refused: {exc}")
     out.warnings.extend(read.notes)
     out.warnings.extend(flags)

@@ -39,9 +39,31 @@ Shortcut but is optional.
 - **The web app does not need `MFP_INGEST_USER`.** The cookie names the
   account. The 503 "no account" branch moved into the dependency and only the
   token path can reach it.
-- **Watch out:** the response is plain text sized for a phone alert
-  (`render(max_lines=12)`); the web modal shows the same text in a `<pre>`,
-  so a multi-day upload gets its meal lines cut there too. Fine for now.
+- **The second adversarial review (web path) found six things, none in
+  auth.** (1) A file Pillow can't decode was a 500 -- `parse_screenshots`
+  now turns it into `ParseError` → 422. (2) The 12-line alert cap cut lines
+  from the end, where the last day's `! refused:` warning lives, so a
+  three-screenshot preview could hide the one line that offers `force` and
+  the write then 409'd. `render` now cuts meal lines first, warnings last,
+  and the router caps at 12 only for the token (Shortcut) path. (3) A
+  failed write put the modal back on the stale preview with no checkbox: a
+  409 now re-runs the preview. (4) The refused preview listed no numbers
+  and `force` was never previewed; the preview now lists the screenshot's
+  meals, and ticking the box re-previews with `force=true` so the
+  `! forced: dropping …` line is read before it happens. (5) Closing the
+  modal mid-request let the late response land in a reopened modal, and
+  closing during the write hid a commit that still happened: a generation
+  counter drops stale responses, and close is disabled while writing.
+  (6) `today` was computed at preview *and* at write; across midnight that
+  moved "Today" a day. Captured once.
+- **Pre-existing, fixed while here:** `toLocalMeal`/`fromLocalMeal` in
+  `stores/data.ts` dropped per-meal `protein_g/carbs_g/fat_g`, so the Daily
+  Log's macro line went blank for a meal once it came through the
+  revalidation path rather than `/api/sync/changes`. Non-indexed fields, so
+  no Dexie version bump.
+- **Known and left:** FastAPI parses the multipart body before dependencies
+  run, so an unauthenticated POST still spools its files to disk before the
+  401. Tailnet-only, and the same as every upload route here.
 
 ## 2026-11-08 — MyFitnessPal screenshots by OCR, and three things the review caught
 

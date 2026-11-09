@@ -116,12 +116,20 @@ def test_empty_configured_token_never_matches():
     assert not mfp_ingest.token_matches("", "")
 
 
-def test_session_cookie_logs_to_the_signed_in_user(client, db, user, stub_parser):
+def test_session_cookie_logs_to_the_signed_in_user(
+    client, db, user, stub_parser, monkeypatch
+):
     """The web app's path: no token, no MFP_INGEST_USER, two accounts."""
     other = User(email="two@example.test", username="two", name="Two")
     db.add(other)
     db.commit()
     _sign_in(client, user)
+
+    # The cookie names the account; the token path's lookup must not run.
+    def never(*a, **k):
+        raise AssertionError("resolve_user consulted on the cookie path")
+
+    monkeypatch.setattr(mfp_ingest, "resolve_user", never)
 
     r = _post(client, dry_run=False, headers={})
     assert r.status_code == 200, r.text
@@ -135,6 +143,7 @@ def test_session_cookie_logs_to_the_signed_in_user(client, db, user, stub_parser
     }
     assert _meals(db, other.id) == {}
     # The token path, by contrast, cannot choose between two accounts.
+    monkeypatch.undo()
     r = _post(client, dry_run=True)
     assert r.status_code == 503
 
@@ -209,7 +218,18 @@ def test_double_count_guard(client, db, user, stub_parser):
     preview = _post(client, dry_run=True)
     assert preview.status_code == 200
     assert "! refused:" in preview.text and "force=true" in preview.text
+    # The numbers force would write are on screen next to the refusal.
+    assert "[preview] Wed Nov 4: 2080 kcal" in preview.text
+    assert "  Lunch: 740 kcal P45 C70 F25" in preview.text
     assert preview.text.splitlines()[-1] == "Would write 0, skipped 4."
+
+    # Previewing WITH force shows what it drops, and writes nothing.
+    forced_preview = _post(client, dry_run=True, force=True)
+    assert forced_preview.status_code == 200
+    assert "! forced: dropping 90g protein" in forced_preview.text
+    assert forced_preview.text.splitlines()[-1] == "Would write 4."
+    db.rollback()
+    assert _day(db, user.id).protein_g == 90.0
 
     refused = _post(client, dry_run=False)
     assert refused.status_code == 409
@@ -250,6 +270,37 @@ def test_unreadable_header_is_422(client, user, monkeypatch):
     r = _post(client, dry_run=True)
     assert r.status_code == 422
     assert "no date in the header" in r.text
+
+
+def test_unreadable_image_is_422(client, user, monkeypatch):
+    """A file the picker let through but Pillow cannot decode is the
+    caller's problem to hear about, not a 500."""
+    monkeypatch.setattr(mfp_ingest, "tesseract_problem", lambda: None)
+    for blob in (b"", b"x", b"\x89PNG\r\n\x1a\n truncated"):
+        r = client.post(
+            "/api/ingest/mfp",
+            files=[("images", ("shot.png", blob, "image/png"))],
+            data={"today": TODAY, "dry_run": "true"},
+            headers=AUTH,
+        )
+        assert r.status_code == 422, (blob, r.status_code, r.text)
+        assert "not a readable image" in r.text
+
+
+def test_web_preview_is_not_capped_at_alert_length(client, user, monkeypatch):
+    """The cookie path renders the whole preview; the token path is capped
+    to what an iOS alert shows."""
+    monkeypatch.setattr(mfp_ingest, "tesseract_problem", lambda: None)
+    many = [
+        DayRead(day=NOV4.replace(day=d), meals=dict(READ_NOV4.meals))
+        for d in range(1, 5)
+    ]
+    monkeypatch.setattr(mfp_ocr, "parse_screenshots", lambda blobs, today: many)
+    via_token = _post(client, dry_run=True)
+    assert len(via_token.text.splitlines()) == 12
+    _sign_in(client, user)
+    via_cookie = _post(client, dry_run=True, headers={})
+    assert len(via_cookie.text.splitlines()) == 4 * 5 + 1
 
 
 def test_missing_tesseract_is_503(client, user, monkeypatch):

@@ -322,6 +322,40 @@ def test_render_keeps_the_verdict_when_truncating():
     assert len(lines) == 12
     assert lines[-1] == "Wrote 12."
     assert lines[-2].startswith("... ")
+    # Meal lines are cut before warnings: every day's warning survives, and so
+    # does every heading.
+    assert sum(ln.startswith("  ! forced") for ln in lines) == 3
+    assert sum(not ln.startswith("  ") and ln[0] != "." for ln in lines[:-1]) == 3
+
+
+def test_render_cuts_meal_lines_before_a_refusal():
+    """Two clean days plus a refused one: the refusal must be in the text,
+    or the web app never offers `force` and the write 409s."""
+    from datetime import timedelta
+
+    clean = [
+        mfp_ingest.DayWrite(
+            day=DAY + timedelta(days=i),
+            dry_run=True,
+            lines=[f"Meal {j}: 100 kcal (new)" for j in range(4)],
+            warnings=["Snack: macros explain 50 of 100 kcal"],
+            written=4,
+            day_total_kcal=400,
+        )
+        for i in range(2)
+    ]
+    refused = mfp_ingest.DayWrite(
+        day=DAY + timedelta(days=2),
+        dry_run=True,
+        lines=[f"Meal {j}: 100 kcal" for j in range(4)],
+        warnings=["refused: the day's macros don't match its meals; force=true"],
+        skipped=4,
+        day_total_kcal=400,
+    )
+    text = mfp_ingest.render(clean + [refused])
+    assert "! refused:" in text
+    assert text.splitlines()[-1] == "Would write 8, skipped 4."
+    assert len(text.splitlines()) == 12
 
 
 def test_resolve_user_refuses_an_ambiguous_name(db, user):

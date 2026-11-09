@@ -365,8 +365,17 @@ def write_day(
     return out
 
 
+def _macros(m: MealNumbers) -> str:
+    return " ".join(f"{f[0].upper()}{v:g}" for f, v in m.given().items())
+
+
+def plain_meal_line(m: MealNumbers) -> str:
+    """A meal as read, with no before/after: for a preview that refused."""
+    return f"{intake_log.normalise_label(m.label)}: {m.kcal} kcal {_macros(m)}".rstrip()
+
+
 def _meal_line(label: str, m: MealNumbers, result: dict[str, Any]) -> str:
-    macros = " ".join(f"{f[0].upper()}{v:g}" for f, v in m.given().items())
+    macros = _macros(m)
     before, after = result["before"], result["after"]
     if result["result"] == "created":
         state = "new"
@@ -408,9 +417,30 @@ def render(days: list[DayWrite], *, max_lines: int = 12) -> str:
         verdict += f", skipped {total_skipped}"
     verdict += "."
     if len(body) + 1 > max_lines:
-        cut = len(body) - (max_lines - 2)
-        body = body[: max_lines - 2] + [f"... {cut} more lines"]
+        body = _trim(body, keep=max_lines - 2)
     return "\n".join(body + [verdict])
+
+
+def _trim(body: list[str], *, keep: int) -> list[str]:
+    """Drop lines until `keep` remain, least important first.
+
+    Meal lines go first (from the end), then warnings, then day headings.
+    Warnings outlive meal lines because one of them may be "refused: ...",
+    the line that tells the caller why nothing will be written and that
+    `force` exists -- cutting it turned a multi-day preview into a surprise
+    409. The marker line is counted in `keep`.
+    """
+    cut = len(body) - keep
+    if cut <= 0:
+        return body
+    meals = [i for i, ln in enumerate(body) if ln.startswith("  ") and ln[2] != "!"]
+    warnings = [i for i, ln in enumerate(body) if ln.startswith("  !")]
+    heads = [i for i, ln in enumerate(body) if not ln.startswith("  ")]
+    order = meals[::-1] + warnings[::-1] + heads[::-1]
+    drop = set(order[:cut])
+    return [ln for i, ln in enumerate(body) if i not in drop] + [
+        f"... {cut} more lines"
+    ]
 
 
 __all__ = [

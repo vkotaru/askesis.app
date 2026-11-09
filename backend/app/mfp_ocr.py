@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 MEAL_TITLES = ("Breakfast", "Lunch", "Dinner", "Snacks")
 
@@ -89,7 +89,7 @@ _KCAL_RE = re.compile(
     r"(?<![\d.])(?P<kcal>\d{1,2}(?:,\d{3})+|\d{1,5})\s*cal\b", re.IGNORECASE
 )
 #: One macro token: the letter(s), the number, and g or %. `\b` on the letter
-#: side keeps "F" in "Cage-Free" from matching: it must be its own word.
+#: side keeps "F" in "Fat-Free" from matching: it must be its own word.
 _MACRO_RE = re.compile(
     r"\b(?P<key>NC|C|F|P)\s*(?P<val>\d+(?:[.,]\d+)?)\s*(?P<unit>g|%)(?![a-z])",
     re.IGNORECASE,
@@ -292,7 +292,14 @@ def parse_screenshots(images: list[bytes], today: date) -> list[DayRead]:
     """
     days: dict[date, DayRead] = {}
     for n, blob in enumerate(images, start=1):
-        text = ocr_text(blob)
+        try:
+            text = ocr_text(blob)
+        except (UnidentifiedImageError, OSError, ValueError) as exc:
+            # Pillow raises UnidentifiedImageError for a file it cannot
+            # decode and OSError for a truncated one; a web picker's
+            # `accept="image/*"` lets both through. A bad upload is the
+            # caller's problem to hear about, not a 500.
+            raise ParseError(f"image {n}: not a readable image ({exc})") from None
         day = resolve_date(text, today)
         if day is None:
             raise ParseError(
