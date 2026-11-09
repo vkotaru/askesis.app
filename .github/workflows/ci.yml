@@ -87,7 +87,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ruff
+          # Pinned: an unpinned ruff picked up 0.17's much wider default rule
+          # set and failed lint on an unchanged tree. backend/ruff.toml names
+          # the rules too, so the two together keep CI and dev machines equal.
+          pip install ruff==0.15.9
 
       - name: Lint with Ruff
         run: ruff check .

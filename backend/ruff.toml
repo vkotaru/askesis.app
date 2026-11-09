@@ -1,0 +1,11 @@
+# The rule set is named here so it does not move with the tool. Ruff's
+# defaults were E4/E7/E9/F through 0.15; 0.17 widened them to a few hundred
+# rules (SIM, TRY, FURB, RUF, DTZ, S, ...), and CI installed whatever `pip
+# install ruff` resolved to, so the "Lint with Ruff" step went red on an
+# unchanged codebase. CI also pins the version now; this file is what makes
+# a dev machine's ruff and CI's agree on what "clean" means.
+#
+# Widening the set is fine -- do it here, on purpose, with the fixes in the
+# same commit.
+[lint]
+select = ["E4", "E7", "E9", "F"]

@@ -64,6 +64,14 @@ Shortcut but is optional.
 - **Known and left:** FastAPI parses the multipart body before dependencies
   run, so an unauthenticated POST still spools its files to disk before the
   401. Tailnet-only, and the same as every upload route here.
+- **CI had been red since 2026-10-20 and nobody noticed.** The Backend job's
+  `pip install ruff` was unpinned; ruff 0.17 (October) widened the default
+  rule set from E4/E7/E9/F to a few hundred rules and "Lint with Ruff"
+  failed with 502 findings on an unchanged tree, release after release. Local
+  machines ran 0.15.9 and passed, which is why "ruff clean" kept being true
+  here and false there. Fixed by naming the rule set in `backend/ruff.toml`
+  and pinning the version in CI. The v2.24.0 tag's own run is red for this
+  reason only; the workflow file at that commit is what it is.
 
 ## 2026-11-08 — MyFitnessPal screenshots by OCR, and three things the review caught
 
