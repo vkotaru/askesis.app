@@ -15,6 +15,20 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The assistant can log a lift in pounds.** `log_workout` sets and
+  `log_weight` take `weight_kg` *or* `weight_lb`, whichever unit you said;
+  the server converts and stores kilograms as before, and every read still
+  returns kilograms. Until now the tools only named kilograms and the
+  assistant refused to log "135" rather than converting it.
+- **A movement no longer needs numbers.** It always was possible to log an
+  exercise with no sets, or reps with a blank weight for bodyweight, but the
+  tool text and the "set is empty" error said otherwise, so the assistant
+  told you it was not allowed. Both now say what is accepted: leave `sets`
+  out when you don't remember the numbers and the session still records what
+  you did.
+
 ## [2.24.0] - 2026-11-09
 
 Alembic head: `add_meal_macros`

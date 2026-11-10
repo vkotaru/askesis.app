@@ -1401,12 +1401,19 @@ def log_meal(
 
 
 def log_weight(
-    db: Session, user_id: int, date: str, weight_kg: float
+    db: Session,
+    user_id: int,
+    date: str,
+    weight_kg: float | None = None,
+    weight_lb: float | None = None,
 ) -> dict[str, Any]:
-    """Set one day's body weight, in kilograms. Replaces that day's weight."""
+    """Set one day's body weight. Give weight_kg or weight_lb, whichever the
+    user said; it is stored in kilograms. Replaces that day's weight."""
     try:
         day = intake_log.parse_day(date)
-        return history_log.log_weight(db, user_id, day, weight_kg)
+        return history_log.log_weight(
+            db, user_id, day, weight_kg=weight_kg, weight_lb=weight_lb
+        )
     except (intake_log.IntakeError, history_log.HistoryError) as exc:
         raise ToolError(str(exc)) from None
 
@@ -1425,8 +1432,10 @@ def log_workout(
 ) -> dict[str, Any]:
     """Add one finished session with its exercises and sets. Never edits one.
 
-    Each exercise is {"name", "notes"?, "sets": [{"reps"?, "weight_kg"?,
-    "duration_seconds"?, "distance_m"?, "set_type"?, "rpe"?, "notes"?}]}.
+    Each exercise is {"name", "notes"?, "sets"?: [{"reps"?, "weight_kg"? or
+    "weight_lb"?, "duration_seconds"?, "distance_m"?, "set_type"?, "rpe"?,
+    "notes"?}]}. Weight in whichever unit the user said; stored in kg. Leave
+    `sets` out to record only that the movement was done.
     """
     try:
         day = intake_log.parse_day(date)

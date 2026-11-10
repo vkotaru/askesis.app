@@ -21,6 +21,36 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-11-10 — Pounds come in at the write boundary; the tool text was the bug
+
+**What changed.** The connector told the user it "can only log weights in
+kilograms" and that a set "needs a number". Neither was a server limit. The
+unit rule in `mcp_server/tools.py` (every number *returned* is metric and
+named for it) had been read as "every number *sent* must be metric", and the
+model obeyed the field name instead of converting 135 lb. The empty-set error
+listed the numbers it wanted and never said that `sets` may be left out, so
+"I did squats, don't remember the numbers" was relayed as refused — though
+`[{"name": "Squat"}]` had always been accepted (checked on a scratch DB
+before changing anything: no sets, reps-only and weight 0 all logged; only
+`{}` refused).
+
+- `history_log` takes `weight_kg` or `weight_lb` on a set and on body weight,
+  one or the other; `_weight_kg` converts once via `app.units` and the stored
+  column and every read stay kilograms. Both at once is refused with both
+  values in the message, so a model that double-emitted sees what it did.
+- The `weight_lb` bound is the same 1000 kg restated (2204.6), checked in
+  the unit it arrived in so the error quotes the number the user said.
+- Tool descriptions now say *do not convert, the server does*, that a set
+  with reps and no weight is bodyweight, and that `sets` is optional. The
+  unit rule's docstring is unchanged: it was right about reads.
+- `tests/test_history_log.py` is the first pytest coverage of the history
+  writes; `check_mcp_writes.py` carries the same cases against the DB role.
+
+**Watch out.** Pounds are accepted *only* here. Do not add `weight_lb` to a
+read, a response or `planning.py`'s targets — the report-endpoint bug the unit
+rule exists for is a kilogram number next to an "lb" label, and a second
+representation on the way out is how that comes back.
+
 ## 2026-11-09 — The screenshot import is a button, not a token
 
 **What changed.** The MyFitnessPal import was built token-first for an iPhone

@@ -754,7 +754,17 @@ def main() -> int:
     refuses("pounds passed as kg refused (>500)", T.log_weight, db, a, d5, 650)
     refuses("an impossible weight refused", T.log_weight, db, a, d5, 5)
     refuses("a non-number refused", T.log_weight, db, a, d5, "80kg")
+    refuses("both units at once refused", T.log_weight, db, a, d5, 80, weight_lb=180)
+    refuses("no weight at all refused", T.log_weight, db, a, d5)
     db.rollback()
+    r = T.log_weight(db, a, d5, weight_lb=180)
+    db.commit()
+    check("pounds accepted and stored as kg", r["weight_kg"], 81.65)
+    check(
+        "  the row holds kilograms",
+        db.query(DailyLog).filter_by(user_id=a, date=d5).one().weight,
+        81.65,
+    )
 
     print()
     print("── log_workout: add a session, never edit one ──")
@@ -817,8 +827,42 @@ def main() -> int:
     db.commit()
     check("  unless allow_duplicate", r2["id"] != r["id"], True)
     refuses("  invisible to the other account", T.get_activity, db, b, r["id"])
+    r3 = T.log_workout(
+        db,
+        a,
+        d4.isoformat(),
+        "Check lift",
+        exercises=[
+            {"name": "Check Bench", "sets": [{"weight_lb": 135, "reps": 5}]},
+            {"name": "Check Squat"},
+        ],
+    )
+    db.commit()
+    got = T.get_activity(db, a, r3["id"])
+    check(
+        "a set in pounds reads back in kilograms",
+        got["exercises"][0]["sets"][0]["weight_kg"],
+        61.235,
+    )
+    check(
+        "  a movement with no numbers is still recorded",
+        [(e["name"], len(e["sets"])) for e in got["exercises"]],
+        [("Check Bench", 1), ("Check Squat", 0)],
+    )
     for label, kwargs in (
         ("an empty set refused", {"exercises": [{"name": "x", "sets": [{}]}]}),
+        (
+            "a set in both units refused",
+            {
+                "exercises": [
+                    {"name": "x", "sets": [{"weight_kg": 61, "weight_lb": 135}]}
+                ]
+            },
+        ),
+        (
+            "a 3000 lb set refused",
+            {"exercises": [{"name": "x", "sets": [{"weight_lb": 3000, "reps": 1}]}]},
+        ),
         (
             "a bad set_type refused",
             {"exercises": [{"name": "x", "sets": [{"reps": 5, "set_type": "max"}]}]},

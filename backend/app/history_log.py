@@ -15,6 +15,15 @@ and the role (`scripts/mcp_db_role.sql`) is what makes the narrowness real:
 Same contract as `planning.py`: plain SQLAlchemy, no FastAPI, nothing here
 commits. The bounds restate `routers/activities.py`'s schemas, because this
 package cannot import the routers; keep them at least as strict.
+
+**Pounds are accepted at this boundary and nowhere else.** The connector's
+unit rule (`mcp_server/tools.py`) is that every number *returned* is metric
+and named for it. A write is the one place a model has to carry the user's
+own words in, and a lifter who says "135" means pounds; asking the model to
+convert first is how a session got refused as "kilograms only". So a weight
+may arrive as `weight_kg` or `weight_lb` -- one or the other, never both --
+and is converted here, once, by `app.units`. What is stored, and what every
+read returns, is still kilograms.
 """
 
 from __future__ import annotations
@@ -35,6 +44,7 @@ from app.models import (
 )
 from app.planning import catalog_by_name
 from app.provenance import mark_manual
+from app.units import to_metric_weight
 
 #: DailyLogCreate's bounds. A weight outside them is a misread, not a person.
 MIN_WEIGHT_KG = 20.0
@@ -50,11 +60,25 @@ MAX_SETS = 50
 SET_TYPES = ("warmup", "working", "drop", "failure", "cooldown")
 _SET_BOUNDS: dict[str, tuple[float, float, type]] = {
     "weight_kg": (0, 1000, float),
+    # The same 1000 kg, in the unit it arrived in. Converted in _clean_set and
+    # stored as weight_kg; the stored column never sees a pound.
+    "weight_lb": (0, 2204.6, float),
     "reps": (0, 1000, int),
     "duration_seconds": (0, 86400, int),
     "distance_m": (0, 100000, float),
     "rpe": (0, 10, float),
 }
+
+
+def _weight_kg(kg: Any, lb: Any, where: str) -> float | None:
+    """One weight from the two fields a caller may use. Both set is an error."""
+    if kg is not None and lb is not None:
+        raise HistoryError(
+            f"{where}: give weight_kg or weight_lb, not both ({kg} kg and {lb} lb)."
+        )
+    if lb is None:
+        return kg
+    return round(to_metric_weight(lb, "lb"), 3)
 
 
 class HistoryError(ValueError):
@@ -64,15 +88,30 @@ class HistoryError(ValueError):
 # ── weight ──────────────────────────────────────────────────────────────────
 
 
-def log_weight(db: Session, user_id: int, day: date, weight_kg: Any) -> dict[str, Any]:
-    """Set the day's weight, creating the day's row if there is none."""
-    if isinstance(weight_kg, bool) or not isinstance(weight_kg, (int, float)):
-        raise HistoryError("weight_kg must be a number of kilograms.")
-    value = round(float(weight_kg), 2)
+def log_weight(
+    db: Session,
+    user_id: int,
+    day: date,
+    weight_kg: Any = None,
+    weight_lb: Any = None,
+) -> dict[str, Any]:
+    """Set the day's weight, creating the day's row if there is none.
+
+    Takes kilograms or pounds, whichever the person said; stores kilograms.
+    """
+    if weight_kg is None and weight_lb is None:
+        raise HistoryError("Give the weight as weight_kg or weight_lb.")
+    for field, raw in (("weight_kg", weight_kg), ("weight_lb", weight_lb)):
+        if raw is not None and (
+            isinstance(raw, bool) or not isinstance(raw, (int, float))
+        ):
+            raise HistoryError(f"{field} must be a number.")
+    value = round(float(_weight_kg(weight_kg, weight_lb, "weight")), 2)
+    said = f"{weight_lb} lb" if weight_lb is not None else f"{value} kg"
     if not MIN_WEIGHT_KG <= value <= MAX_WEIGHT_KG:
         raise HistoryError(
-            f"{value} kg is outside {MIN_WEIGHT_KG:g}-{MAX_WEIGHT_KG:g} kg -- "
-            "check the unit (pounds need converting) or a misread digit."
+            f"{said} is outside {MIN_WEIGHT_KG:g}-{MAX_WEIGHT_KG:g} kg -- "
+            "check the unit (weight_lb takes pounds) or a misread digit."
         )
     log = (
         db.query(DailyLog)
@@ -154,9 +193,12 @@ def _clean_set(raw: Any, where: str) -> dict[str, Any]:
     if unknown:
         raise HistoryError(f"{where}: unknown field(s) {sorted(unknown)}.")
     out = {k: _number(raw, k, where) for k in _SET_BOUNDS}
+    out["weight_kg"] = _weight_kg(out["weight_kg"], out.pop("weight_lb"), where)
     if all(v is None for v in out.values()):
         raise HistoryError(
-            f"{where} is empty: give reps, weight_kg, duration_seconds or distance_m."
+            f"{where} is empty: give reps, weight_kg or weight_lb, duration_seconds "
+            "or distance_m. A blank weight with reps is bodyweight; to record "
+            "only that the movement was done, leave `sets` out altogether."
         )
     set_type = raw.get("set_type") or "working"
     if set_type not in SET_TYPES:
