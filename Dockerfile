@@ -143,13 +143,19 @@ RUN pip install --upgrade pip && \
 # separate from planning.py so "everything in planning" stays plans-only.
 # `food_library.py` + `food_search.py` are the food library and its online
 # lookup (save_food / search_foods). `history_log.py` is weight and new
-# workout sessions (log_weight / log_workout).
+# workout sessions (log_weight / log_workout); it converts a weight given in
+# pounds through `units.py`, which imports nothing but `typing`.
+#
+# This list is explicit on purpose, so a new import into one of these modules
+# fails HERE, at the build, rather than at the first tool call in production.
+# CI does not build this stage; `scripts/release.sh` does.
 COPY backend/app/__init__.py     backend/app/config.py \
      backend/app/database.py     backend/app/disciplines.py \
      backend/app/models.py       backend/app/planning.py \
      backend/app/provenance.py   backend/app/security.py \
      backend/app/intake_log.py   backend/app/food_library.py \
-     backend/app/food_search.py  backend/app/history_log.py ./app/
+     backend/app/food_search.py  backend/app/history_log.py \
+     backend/app/units.py        ./app/
 COPY backend/mcp_server/ ./mcp_server/
 
 # Fail the BUILD if the isolation ever stops holding, rather than discovering it

@@ -46,10 +46,23 @@ before changing anything: no sets, reps-only and weight 0 all logged; only
 - `tests/test_history_log.py` is the first pytest coverage of the history
   writes; `check_mcp_writes.py` carries the same cases against the DB role.
 
-**Watch out.** Pounds are accepted *only* here. Do not add `weight_lb` to a
-read, a response or `planning.py`'s targets — the report-endpoint bug the unit
-rule exists for is a kilogram number next to an "lb" label, and a second
-representation on the way out is how that comes back.
+**What didn't work.** The first `release.sh 2.24.1` died in the MCP image
+build: `import mcp_server.tools` failed because `history_log.py` now imports
+`app.units`, and the MCP stage copies an *explicit list* of `app/` modules
+that did not include it. pytest, ruff, the import smoke test and
+`check_mcp_writes.py` all passed first — they run against the full tree. CI
+does not build that stage either, so the release script's image build is the
+only gate that sees it. Added `units.py` to the COPY list (it imports only
+`typing`, so the isolation assertion still holds).
+
+**Watch out.**
+- A new import into any module on the MCP stage's COPY list needs the
+  imported module added to that list, and only `release.sh` (or a manual
+  `docker build --target mcp`) will tell you. Lint and tests will not.
+- Pounds are accepted *only* here. Do not add `weight_lb` to a read, a
+  response or `planning.py`'s targets — the report-endpoint bug the unit rule
+  exists for is a kilogram number next to an "lb" label, and a second
+  representation on the way out is how that comes back.
 
 ## 2026-11-09 — The screenshot import is a button, not a token
 
