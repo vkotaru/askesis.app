@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.24.2] - 2026-11-19
+
+Alembic head: `add_meal_macros`
+
 ### Fixed
 
 - **The stack recovers from a power cut on its own.** After the 2026-11-18
@@ -1949,7 +1953,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.24.1...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.24.2...HEAD
+[2.24.2]: https://github.com/vkotaru/askesis.app/compare/v2.24.1...v2.24.2
 [2.24.1]: https://github.com/vkotaru/askesis.app/compare/v2.24.0...v2.24.1
 [2.24.0]: https://github.com/vkotaru/askesis.app/compare/v2.23.0...v2.24.0
 [2.23.0]: https://github.com/vkotaru/askesis.app/compare/v2.22.0...v2.23.0
