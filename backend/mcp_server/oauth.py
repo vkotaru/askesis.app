@@ -843,7 +843,18 @@ def revoke(config: MCPConfig):
 
 
 def healthz(request: Request) -> Response:
-    return JSONResponse({"status": "ok"})
+    """503 unless the database answers. A connector that cannot reach Postgres
+    fails every registration, token exchange and tool call with a 500 -- which
+    is what a 200 here hid for hours after the 2026-11-18 power cut."""
+    from app.watchdog import database_reachable
+
+    if database_reachable():
+        return JSONResponse({"status": "ok", "database": "reachable"})
+    return JSONResponse(
+        {"status": "degraded", "database": "unreachable"},
+        status_code=503,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def cleanup_expired(db) -> int:

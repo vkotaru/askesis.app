@@ -411,6 +411,44 @@ or two rows with the same label, is skipped and reported, never overwritten.
   have restores to broken images. `scripts/adopt_photos.py --verify` reports
   exactly that mismatch in both directions.
 
+## After a power cut or reboot
+
+Nothing to do. The stack is built to come back on its own, and these are the
+pieces that make that true -- if one is removed, it stops being true:
+
+- Every service has `restart: unless-stopped`, and the BIOS powers the box on
+  after an outage. A container that was *stopped by hand* before the reboot
+  stays stopped; `deploy.sh` never leaves one that way.
+- `app` and `mcp` have their **own** network namespaces (`networks:`, not
+  `network_mode: service:<sidecar>`). The sidecars reach them over Unix
+  sockets on the shared `./data/run*` mounts, so a sidecar restarting -- which
+  happens at boot when it comes up before the host has a network -- cannot
+  take their network away. It did, on 2026-11-18: every page loaded and every
+  real request was a 500 for hours, because the containers were "running".
+- Each process watches its own database connection (`app/watchdog.py`):
+  `SELECT 1` every 30 s, and after six misses in a row it **exits** with code
+  3. That exit is the only thing Docker's restart policy reacts to. The
+  restarted container gets a fresh namespace and pool; if Postgres is still
+  recovering, `alembic upgrade head` fails fast and Docker retries with
+  backoff until it answers. Tune or disable with `DB_WATCHDOG_INTERVAL_SECONDS`
+  and `DB_WATCHDOG_MAX_FAILURES` in `.env` (zero disables).
+- `GET /health` (app) and `GET /healthz` (connector) run the same probe and
+  answer **503** when the database is out of reach. `docker compose ps` shows
+  `(unhealthy)` from the same command. `deploy.sh` fails its smoke test if
+  `/health` is not 200.
+
+If it does *not* come back, the one thing to look at is Postgres itself:
+
+```bash
+docker compose ps                      # db healthy? app/mcp restarting?
+docker compose logs --tail=60 db       # WAL recovery is normal; pg_control
+                                       # or checksum errors are not
+```
+
+A hard cut mid-write can corrupt the data directory, and no restart policy
+fixes that -- a backup does (`pg_dump` below, and `RELEASING.md`). The real
+protection is a small UPS.
+
 ## MCP connector (Claude Cowork)
 
 Exposes your health data to Claude as a read-only remote connector. **This is the

@@ -15,6 +15,22 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Fixed
+
+- **The stack recovers from a power cut on its own.** After the 2026-11-18
+  outage every container came back and nothing worked: the app and the MCP
+  connector shared their Tailscale sidecars' network namespaces, the sidecars
+  restarted during boot, and both were left serving pages over the Unix socket
+  with no route to the database. Every real request was a 500 for hours; the
+  connector reported "Couldn't register". Each service now has its own network
+  (the sockets already made the shared namespace unnecessary), and each
+  process watches its own database connection and exits after six missed
+  checks so Docker restarts it on a fresh namespace and pool. `/health` and
+  `/healthz` answer 503 instead of 200 when the database is unreachable, the
+  compose healthchecks run the same probe, and `deploy.sh` fails its smoke
+  test if `/health` is not 200. `DB_WATCHDOG_INTERVAL_SECONDS` and
+  `DB_WATCHDOG_MAX_FAILURES` tune it; zero disables.
+
 ## [2.24.1] - 2026-11-10
 
 Alembic head: `add_meal_macros`

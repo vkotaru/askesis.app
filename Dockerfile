@@ -145,6 +145,8 @@ RUN pip install --upgrade pip && \
 # lookup (save_food / search_foods). `history_log.py` is weight and new
 # workout sessions (log_weight / log_workout); it converts a weight given in
 # pounds through `units.py`, which imports nothing but `typing`.
+# `watchdog.py` exits the process when Postgres stays unreachable, so the
+# restart policy can bring it back; it is also this stage's HEALTHCHECK.
 #
 # This list is explicit on purpose, so a new import into one of these modules
 # fails HERE, at the build, rather than at the first tool call in production.
@@ -155,7 +157,7 @@ COPY backend/app/__init__.py     backend/app/config.py \
      backend/app/provenance.py   backend/app/security.py \
      backend/app/intake_log.py   backend/app/food_library.py \
      backend/app/food_search.py  backend/app/history_log.py \
-     backend/app/units.py        ./app/
+     backend/app/units.py        backend/app/watchdog.py ./app/
 COPY backend/mcp_server/ ./mcp_server/
 
 # Fail the BUILD if the isolation ever stops holding, rather than discovering it

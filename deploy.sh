@@ -223,6 +223,19 @@ if [ -n "${PUBLIC_URL:-}" ]; then
     fi
   fi
   echo "    ok: $PUBLIC_URL serves $SHORT_SHA"
+
+  # 1b. ...and can reach its database. /api/version answers from memory, so a
+  # container with no route to Postgres passes the check above and then 500s
+  # every real request -- the state the 2026-11-18 power cut left both
+  # containers in for hours. /health does a SELECT 1 and answers 503 otherwise.
+  # The first calls may land while alembic is still running; allow for that.
+  hok=""
+  for _ in $(seq 1 15); do
+    if curl -fsS --max-time 8 -o /dev/null "$PUBLIC_URL/health" 2>/dev/null; then hok=1; break; fi
+    sleep 2
+  done
+  [ -n "$hok" ] || smoke_fail "$PUBLIC_URL/health is not 200 -- the app is up but cannot reach the database (check: $DC logs --tail=50 db)"
+  echo "    ok: $PUBLIC_URL/health reaches the database"
 else
   echo "    SKIPPED serving check — PUBLIC_URL not set in .env." >&2
   echo "    Add PUBLIC_URL=https://askesis.<your-tailnet>.ts.net to enable it." >&2

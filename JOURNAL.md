@@ -21,6 +21,63 @@ dead ends we still remembered, not every step.
 
 ---
 
+## 2026-11-18 — A power cut left every container running and nothing working
+
+**What happened.** The box lost power, came back (BIOS auto-on), Docker came
+back, every container came back — and for hours the app and the MCP
+connector answered every request that needed Postgres with a 500 while every
+request that did not (the SPA, `/api/version`, OAuth discovery, `/health`)
+was fine. From claude.ai that surfaced as "Couldn't register with Askesis's
+sign-in service". Measured from outside, over both the tailnet and the Funnel
+path: discovery 200, register-with-bad-redirect 400 (no DB touched),
+register-with-Claude's-callback 500, authorize-unknown-client 500, app login
+500. Every DB path dead in both containers; every non-DB path alive.
+
+**Why.** Both services ran as `network_mode: service:<sidecar>`. A container
+that joins another's network namespace keeps the *old* namespace when that
+container restarts. At boot the sidecars started before the host had a
+network, restarted, and left the app and the connector each in a dead
+namespace: the Unix socket on the shared mount still worked, so the pages
+loaded; `db` no longer resolved, so nothing else did. Docker saw two running
+containers and did nothing — `restart:` only acts on an exit, and `/health`
+returned 200 unconditionally. (The namespace sharing dated from when Serve
+proxied to `localhost:8000`; since the socket, the sidecar and the app need
+no network between them at all.)
+
+**What changed.**
+- `app` is on `default`, `mcp` on `mcpnet`, each in its own namespace. A
+  sidecar restart no longer touches them. The isolation invariant is
+  unchanged: `docker compose exec mcp getent hosts tailscale` still fails.
+- `app/watchdog.py`: `SELECT 1` through the real engine every 30 s, in a
+  thread with a deadline so a hung connect is a miss, and after six misses in
+  a row `os._exit(3)` — the one thing Docker's restart policy reacts to. Both
+  services start it from their lifespan. `DB_WATCHDOG_*` settings; zero
+  disables (tests set it).
+- `/health` and the connector's `/healthz` run the same probe and answer 503
+  when it fails; the compose `healthcheck` runs `python -m app.watchdog`; the
+  deploy smoke test now requires `/health` 200 after `/api/version` matches.
+- Verified with the built image against a throwaway Postgres: 503 within
+  3 s of stopping it, exit and restart within 7 s, healthy 2 s after Postgres
+  returned. (Local Tesseract lived in the session scratchpad and the reboot
+  took it, so the OCR tests skip here; CI has it.)
+
+**What didn't work.** Diagnosing from the dev machine ran into the permission
+gate on `ssh` to the server, so the root cause above is inferred from the
+symptom pattern plus the compose file, not from `docker ps` on the box. The
+fix is sound for the inferred cause *and* for a plain Postgres outage (the
+watchdog loop fails fast until it answers), so it does not hinge on which.
+
+**Watch out.**
+- `network_mode: service:X` is a trap whenever X can restart independently.
+  If a service ever needs the sidecar's namespace again, it needs a reason
+  that outweighs this entry.
+- The watchdog will loop-restart a container while Postgres is genuinely
+  down. That is intended — alembic at start fails fast the same way — and the
+  `/health` 503 says why. Do not "fix" it by making the probe lenient.
+- `restart: unless-stopped` does not start a container that was *stopped*
+  before the reboot. `deploy.sh` leaves everything running; a hand `docker
+  compose stop` does not.
+
 ## 2026-11-10 — Pounds come in at the write boundary; the tool text was the bug
 
 **What changed.** The connector told the user it "can only log weights in

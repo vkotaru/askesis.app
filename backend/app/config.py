@@ -64,6 +64,17 @@ class Settings(BaseSettings):
     # `openssl rand -hex 16` rather than picking a word.
     registration_code: str = ""
 
+    # Self-restart when the database is unreachable (app/watchdog.py). A
+    # container that cannot reach Postgres answers every real request with a
+    # 500, and Docker restarts only a container that EXITS -- which is how the
+    # 2026-11-18 power cut left the app and the connector up and useless for
+    # hours. The process probes every `interval` seconds and exits after
+    # `max_failures` misses in a row, so `restart: unless-stopped` brings it
+    # back on a fresh network namespace and pool. Both services read these.
+    # Zero disables; tests and local dev set it so.
+    db_watchdog_interval_seconds: int = 30
+    db_watchdog_max_failures: int = 6
+
     # The household's IANA zone: which calendar day the server calls "today"
     # (the public report, the MCP tools, the training-plan checks). Empty falls
     # back to GARMIN_SYNC_TZ, the setting that existed first. The container runs

@@ -25,6 +25,9 @@ os.environ.update(
         "MFP_INGEST_TOKEN": "tests-only-ingest-token",
         "MFP_INGEST_USER": "",
         "GARMIN_SYNC_ENABLED": "false",
+        # The watchdog exits the process when the database is unreachable;
+        # a test process must never be the thing it exits.
+        "DB_WATCHDOG_INTERVAL_SECONDS": "0",
     }
 )
 

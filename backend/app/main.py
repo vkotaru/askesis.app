@@ -79,8 +79,12 @@ async def lifespan(app: FastAPI):
     never spins up a thread or reaches for the network.
     """
     from app.scheduler import shutdown_scheduler, start_scheduler
+    from app.watchdog import start_from_settings
 
     start_scheduler()
+    # Exits the process if Postgres stays unreachable, so Docker restarts it.
+    # See app/watchdog.py for the outage that made this necessary.
+    start_from_settings()
     # One clear line at boot beats a stack trace on the first upload. The
     # route stays mounted and answers 503 until the binary is there.
     from app.mfp_ingest import tesseract_problem
@@ -157,7 +161,22 @@ if not app_settings.mfp_ingest_token:
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
+    """Can this process serve? That means: can it reach the database.
+
+    It used to return 200 unconditionally, and after the 2026-11-18 power cut
+    it did so for hours while every real request was a 500. The compose
+    healthcheck, the deploy smoke test and a human all read this, so it tells
+    the truth: 503 when the database is out of reach.
+    """
+    from fastapi.responses import JSONResponse
+
+    from app.watchdog import database_reachable
+
+    if database_reachable():
+        return {"status": "healthy", "database": "reachable"}
+    return JSONResponse(
+        {"status": "degraded", "database": "unreachable"}, status_code=503
+    )
 
 
 @app.get("/api/version")

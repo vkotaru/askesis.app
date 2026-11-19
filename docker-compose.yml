@@ -34,8 +34,9 @@ services:
   # Tailscale sidecar: joins the tailnet as "askesis" -> askesis.<tailnet>.ts.net,
   # terminates HTTPS via Tailscale Serve, and proxies to the app over a Unix
   # socket on the shared ./data/run mount. Userspace mode = no extra
-  # host caps/devices needed. TS_ACCEPT_DNS=false keeps Docker's DNS so the app can
-  # still resolve the `db` service.
+  # host caps/devices needed. TS_ACCEPT_DNS=false keeps Docker's DNS in the sidecar
+  # (the app no longer shares its namespace, but there is nothing on the
+  # tailnet it needs to resolve either).
   tailscale:
     # Pinned, not :latest. Serve's `unix:` proxy target is the whole reason the
     # app has no TCP port; `docker compose up` does not re-pull a floating tag,
@@ -84,24 +85,44 @@ services:
       # the image to a loopback TCP bind — but see the CAUTION below: reverting
       # here alone takes the app down, because serve.json dials the socket.
       APP_SOCKET: /run/askesis/app.sock
-    # Share the Tailscale sidecar's network namespace: no host ports are
-    # published, and Serve reaches the app over the Unix socket below.
+    # Its OWN network namespace, on `default` with db. Serve reaches the app
+    # through the Unix socket on the ./data/run mount, so the sidecar and the
+    # app need no network between them at all.
     #
-    # Sharing the namespace is exactly why there is no TCP port. In userspace
-    # mode tailscaled forwards EVERY inbound tailnet connection to 127.0.0.1 on
-    # the same port, with no allowlist — so binding loopback does not close a
-    # port (v1.2.5 tried that; :8000 still answered). Only having nothing
-    # listening on TCP does.
+    # It used to be `network_mode: service:tailscale`, from the days when Serve
+    # proxied to localhost:8000. That is gone, and the sharing was a liability:
+    # a container that joins another's namespace KEEPS the old one when that
+    # container restarts. After the 2026-11-18 power cut the sidecar came up
+    # before the host had a network, restarted, and left the app answering on
+    # the socket with no route to Postgres -- every page loaded, every real
+    # request 500ed, for hours, and Docker saw a running container.
+    #
+    # Still no TCP listener, and still on purpose. In userspace mode tailscaled
+    # forwards EVERY inbound tailnet connection to 127.0.0.1 on the same port,
+    # with no allowlist, so inside the sidecar's namespace only the absence of
+    # a listener closed a port (v1.2.5 tried binding loopback; :8000 still
+    # answered). Out of that namespace the app is unreachable from the tailnet
+    # by any port, and deploy.sh keeps asserting that :8000 is refused.
     #
     # CAUTION: APP_SOCKET above and the Proxy target in tailscale/serve.json are
     # one setting in two files. Changing either alone yields a 502 on every
     # request. To roll back, revert BOTH, then `docker compose down && up -d`.
-    network_mode: service:tailscale
+    networks: [default]
     depends_on:
       db:
         condition: service_healthy
       tailscale:
         condition: service_started
+    # Visibility only -- Docker does not restart an unhealthy container. The
+    # same probe runs inside the process (app/watchdog.py) and EXITS it after
+    # six misses, which `restart: unless-stopped` turns into the restart.
+    # start_period covers `alembic upgrade head` and the food seed.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.watchdog"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     # Progress/meal photos live on the server's own disk. A bind mount, not a
     # named volume: the operator needs to drop a Drive export into
     # ./data/uploads/_inbox/ from the host and run scripts/adopt_photos.py.
@@ -201,14 +222,26 @@ services:
     profiles: ["mcp"]
     volumes:
       - ./data/run-mcp:/run/askesis-mcp
-    # Shares the MCP sidecar's netns, so it has no route to the app's sidecar.
+    # Its own namespace on `mcpnet` only: db and its sidecar are reachable, the
+    # app and the app's sidecar are not. Same change as the app service and
+    # for the same outage -- it shared the sidecar's namespace and was left
+    # with no route to Postgres when the sidecar restarted. The sidecar reaches
+    # it over the Unix socket on ./data/run-mcp, so no network is shared.
     # Verify: `docker compose exec mcp getent hosts tailscale` must FAIL.
-    network_mode: service:tailscale-mcp
+    networks: [mcpnet]
     depends_on:
       db:
         condition: service_healthy
       tailscale-mcp:
         condition: service_started
+    # Visibility only; the in-process watchdog (app/watchdog.py) does the
+    # exiting. No migrations at start, so a short start_period.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.watchdog"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 # `default` carries db + the app and its sidecar. `mcpnet` carries db + the MCP
 # service and its sidecar. `db` is the only member of both, so the internet-

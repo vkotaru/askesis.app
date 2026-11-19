@@ -484,6 +484,11 @@ def build_app(config: MCPConfig, verifier: TokenVerifier) -> Starlette:
 
     @asynccontextmanager
     async def lifespan(app: Starlette):
+        # Exits the process if Postgres stays unreachable, so Docker restarts
+        # it. Same module and settings as the app; see app/watchdog.py.
+        from app.watchdog import start_from_settings
+
+        start_from_settings()
         async with mcp.session_manager.run():
             yield
 
