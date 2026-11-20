@@ -449,6 +449,37 @@ A hard cut mid-write can corrupt the data directory, and no restart policy
 fixes that -- a backup does (`pg_dump` below, and `RELEASING.md`). The real
 protection is a small UPS.
 
+## Deploying without logging in
+
+`scripts/deploy-gate.sh` lets a dev machine run the deploy over SSH with a key
+that can do nothing else. sshd runs the script as a forced command; it accepts
+`deploy [vX.Y.Z|main]`, `status`, `logs [service] [lines]` and `health`, and
+refuses anything else -- no shell, no pty, no forwarding (`restrict`).
+
+Once, on the server, from the checkout, with the dev machine's public key:
+
+```bash
+echo "command=\"$PWD/scripts/deploy-gate.sh\",restrict ssh-ed25519 AAAA... askesis-deploy" \
+  >> ~/.ssh/authorized_keys
+```
+
+On the dev machine, `~/.ssh/config`:
+
+```
+Host askesis-deploy
+  HostName <server LAN IP>
+  User <server user>
+  IdentityFile ~/.ssh/askesis_deploy
+  IdentitiesOnly yes
+  BatchMode yes
+```
+
+Then `ssh askesis-deploy deploy` runs `./deploy.sh` on the box, smoke test
+included, and `ssh askesis-deploy health` asks both containers whether they can
+reach the database. The script must exist in the server's checkout before the
+first use, so the install step above has to follow a `git fetch` of a release
+that contains it.
+
 ## MCP connector (Claude Cowork)
 
 Exposes your health data to Claude as a read-only remote connector. **This is the

@@ -15,6 +15,15 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+### Added
+
+- **A deploy-only SSH gate.** `scripts/deploy-gate.sh` is the forced command
+  for a dedicated key in the server's `authorized_keys`: it accepts `deploy
+  [vX.Y.Z|main]`, `status`, `logs [service] [lines]` and `health`, and refuses
+  everything else, with no shell, pty or forwarding. A dev machine can deploy a
+  release without a login on the box. Same pattern as the other apps on the
+  server; install notes are in the script header and `SELF_HOSTING.md`.
+
 ## [2.24.2] - 2026-11-19
 
 Alembic head: `add_meal_macros`
