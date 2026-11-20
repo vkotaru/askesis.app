@@ -15,6 +15,10 @@ does not roll the database back — that head is what you would need to
 
 ## [Unreleased]
 
+## [2.24.3] - 2026-11-19
+
+Alembic head: `add_meal_macros`
+
 ### Added
 
 - **A deploy-only SSH gate.** `scripts/deploy-gate.sh` is the forced command
@@ -1962,7 +1966,8 @@ PWA, a native Kotlin Android app and a Capacitor wrapper); deployable to Railway
 
 Check out that tag to recover anything 0.2.0 removed.
 
-[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.24.2...HEAD
+[Unreleased]: https://github.com/vkotaru/askesis.app/compare/v2.24.3...HEAD
+[2.24.3]: https://github.com/vkotaru/askesis.app/compare/v2.24.2...v2.24.3
 [2.24.2]: https://github.com/vkotaru/askesis.app/compare/v2.24.1...v2.24.2
 [2.24.1]: https://github.com/vkotaru/askesis.app/compare/v2.24.0...v2.24.1
 [2.24.0]: https://github.com/vkotaru/askesis.app/compare/v2.23.0...v2.24.0
